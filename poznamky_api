@@ -1,0 +1,30 @@
+A web-based tool, running inside a web-browser with
+no own backend - it will only interact with APIs of Memorise with the
+following expected functionality:
+
+1. user login
+
+2. listing existing user documents
+
+3. adding a new document, modifying and removing existing documents
+
+4. calling the segmentation API, displaying and modifying the output,
+   saving the resulting segments as documents
+
+5. calling the Machine Translation API, displaying and modifying the
+   output, saving the result
+
+https://quest.ms.mff.cuni.cz/dimbu/docs#/
+
+6. calling the Named-Entity recognition API, displaying and modifying
+   the output, saving the result
+
+https://semtag-api.dev.memorise.sdu.dk/ner/docs#/
+
+7. calling the Semantic Tagging API, displaying and modifying the
+   output, saving the result
+
+https://semtag-api.dev.memorise.sdu.dk/semtag/docs#/
+
+8. calling the SWC term matching API, displaying and modifying the
+   output, saving the result
