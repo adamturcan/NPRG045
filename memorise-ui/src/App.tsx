@@ -1,10 +1,14 @@
 import { useState } from "react";
+
 import {
   CssBaseline,
   ThemeProvider,
   createTheme,
   Box,
   responsiveFontSizes,
+  IconButton,
+  Tooltip,
+  useMediaQuery,
 } from "@mui/material";
 import { Routes, Route } from "react-router-dom";
 
@@ -13,10 +17,14 @@ import WorkspacePage from "./pages/WorkspacePage";
 import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
 import BubbleSidebar from "./components/Sidebar/BubbleSidebar";
 
+import TagIcon from "@mui/icons-material/Tag";
+import PersonSearchIcon from "@mui/icons-material/PersonSearch";
+import TranslateIcon from "@mui/icons-material/Translate";
+import NotesIcon from "@mui/icons-material/Notes";
+
 import type { Workspace } from "./types/Workspace";
 import { mockWorkspaces } from "./data/mockWorkspaces";
 
-// Theme setup
 let theme = createTheme({
   palette: {
     mode: "light",
@@ -39,6 +47,7 @@ theme = responsiveFontSizes(theme);
 const App: React.FC = () => {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(mockWorkspaces);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const handleAddWorkspace = () => {
     const newCount = workspaces.filter((w) =>
@@ -62,36 +71,104 @@ const App: React.FC = () => {
       <CssBaseline />
       <Box
         sx={{
-          height: "100vh",
+          position: "fixed",
+          inset: 0,
+          minHeight: "100dvh",
           width: "100vw",
+          overflow: "clip",
           backgroundColor: "#0b0b0b",
-          backgroundImage: `url(${import.meta.env.BASE_URL + "grain.png"})`,
+          backgroundImage: {
+            xs: "none",
+            sm: `url(${import.meta.env.BASE_URL + "grain.png"})`,
+          },
           backgroundRepeat: "no-repeat",
           backgroundSize: "cover",
           backgroundPosition: "top left",
-          backgroundAttachment: "fixed",
+          backgroundAttachment: "scroll",
           color: "#DDD1A0",
-          position: "relative",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          WebkitOverflowScrolling: "touch",
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
         }}
       >
-        {/* Top logo bar */}
+        {/* Top mobile action bar */}
         <Box
           sx={{
             height: "60px",
             display: "flex",
             alignItems: "center",
-            pl: 4,
-            pt: 1,
+            justifyContent: "center",
+            px: 2,
+            pt: isMobile ? 0 : 1,
+            position: "relative",
+            zIndex: 1300,
           }}
         >
-          <img
-            src={import.meta.env.BASE_URL + "memorise.png"}
-            alt="Memorise"
-            style={{ height: "20px", objectFit: "contain" }}
-          />
+          <Box
+            sx={{
+              display: { xs: "none", sm: "block" },
+              position: "absolute",
+              left: 16,
+              top: 16,
+            }}
+          >
+            <img
+              src={import.meta.env.BASE_URL + "memorise.png"}
+              alt="Memorise"
+              style={{ height: "20px", objectFit: "contain" }}
+            />
+          </Box>
+
+          {/* Action icons visible only on mobile */}
+          <Box
+            sx={{
+              display: { xs: "flex", sm: "none" },
+              gap: 1,
+              alignItems: "center",
+            }}
+          >
+            <Tooltip title="Semantic Tagging">
+              <IconButton
+                onClick={() =>
+                  document.dispatchEvent(new Event("trigger:classify"))
+                }
+              >
+                <TagIcon sx={{ color: "#A0B8DD", fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="NER">
+              <IconButton
+                onClick={() => document.dispatchEvent(new Event("trigger:ner"))}
+              >
+                <PersonSearchIcon sx={{ color: "#DDD1A0", fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Translate">
+              <IconButton
+                onClick={() =>
+                  document.dispatchEvent(new Event("trigger:translate"))
+                }
+              >
+                <TranslateIcon sx={{ color: "#DDA0AF", fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Editor">
+              <IconButton
+                onClick={() =>
+                  document.dispatchEvent(new Event("trigger:editor"))
+                }
+              >
+                <NotesIcon sx={{ color: "#EDE8D4", fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
 
-        {/* Bubble sidebar */}
+        {/* Sidebar */}
         <BubbleSidebar
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -103,9 +180,12 @@ const App: React.FC = () => {
         <Box
           sx={{
             flexGrow: 1,
-            px: 4,
+            px: { xs: 0, sm: 4 },
             py: 2,
-            ml: sidebarOpen ? 28 : 10,
+            ml: {
+              xs: 10,
+              sm: sidebarOpen ? 28 : 10,
+            },
             transition: "margin-left 0.3s ease",
           }}
         >

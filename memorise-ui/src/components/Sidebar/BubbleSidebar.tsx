@@ -1,6 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import type { Workspace } from "../../types/Workspace";
-import { Box, Fab, Tooltip, Typography, Zoom } from "@mui/material";
+import {
+  Box,
+  Fab,
+  Tooltip,
+  Typography,
+  Zoom,
+  useTheme,
+  useMediaQuery,
+} from "@mui/material";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import AddIcon from "@mui/icons-material/Add";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
@@ -25,8 +33,13 @@ const BubbleSidebar: React.FC<Props> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const isSelected = (path: string) => location.pathname === path;
+  const isExpanded = !isMobile && open;
+  const showBubbles = isMobile ? mobileOpen : true;
 
   const Bubble = ({
     label,
@@ -50,9 +63,9 @@ const BubbleSidebar: React.FC<Props> = ({
           bgcolor: color || "#DDD1A0",
           color: "#0B0B0B",
         },
-        justifyContent: open ? "flex-start" : "center",
-        px: open ? 2 : 0,
-        width: open ? "180px" : "56px",
+        justifyContent: isExpanded ? "flex-start" : "center",
+        px: isExpanded ? 2 : 0,
+        width: isExpanded ? "180px" : "56px",
         height: "48px",
         borderRadius: "24px",
         boxShadow: "0 0 4px rgba(255,255,255,0.2)",
@@ -63,7 +76,7 @@ const BubbleSidebar: React.FC<Props> = ({
       }}
     >
       {icon}
-      {open && (
+      {isExpanded && (
         <Typography
           variant="body2"
           fontWeight={600}
@@ -84,75 +97,82 @@ const BubbleSidebar: React.FC<Props> = ({
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        height: "calc(100vh - 100px)",
+        height: "80vh",
         zIndex: 1300,
+        overflowY: "auto",
       }}
     >
       <Box display="flex" flexDirection="column" gap={2}>
         <Bubble
-          label={open ? "Collapse" : "Expand"}
-          icon={open ? <ChevronLeftIcon /> : <MenuIcon />}
-          onClick={onToggle}
+          label="Menu"
+          icon={showBubbles ? <ChevronLeftIcon /> : <MenuIcon />}
+          onClick={() => (isMobile ? setMobileOpen(!mobileOpen) : onToggle())}
           color="#DDD1A0"
         />
 
-        {workspaces.slice(0, 3).map((ws) => (
-          <Zoom in key={ws.id} unmountOnExit>
-            <Box>
-              <Tooltip
-                title={ws.name}
-                placement="right"
-                disableHoverListener={open}
-              >
-                <span>
-                  <Bubble
-                    label={ws.name}
-                    icon={<FolderOpenIcon />}
-                    onClick={() => navigate(`/workspace/${ws.id}`)}
-                    selected={isSelected(`/workspace/${ws.id}`)}
-                    color="#DDD1A0"
-                  />
-                </span>
-              </Tooltip>
-            </Box>
-          </Zoom>
-        ))}
+        {showBubbles && (
+          <>
+            {workspaces.slice(0, 3).map((ws) => (
+              <Zoom in key={ws.id} unmountOnExit>
+                <Box>
+                  <Tooltip
+                    title={ws.name}
+                    placement="right"
+                    disableHoverListener={isExpanded}
+                  >
+                    <span>
+                      <Bubble
+                        label={ws.name}
+                        icon={<FolderOpenIcon />}
+                        onClick={() => navigate(`/workspace/${ws.id}`)}
+                        selected={isSelected(`/workspace/${ws.id}`)}
+                        color="#DDD1A0"
+                      />
+                    </span>
+                  </Tooltip>
+                </Box>
+              </Zoom>
+            ))}
 
-        <Bubble
-          label="New Workspace"
-          icon={<AddIcon />}
-          onClick={() => {
-            const newWs = onAddWorkspace();
-            navigate(`/workspace/${newWs.id}`);
-          }}
-          selected={isSelected("/workspace/new")}
-          color="#DDD1A0"
-        />
+            <Bubble
+              label="New Workspace"
+              icon={<AddIcon />}
+              onClick={() => {
+                const newWs = onAddWorkspace();
+                navigate(`/workspace/${newWs.id}`);
+              }}
+              selected={isSelected("/workspace/new")}
+              color="#DDD1A0"
+            />
 
-        <Bubble
-          label="Manage Workspaces"
-          icon={<ManageAccountsIcon />}
-          onClick={() => navigate("/manage-workspaces")}
-          selected={isSelected("/manage-workspaces")}
-          color="#A0B8DD" // blue-100
-        />
+            <Bubble
+              label="Manage Workspaces"
+              icon={<ManageAccountsIcon />}
+              onClick={() => navigate("/manage-workspaces")}
+              selected={isSelected("/manage-workspaces")}
+              color="#A0B8DD"
+            />
+          </>
+        )}
       </Box>
 
-      <Box display="flex" flexDirection="column" gap={2} pb={2}>
-        <Bubble
-          label="Manage Account"
-          icon={<AccountCircleIcon />}
-          onClick={() => navigate("/manage-account")}
-          selected={isSelected("/manage-account")}
-          color="#DDA0AF" // pink-100
-        />
-        <Bubble
-          label="Logout"
-          icon={<LogoutIcon />}
-          onClick={() => alert("Logging out...")}
-          color="#DDA0AF" // pink-100
-        />
-      </Box>
+      {showBubbles && (
+        <Box display="flex" flexDirection="column" gap={2} pb={2}>
+          <Bubble
+            label="Manage Account"
+            icon={<AccountCircleIcon />}
+            onClick={() => navigate("/manage-account")}
+            selected={isSelected("/manage-account")}
+            color="#DDA0AF"
+          />
+          <Bubble
+            label="Logout"
+            icon={<LogoutIcon />}
+            onClick={() => alert("Logging out...")}
+            color="#DDA0AF"
+          />
+        </Box>
+      )}
     </Box>
   );
 };

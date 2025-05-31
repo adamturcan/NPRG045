@@ -16,6 +16,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ner/, "/ner"),
       },
+      "/api/mt": {
+        target: "https://quest.ms.mff.cuni.cz/dimbu",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/mt/, ""),
+      },
     },
   },
 });
