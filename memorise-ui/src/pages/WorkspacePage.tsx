@@ -236,7 +236,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
               width: "50%",
               p: 4,
               boxSizing: "border-box",
-              height: "90vh",
+              height: "80vh",
               display: "flex",
               flexDirection: "column",
             }}
@@ -345,7 +345,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
         </>
       ) : (
         // Mobile layout
-        <Box sx={{ flex: "0 0 80vh", p: 2 }}>
+        <Box sx={{ flex: "0 0 90vh", p: 2 }}>
           {mobileView === "editor" ? (
             <TextField
               multiline
@@ -354,10 +354,10 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
               value={text}
               onChange={(e) => setText(e.target.value)}
               sx={{
-                height: "100%",
+                height: "90%",
                 "& .MuiOutlinedInput-root": {
                   color: "#DDD1A0",
-                  height: "100%",
+                  height: "90%",
                   alignItems: "start",
                   "& fieldset": { borderColor: "#A0B8DD" },
                   "&:hover fieldset": { borderColor: "#EDE8D4" },

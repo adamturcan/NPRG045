@@ -68,7 +68,7 @@ const BubbleSidebar: React.FC<Props> = ({
         width: isExpanded ? "180px" : "56px",
         height: "48px",
         borderRadius: "24px",
-        boxShadow: "0 0 4px rgba(255,255,255,0.2)",
+        boxShadow: "none", // ✅ removed white shadow
         display: "flex",
         alignItems: "center",
         gap: 1,
