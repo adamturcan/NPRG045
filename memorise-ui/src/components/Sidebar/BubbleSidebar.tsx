@@ -68,7 +68,7 @@ const BubbleSidebar: React.FC<Props> = ({
         width: isExpanded ? "180px" : "56px",
         height: "48px",
         borderRadius: "24px",
-        boxShadow: "none", // ✅ removed white shadow
+        boxShadow: "none",
         display: "flex",
         alignItems: "center",
         gap: 1,
@@ -104,7 +104,7 @@ const BubbleSidebar: React.FC<Props> = ({
     >
       <Box display="flex" flexDirection="column" gap={2}>
         <Bubble
-          label="Menu"
+          label="Collapse"
           icon={showBubbles ? <ChevronLeftIcon /> : <MenuIcon />}
           onClick={() => (isMobile ? setMobileOpen(!mobileOpen) : onToggle())}
           color="#DDD1A0"
