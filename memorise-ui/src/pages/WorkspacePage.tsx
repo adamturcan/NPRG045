@@ -92,18 +92,21 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
   };
 
   const classify = async () => {
-    const res = await fetch("/api/semtag/classify", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-      headers: { "Content-Type": "application/json" },
-    });
+    const res = await fetch(
+      "https://semtag-api.dev.memorise.sdu.dk/semtag/classify",
+      {
+        method: "POST",
+        body: JSON.stringify({ text }),
+        headers: { "Content-Type": "application/json" },
+      }
+    );
     const data = await res.json();
     setClassificationResults(data.results || []);
     if (isMobile) setMobileView("result");
   };
 
   const ner = async () => {
-    const res = await fetch("/api/ner/ner", {
+    const res = await fetch("https://semtag-api.dev.memorise.sdu.dk/ner/ner", {
       method: "POST",
       body: JSON.stringify({ text }),
       headers: { "Content-Type": "application/json" },
