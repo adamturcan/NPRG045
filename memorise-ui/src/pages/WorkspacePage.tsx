@@ -2,10 +2,8 @@ import { useState, useEffect } from "react";
 import {
   Box,
   IconButton,
-  MenuItem,
   TextField,
   Tooltip,
-  Typography,
   Paper,
   Table,
   TableBody,
@@ -14,23 +12,12 @@ import {
   TableRow,
   useMediaQuery,
   useTheme,
-  Button,
+  Typography,
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import LabelIcon from "@mui/icons-material/Label";
 import { useParams } from "react-router-dom";
 import type { Workspace } from "../types/Workspace";
-
-const LANG_2_FLORES: Record<string, string> = {
-  Czech: "ces_Latn",
-  Danish: "dan_Latn",
-  Dutch: "nld_Latn",
-  English: "eng_Latn",
-  German: "deu_Latn",
-  Hebrew: "heb_Hebr",
-  Hungarian: "hun_Latn",
-  Polish: "pol_Latn",
-  Ukrainian: "ukr_Cyrl",
-};
 
 interface Props {
   workspaces: Workspace[];
@@ -42,44 +29,20 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  console.log(workspace);
-
   const [text, setText] = useState("");
-  const [activeTab, setActiveTab] = useState<
-    "classification" | "ner" | "translation"
-  >("classification");
-  const [mobileView, setMobileView] = useState<"editor" | "result">("editor");
   const [classificationResults, setClassificationResults] = useState<
     any[] | null
   >(null);
-  const [nerResults, setNerResults] = useState<any[] | null>(null);
-  const [targetLang, setTargetLang] = useState("");
-  const [translation, setTranslation] = useState("");
 
   useEffect(() => {
-    const c = () => {
-      setActiveTab("classification");
-      classify();
-    };
-    const n = () => {
-      setActiveTab("ner");
-      ner();
-    };
-    const t = () => {
-      setActiveTab("translation");
-      translate();
-    };
-    const e = () => setMobileView("editor");
+    const c = () => classify();
+    const e = () => {};
 
     document.addEventListener("trigger:classify", c);
-    document.addEventListener("trigger:ner", n);
-    document.addEventListener("trigger:translate", t);
     document.addEventListener("trigger:editor", e);
 
     return () => {
       document.removeEventListener("trigger:classify", c);
-      document.removeEventListener("trigger:ner", n);
-      document.removeEventListener("trigger:translate", t);
       document.removeEventListener("trigger:editor", e);
     };
   }, []);
@@ -102,43 +65,9 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
     );
     const data = await res.json();
     setClassificationResults(data.results || []);
-    if (isMobile) setMobileView("result");
   };
 
-  const ner = async () => {
-    const res = await fetch("https://semtag-api.dev.memorise.sdu.dk/ner/ner", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-      headers: { "Content-Type": "application/json" },
-    });
-    const data = await res.json();
-    setNerResults(data.results || []);
-    if (isMobile) setMobileView("result");
-  };
-
-  const translate = async () => {
-    const langResp = await fetch("/api/supported_languages");
-    const langs = await langResp.json();
-    const allLangs = langs.supported_languages;
-    const detected = allLangs.find((l: string) =>
-      text.toLowerCase().includes(l.slice(0, 3))
-    );
-    if (!detected || !targetLang) return;
-
-    const res = await fetch("/api/translate", {
-      method: "POST",
-      body: JSON.stringify({
-        text,
-        src_lang: detected,
-        tgt_lang: LANG_2_FLORES[targetLang],
-      }),
-      headers: { "Content-Type": "application/json" },
-    });
-    const data = await res.json();
-    setTranslation(data.text || "");
-    if (isMobile) setMobileView("result");
-  };
-
+  // Render only the 'name' field from classification results
   const renderTable = (color: string, data: any[]) => (
     <Paper
       sx={{
@@ -148,26 +77,21 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
         border: `1px solid ${color}`,
         borderRadius: "12px",
         backgroundColor: "rgba(255,255,255,0.02)",
+        p: 2,
       }}
     >
       <Table size="small">
         <TableHead>
           <TableRow>
-            {Object.keys(data[0] || {}).map((col) => (
-              <TableCell key={col} sx={{ color, fontWeight: 700 }}>
-                {col}
-              </TableCell>
-            ))}
+            <TableCell sx={{ color, fontWeight: 700 }}>name</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {data.map((row, i) => (
             <TableRow key={i}>
-              {Object.values(row).map((val, j) => (
-                <TableCell key={j} sx={{ color, fontSize: "0.9rem" }}>
-                  {val as string}
-                </TableCell>
-              ))}
+              <TableCell sx={{ color, fontSize: "0.9rem" }}>
+                {row.name}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -191,7 +115,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
         <>
           <Box
             sx={{
-              width: "50%",
+              flex: 1,
               boxSizing: "border-box",
               display: "flex",
               flexDirection: "column",
@@ -223,11 +147,27 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
                   },
                 }}
               />
-              <Box sx={{ position: "absolute", bottom: 12, right: 12 }}>
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: 12,
+                  right: 12,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 <Tooltip title="Upload .txt file">
                   <IconButton component="label" sx={{ color: "#DDD1A0" }}>
                     <CloudUploadIcon />
                     <input type="file" hidden onChange={handleUpload} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Semantic Tagging">
+                  <IconButton
+                    onClick={classify}
+                    sx={{ color: "#DDD1A0", ml: 1 }}
+                  >
+                    <LabelIcon />
                   </IconButton>
                 </Tooltip>
               </Box>
@@ -236,7 +176,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
 
           <Box
             sx={{
-              width: "50%",
+              width: "400px",
               p: 4,
               boxSizing: "border-box",
               height: "80vh",
@@ -244,104 +184,29 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
               flexDirection: "column",
             }}
           >
-            <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
-              {/* Keep buttons visible on desktop */}
-              <Button
-                onClick={() => {
-                  setActiveTab("classification");
-                  classify();
-                }}
-                sx={{
-                  ...tabButtonStyle,
-                  borderColor: "#A0B8DD",
-                  color: activeTab === "classification" ? "#0B0B0B" : "#A0B8DD",
-                  backgroundColor:
-                    activeTab === "classification" ? "#A0B8DD" : "transparent",
-                }}
-              >
-                Semantic Classification
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveTab("ner");
-                  ner();
-                }}
-                sx={{
-                  ...tabButtonStyle,
-                  borderColor: "#DDD1A0",
-                  color: activeTab === "ner" ? "#0B0B0B" : "#DDD1A0",
-                  backgroundColor:
-                    activeTab === "ner" ? "#DDD1A0" : "transparent",
-                }}
-              >
-                Named Entity Recognition
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveTab("translation");
-                  translate();
-                }}
-                sx={{
-                  ...tabButtonStyle,
-                  borderColor: "#DDA0AF",
-                  color: activeTab === "translation" ? "#0B0B0B" : "#DDA0AF",
-                  backgroundColor:
-                    activeTab === "translation" ? "#DDA0AF" : "transparent",
-                }}
-              >
-                Translation
-              </Button>
-            </Box>
+            <Typography variant="h6" sx={{ mb: 2, color: "#A0B8DD" }}>
+              Semantic Tags
+            </Typography>
             <Box sx={{ flexGrow: 1, overflow: "auto" }}>
-              {activeTab === "classification" &&
-                classificationResults &&
-                renderTable("#A0B8DD", classificationResults)}
-              {activeTab === "ner" &&
-                nerResults &&
-                renderTable("#DDD1A0", nerResults)}
-              {activeTab === "translation" && (
-                <>
-                  <TextField
-                    select
-                    fullWidth
-                    value={targetLang}
-                    onChange={(e) => setTargetLang(e.target.value)}
-                    sx={{
-                      mb: 2,
-                      "& .MuiOutlinedInput-root": {
-                        color: "#DDD1A0",
-                        borderRadius: "20px",
-                        "& fieldset": { borderColor: "#DDA0AF" },
-                        "&:hover fieldset": { borderColor: "#EDE8D4" },
-                      },
-                      "& .MuiSelect-select": {
-                        pt: 1.5,
-                        color: "#DDD1A0",
-                        fontWeight: 600,
-                        textAlign: "center",
-                      },
-                    }}
-                  >
-                    {Object.keys(LANG_2_FLORES).map((lang) => (
-                      <MenuItem key={lang} value={lang}>
-                        {lang}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <Paper
-                    sx={{
-                      p: 3,
-                      border: "1px solid #DDA0AF",
-                      borderRadius: "12px",
-                      color: "#DDA0AF",
-                      backgroundColor: "transparent",
-                    }}
-                  >
-                    <Typography>
-                      {translation || "No translation yet."}
-                    </Typography>
-                  </Paper>
-                </>
+              {classificationResults && classificationResults.length > 0 ? (
+                renderTable("#A0B8DD", classificationResults)
+              ) : (
+                <Paper
+                  sx={{
+                    height: "100%",
+                    border: "1px dashed #A0B8DD",
+                    borderRadius: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(255,255,255,0.02)",
+                    p: 2,
+                  }}
+                >
+                  <Typography sx={{ color: "#A0B8DD" }}>
+                    No semantic tags yet. Click the tag icon above to generate.
+                  </Typography>
+                </Paper>
               )}
             </Box>
           </Box>
@@ -349,99 +214,62 @@ const WorkspacePage: React.FC<Props> = ({ workspaces }) => {
       ) : (
         // Mobile layout
         <Box sx={{ flex: "0 0 90vh", p: 2 }}>
-          {mobileView === "editor" ? (
-            <TextField
-              multiline
-              fullWidth
-              placeholder="Paste text here or upload file"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              sx={{
+          <TextField
+            multiline
+            fullWidth
+            placeholder="Paste text here or upload file"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            sx={{
+              height: "90%",
+              "& .MuiOutlinedInput-root": {
+                color: "#DDD1A0",
                 height: "90%",
-                "& .MuiOutlinedInput-root": {
-                  color: "#DDD1A0",
-                  height: "90%",
-                  alignItems: "start",
-                  "& fieldset": { borderColor: "#A0B8DD" },
-                  "&:hover fieldset": { borderColor: "#EDE8D4" },
-                  borderRadius: "20px",
-                  pr: 5,
-                },
-                "& textarea": {
-                  color: "#DDD1A0",
-                  fontFamily: "DM Mono, monospace",
-                },
-              }}
-            />
-          ) : (
-            <>
-              {activeTab === "classification" &&
-                classificationResults &&
-                renderTable("#A0B8DD", classificationResults)}
-              {activeTab === "ner" &&
-                nerResults &&
-                renderTable("#DDD1A0", nerResults)}
-              {activeTab === "translation" && (
-                <>
-                  <TextField
-                    select
-                    fullWidth
-                    value={targetLang}
-                    onChange={(e) => setTargetLang(e.target.value)}
-                    sx={{
-                      mb: 2,
-                      "& .MuiOutlinedInput-root": {
-                        color: "#DDD1A0",
-                        borderRadius: "20px",
-                        "& fieldset": { borderColor: "#DDA0AF" },
-                        "&:hover fieldset": { borderColor: "#EDE8D4" },
-                      },
-                      "& .MuiSelect-select": {
-                        pt: 1.5,
-                        color: "#DDD1A0",
-                        fontWeight: 600,
-                        textAlign: "center",
-                      },
-                    }}
-                  >
-                    {Object.keys(LANG_2_FLORES).map((lang) => (
-                      <MenuItem key={lang} value={lang}>
-                        {lang}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <Paper
-                    sx={{
-                      p: 3,
-                      border: "1px solid #DDA0AF",
-                      borderRadius: "12px",
-                      color: "#DDA0AF",
-                      backgroundColor: "transparent",
-                    }}
-                  >
-                    <Typography>
-                      {translation || "No translation yet."}
-                    </Typography>
-                  </Paper>
-                </>
-              )}
-            </>
-          )}
+                alignItems: "start",
+                "& fieldset": { borderColor: "#A0B8DD" },
+                "&:hover fieldset": { borderColor: "#EDE8D4" },
+                borderRadius: "20px",
+                pr: 5,
+              },
+              "& textarea": {
+                color: "#DDD1A0",
+                fontFamily: "DM Mono, monospace",
+              },
+            }}
+          />
+          <Box sx={{ mt: 2, mb: 1 }}>
+            <Typography variant="h6" sx={{ color: "#A0B8DD" }}>
+              Semantic Tags
+            </Typography>
+          </Box>
+          <Box
+            sx={{ width: "400px", flexGrow: 1, overflow: "auto", mx: "auto" }}
+          >
+            {classificationResults && classificationResults.length > 0 ? (
+              renderTable("#A0B8DD", classificationResults)
+            ) : (
+              <Paper
+                sx={{
+                  height: "80%",
+                  border: "1px dashed #A0B8DD",
+                  borderRadius: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(255,255,255,0.02)",
+                  p: 2,
+                }}
+              >
+                <Typography sx={{ color: "#A0B8DD" }}>
+                  No semantic tags yet. Click the tag icon in the editor.
+                </Typography>
+              </Paper>
+            )}
+          </Box>
         </Box>
       )}
     </Box>
   );
-};
-
-const tabButtonStyle = {
-  textTransform: "uppercase",
-  border: "2px solid",
-  borderRadius: "999px",
-  px: 3,
-  py: 1,
-  fontWeight: 700,
-  fontSize: "0.8rem",
-  transition: "all 0.2s ease",
 };
 
 export default WorkspacePage;
