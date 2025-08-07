@@ -98,7 +98,7 @@ const App: React.FC = () => {
         {/* Top mobile action bar */}
         <Box
           sx={{
-            height: "60px",
+            height: "40px",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -112,8 +112,8 @@ const App: React.FC = () => {
             sx={{
               display: { xs: "none", sm: "block" },
               position: "absolute",
-              left: 16,
-              top: 16,
+              left: 30,
+              top: 20,
             }}
           >
             <img
@@ -181,7 +181,6 @@ const App: React.FC = () => {
           sx={{
             flexGrow: 1,
             px: { xs: 0, sm: 4 },
-            py: 2,
             ml: {
               xs: 10,
               sm: sidebarOpen ? 28 : 10,

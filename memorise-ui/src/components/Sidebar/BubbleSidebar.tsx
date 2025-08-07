@@ -92,12 +92,12 @@ const BubbleSidebar: React.FC<Props> = ({
     <Box
       sx={{
         position: "fixed",
-        top: 80,
+        top: 75,
         left: 20,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        height: "80vh",
+        height: "85vh",
         zIndex: 1300,
         overflowY: "auto",
       }}
@@ -157,7 +157,7 @@ const BubbleSidebar: React.FC<Props> = ({
       </Box>
 
       {showBubbles && (
-        <Box display="flex" flexDirection="column" gap={2} pb={2}>
+        <Box display="flex" flexDirection="column" gap={2}>
           <Bubble
             label="Manage Account"
             icon={<AccountCircleIcon />}
