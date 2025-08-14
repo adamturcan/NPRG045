@@ -14,8 +14,8 @@ import AddIcon from "@mui/icons-material/Add";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import LogoutIcon from "@mui/icons-material/Logout";
-import MenuIcon from "@mui/icons-material/Menu";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useNavigate, useLocation } from "react-router-dom";
 
 interface Props {
@@ -41,6 +41,9 @@ const BubbleSidebar: React.FC<Props> = ({
   const isExpanded = !isMobile && open;
   const showBubbles = isMobile ? mobileOpen : true;
 
+  // single “open/closed” truth for icon flipping
+  const isOpen = isMobile ? mobileOpen : open;
+
   const Bubble = ({
     label,
     icon,
@@ -63,28 +66,47 @@ const BubbleSidebar: React.FC<Props> = ({
           bgcolor: color || "#DDD1A0",
           color: "#0B0B0B",
         },
-        justifyContent: isExpanded ? "flex-start" : "center",
-        px: isExpanded ? 2 : 0,
-        width: isExpanded ? "180px" : "56px",
-        height: "48px",
-        borderRadius: "24px",
-        boxShadow: "none",
         display: "flex",
         alignItems: "center",
-        gap: 1,
+        gap: 0,
+        width: isExpanded ? "200px" : "96px", // bigger bubble width
+        height: "56px", // bigger bubble height
+        borderRadius: "28px", // scale radius
+        boxShadow: "none",
         transition: "all 0.3s ease",
+        justifyContent: isExpanded ? "space-between" : "center",
+        px: isExpanded ? 2.5 : 0, // more padding
+        pl: 4.5,
       }}
     >
-      {icon}
+      {/* Bigger label */}
       {isExpanded && (
         <Typography
-          variant="body2"
+          variant="body1" // bigger base variant
           fontWeight={600}
-          sx={{ textTransform: "uppercase", fontSize: "0.75rem" }}
+          sx={{
+            textTransform: "uppercase",
+            fontSize: "0.9rem", // bigger font
+            lineHeight: 1.2,
+          }}
         >
           {label}
         </Typography>
       )}
+      {/* Icon stays right */}
+      <Box
+        component="span"
+        sx={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          ml: isExpanded ? 1 : 0,
+          flexShrink: 0,
+          "& svg": { fontSize: "1.5rem" }, // bigger icon
+        }}
+      >
+        {icon}
+      </Box>
     </Fab>
   );
 
@@ -92,8 +114,8 @@ const BubbleSidebar: React.FC<Props> = ({
     <Box
       sx={{
         position: "fixed",
-        top: 75,
-        left: 20,
+        top: 80,
+        left: -20,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
@@ -103,9 +125,10 @@ const BubbleSidebar: React.FC<Props> = ({
       }}
     >
       <Box display="flex" flexDirection="column" gap={2}>
+        {/* Collapse / Expand control with flipping chevron */}
         <Bubble
-          label="Collapse"
-          icon={showBubbles ? <ChevronLeftIcon /> : <MenuIcon />}
+          label={isOpen ? "Collapse" : "Expand"}
+          icon={isOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
           onClick={() => (isMobile ? setMobileOpen(!mobileOpen) : onToggle())}
           color="#DDD1A0"
         />

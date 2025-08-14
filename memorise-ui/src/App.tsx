@@ -73,26 +73,15 @@ const App: React.FC = () => {
         sx={{
           position: "fixed",
           inset: 0,
-          minHeight: "100dvh",
+
           width: "100vw",
           overflow: "clip",
-          backgroundColor: "#0b0b0b",
-          backgroundImage: {
-            xs: "none",
-            sm: `url(${import.meta.env.BASE_URL + "grain.png"})`,
-          },
-          backgroundRepeat: "no-repeat",
-          backgroundSize: "cover",
-          backgroundPosition: "top left",
-          backgroundAttachment: "scroll",
+          backgroundColor: "#E8F2F7",
+
           color: "#DDD1A0",
           WebkitTouchCallout: "none",
           WebkitUserSelect: "none",
           WebkitOverflowScrolling: "touch",
-          paddingTop: "env(safe-area-inset-top)",
-          paddingBottom: "env(safe-area-inset-bottom)",
-          paddingLeft: "env(safe-area-inset-left)",
-          paddingRight: "env(safe-area-inset-right)",
         }}
       >
         {/* Top mobile action bar */}
@@ -112,14 +101,21 @@ const App: React.FC = () => {
             sx={{
               display: { xs: "none", sm: "block" },
               position: "absolute",
-              left: 30,
-              top: 20,
+              backgroundColor: "black",
+              p: 1.5,
+              borderRadius: 50,
+              px: 4.5,
+              left: -20,
+              top: 15,
             }}
           >
             <img
               src={import.meta.env.BASE_URL + "memorise.png"}
               alt="Memorise"
-              style={{ height: "20px", objectFit: "contain" }}
+              style={{
+                height: "26px", // ⬅️ was 20px — increased size
+                objectFit: "contain",
+              }}
             />
           </Box>
 
@@ -183,7 +179,7 @@ const App: React.FC = () => {
             px: { xs: 0, sm: 4 },
             ml: {
               xs: 10,
-              sm: sidebarOpen ? 28 : 10,
+              sm: sidebarOpen ? 15 : 15,
             },
             transition: "margin-left 0.3s ease",
           }}
