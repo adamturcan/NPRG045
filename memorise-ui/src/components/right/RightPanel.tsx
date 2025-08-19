@@ -1,4 +1,3 @@
-// src/components/right/RightPanel.tsx
 import React, { useState } from "react";
 import { Box, ToggleButton, ToggleButtonGroup, Paper } from "@mui/material";
 import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
@@ -10,23 +9,24 @@ export type TagRow = { name: string; source: "api" | "custom" };
 
 export type NotationsProps = {
   categories: string[];
-  selectedCategories: string[]; // ← array
-  onChangeSelected: (cats: string[]) => void; // ← callback
+  selectedCategories: string[];
+  onChangeSelected: (cats: string[]) => void;
+  onAddSelection: (category: string) => void; // independent action
 };
 
 interface Props {
   tags: TagRow[];
   onDeleteTag: (name: string) => void;
   tagInputField: React.ReactNode;
-  notations: React.ReactNode; // content area inside the panel
-  notationsProps?: NotationsProps; // ← pass this if using bubbles
+
+  notationsProps?: NotationsProps;
 }
 
 const RightPanel: React.FC<Props> = ({
   tags,
   onDeleteTag,
   tagInputField,
-  notations,
+
   notationsProps,
 }) => {
   const [panel, setPanel] = useState<"tags" | "notes">("tags");
@@ -45,6 +45,7 @@ const RightPanel: React.FC<Props> = ({
         flexShrink: 0,
       }}
     >
+      {/* Switcher */}
       <Paper
         elevation={0}
         sx={{
@@ -91,6 +92,7 @@ const RightPanel: React.FC<Props> = ({
         </ToggleButtonGroup>
       </Paper>
 
+      {/* Body */}
       <Box
         sx={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden" }}
       >
@@ -129,27 +131,23 @@ const RightPanel: React.FC<Props> = ({
             transition: "opacity .18s ease, transform .18s ease",
           }}
         >
-          {panel === "notes" && (
-            <Box sx={{ flex: 1, minHeight: 0 }}>
-              {notationsProps ? (
-                <NotationsPanel
-                  categories={notationsProps.categories}
-                  selectedCategories={notationsProps.selectedCategories} // ← pass
-                  onChangeSelected={notationsProps.onChangeSelected} // ← pass
-                >
-                  {notations}
-                </NotationsPanel>
-              ) : (
-                <NotationsPanel
-                  categories={[]}
-                  selectedCategories={[]}
-                  onChangeSelected={() => {}}
-                >
-                  {notations}
-                </NotationsPanel>
-              )}
-            </Box>
-          )}
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            {notationsProps ? (
+              <NotationsPanel
+                categories={notationsProps.categories}
+                selectedCategories={notationsProps.selectedCategories}
+                onChangeSelected={notationsProps.onChangeSelected}
+                onAddSelection={notationsProps.onAddSelection}
+              ></NotationsPanel>
+            ) : (
+              <NotationsPanel
+                categories={[]}
+                selectedCategories={[]}
+                onChangeSelected={() => {}}
+                onAddSelection={() => {}}
+              ></NotationsPanel>
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>

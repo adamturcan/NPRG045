@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useCallback, useState } from "react";
-import { createEditor, Node, Path, Editor, Text } from "slate";
+import { createEditor, Node, Path, Editor, Text, Range } from "slate";
 import type { Descendant, BaseEditor } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory, HistoryEditor } from "slate-history";
@@ -12,11 +12,11 @@ declare module "slate" {
   interface CustomTypes {
     Editor: BaseEditor & ReactEditor & HistoryEditor;
     Element: ParagraphElement;
-    Text: { text: string }; // decoration props attached at runtime
+    Text: { text: string }; // decoration props added at runtime
   }
 }
 
-/** ---- NER span ---- */
+/** ---- Span type ---- */
 export type NerSpan = {
   start: number;
   end: number;
@@ -24,16 +24,15 @@ export type NerSpan = {
   score?: number;
 };
 
-// If your backend uses CRLF, change to "\r\n"
 const NEWLINE = "\n";
 
-/** Rich, visible entity colors */
+/** visible entity colors */
 const ENTITY_COLORS: Record<string, string> = {
-  PERS: "#C2185B", // deep rose
-  DATE: "#1976D2", // strong blue
-  LOC: "#388E3C", // dark green
-  ORG: "#F57C00", // vivid orange
-  CAMP: "#6A1B9A", // rich purple
+  PERS: "#C2185B",
+  DATE: "#1976D2",
+  LOC: "#388E3C",
+  ORG: "#F57C00",
+  CAMP: "#6A1B9A",
 };
 
 const hexToRgba = (hex: string, a: number) => {
@@ -48,7 +47,6 @@ const toInitialValue = (text: string): Descendant[] => [
   { type: "paragraph", children: [{ text }] },
 ];
 
-// Use newlines between blocks so NER offsets match what you see
 const toPlainTextWithNewlines = (value: Descendant[]): string =>
   (value as Descendant[]).map((n) => Node.string(n as any)).join(NEWLINE);
 
@@ -56,9 +54,20 @@ interface Props {
   value: string;
   onChange: (text: string) => void;
   placeholder?: string;
+
   spans?: NerSpan[];
-  onDeleteSpan?: (span: NerSpan) => void; // notify parent
-  highlightedCategories?: string[]; // multi-select filter from bubbles
+  onDeleteSpan?: (span: NerSpan) => void;
+
+  highlightedCategories?: string[];
+
+  /** selection reporter (global offsets) */
+  onSelectionChange?: (sel: { start: number; end: number } | null) => void;
+
+  /** NEW: which spans can show a delete “×”
+   * keys are `${start}:${end}:${entity}` for spans that are user-created (deletable)
+   * if omitted, all spans are considered deletable
+   */
+  deletableKeys?: Set<string>;
 }
 
 const NotationEditor: React.FC<Props> = ({
@@ -68,33 +77,27 @@ const NotationEditor: React.FC<Props> = ({
   spans = [],
   onDeleteSpan,
   highlightedCategories = [],
+  onSelectionChange,
+  deletableKeys,
 }) => {
   const editor = useMemo(() => withHistory(withReact(createEditor())), []);
   const [slateValue, setSlateValue] = useState<Descendant[]>(() =>
     toInitialValue(value)
   );
 
-  // selection (for full highlight if clicked)
+  // clicked/active span (for full highlight)
   const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
 
-  // LOCAL spans for instant UX; stays in sync with incoming props
+  // local mirror for instant UX
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
-  useEffect(() => {
-    setLocalSpans(spans);
-  }, [spans]);
+  useEffect(() => setLocalSpans(spans), [spans]);
 
   useEffect(() => {
     setSlateValue(toInitialValue(value));
-    setActiveSpan(null); // reset selection when content is replaced
+    setActiveSpan(null);
   }, [value]);
 
-  // Clear any clicked selection when the category filters change
-  useEffect(() => {
-    setActiveSpan(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedCategories?.join("|")]);
-
-  /** ---- Build global offset index across leaves (newline-aware) ---- */
+  /** ---- global offset index across leaves (newline-aware) ---- */
   type LeafInfo = { path: Path; gStart: number; gEnd: number; len: number };
   const leafIndex = useMemo<LeafInfo[]>(() => {
     const leaves: LeafInfo[] = [];
@@ -106,7 +109,7 @@ const NotationEditor: React.FC<Props> = ({
       match: Text.isText,
     })) {
       const parent = Path.parent(path);
-      if (prevBlock && !Path.equals(parent, prevBlock)) g += NEWLINE.length; // virtual newline
+      if (prevBlock && !Path.equals(parent, prevBlock)) g += NEWLINE.length;
       const len = (node as Text).text.length;
       leaves.push({ path, gStart: g, gEnd: g + len, len });
       g += len;
@@ -122,7 +125,17 @@ const NotationEditor: React.FC<Props> = ({
     return m;
   }, [leafIndex]);
 
-  /** ---- Decorations: underline + attach span identity ---- */
+  /** helper: convert a Slate point to global offset */
+  const pointToGlobal = useCallback(
+    (path: Path, offset: number): number => {
+      const info = indexByPath.get(keyFromPath(path));
+      if (!info) return 0;
+      return info.gStart + offset;
+    },
+    [indexByPath]
+  );
+
+  /** ---- Decorations ---- */
   const decorate = useCallback(
     (entry: [any, Path]) => {
       const [node, path] = entry;
@@ -132,46 +145,48 @@ const NotationEditor: React.FC<Props> = ({
       const info = indexByPath.get(keyFromPath(path));
       if (!info) return ranges;
 
-      const hasGroupFilters = (highlightedCategories?.length ?? 0) > 0;
-
       for (const s of localSpans) {
         const start = Math.max(s.start, info.gStart);
         const end = Math.min(s.end, info.gEnd);
-        if (end > start) {
-          const clicked =
-            !!activeSpan &&
+        if (end <= start) continue;
+
+        const isActive =
+          (!!activeSpan &&
             activeSpan.start === s.start &&
             activeSpan.end === s.end &&
-            activeSpan.entity === s.entity;
+            activeSpan.entity === s.entity) ||
+          (highlightedCategories.length > 0 &&
+            highlightedCategories.includes(s.entity));
 
-          const grouped =
-            !!highlightedCategories && highlightedCategories.includes(s.entity);
+        // Only show × for deletable spans (if a list is provided)
+        const key = `${s.start}:${s.end}:${s.entity}`;
+        const isDeletable = !deletableKeys || deletableKeys.has(key);
 
-          // Only keep clicked highlight when there are NO group filters
-          const isActive = grouped || (clicked && !hasGroupFilters);
-
-          const localStart = start - info.gStart;
-          const localEnd = end - info.gStart;
-
-          ranges.push({
-            anchor: { path, offset: localStart },
-            focus: { path, offset: localEnd },
-            underline: true,
-            entity: s.entity,
-            spanStart: s.start,
-            spanEnd: s.end,
-            active: isActive,
-            clicked,
-            // SHOW × if (clicked OR grouped) on the FIRST leaf of the span
-            showDelete: (clicked || grouped) && start === s.start,
-          });
-        }
+        ranges.push({
+          anchor: { path, offset: start - info.gStart },
+          focus: { path, offset: end - info.gStart },
+          underline: true,
+          entity: s.entity,
+          spanStart: s.start,
+          spanEnd: s.end,
+          active: isActive,
+          // One × per span: only on the leaf containing the span start
+          showDelete:
+            isDeletable &&
+            // If the span is ACTIVE (clicked), show × on ANY leaf segment
+            (isActive ||
+              // If it’s just category-highlighted, show × only on the leaf containing the start
+              (highlightedCategories.includes(s.entity) &&
+                s.start >= info.gStart &&
+                s.start < info.gEnd)),
+        });
       }
       return ranges;
     },
-    [indexByPath, localSpans, activeSpan, highlightedCategories]
+    [indexByPath, localSpans, activeSpan, highlightedCategories, deletableKeys]
   );
 
+  /** delete span */
   const handleDelete = useCallback(
     (span: NerSpan) => {
       setLocalSpans((prev) =>
@@ -190,6 +205,7 @@ const NotationEditor: React.FC<Props> = ({
     [onDeleteSpan]
   );
 
+  /** render leaf with dotted underline + optional × */
   const renderLeaf = useCallback(
     (props: any) => {
       const { attributes, children, leaf } = props;
@@ -197,18 +213,11 @@ const NotationEditor: React.FC<Props> = ({
       if (leaf.underline) {
         const color = ENTITY_COLORS[leaf.entity as string] ?? "#37474F";
         const bg = leaf.active ? hexToRgba(color, 0.35) : "transparent";
-        const hasGroupFilters = (highlightedCategories?.length ?? 0) > 0;
 
         const handleMouseDown: React.MouseEventHandler<HTMLSpanElement> = (
           e
         ) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (hasGroupFilters) {
-            // With filters active, clicking shouldn’t create a sticky selection.
-            return;
-          }
-          // Toggle clicked-only selection (works when no group filters)
+          e.preventDefault(); // keep caret from moving
           if (
             activeSpan &&
             activeSpan.start === leaf.spanStart &&
@@ -242,13 +251,10 @@ const NotationEditor: React.FC<Props> = ({
               color: "#1E293B",
               transition: "background-color 0.2s ease",
               paddingRight: leaf.showDelete ? "18px" : undefined,
-              boxDecorationBreak: "clone",
             }}
             title={`${leaf.entity}`}
           >
             {children}
-
-            {/* Delete "×" for either clicked or grouped (first leaf only) */}
             {leaf.showDelete && (
               <span
                 onMouseDown={(e) => {
@@ -293,8 +299,27 @@ const NotationEditor: React.FC<Props> = ({
         </span>
       );
     },
-    [activeSpan, highlightedCategories, handleDelete]
+    [activeSpan, handleDelete]
   );
+
+  /** report selection offsets on any editor change */
+  const reportSelection = useCallback(() => {
+    if (!onSelectionChange) return;
+
+    const sel = editor.selection;
+    if (!sel || !Range.isRange(sel)) {
+      onSelectionChange(null);
+      return;
+    }
+    const [startPoint, endPoint] = Range.edges(sel);
+    const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+    const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+    const start = Math.min(gStart, gEnd);
+    const end = Math.max(gStart, gEnd);
+
+    if (start === end) onSelectionChange(null);
+    else onSelectionChange({ start, end });
+  }, [editor, onSelectionChange, pointToGlobal]);
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -303,7 +328,8 @@ const NotationEditor: React.FC<Props> = ({
         initialValue={slateValue}
         onChange={(val) => {
           setSlateValue(val);
-          onChange(toPlainTextWithNewlines(val)); // keep NER offsets aligned
+          onChange(toPlainTextWithNewlines(val));
+          reportSelection();
         }}
       >
         <Box
@@ -318,28 +344,11 @@ const NotationEditor: React.FC<Props> = ({
             backdropFilter: "blur(6px)",
             boxShadow:
               "0 1px 0 rgba(12, 24, 38, 0.04), 0 6px 16px rgba(12, 24, 38, 0.06)",
-            transition: "box-shadow .2s ease, border-color .2s ease",
-            "&:hover": {
-              borderColor: "#93ACD8",
-              boxShadow:
-                "0 1px 0 rgba(12, 24, 38, 0.05), 0 10px 24px rgba(12, 24, 38, 0.09)",
-            },
-            "&:focus-within": {
-              borderColor: "#7A91B4",
-              boxShadow:
-                "0 0 0 3px rgba(122,145,180,0.25), 0 8px 24px rgba(12, 24, 38, 0.10)",
-            },
+            "&:hover": { borderColor: "#93ACD8" },
+            "&:focus-within": { borderColor: "#7A91B4" },
             color: "#1E293B",
             fontFamily: "DM Mono, monospace",
             overflow: "hidden",
-            "& ::-webkit-scrollbar": { width: 10 },
-            "& ::-webkit-scrollbar-thumb": {
-              background: "#C7D5EA",
-              borderRadius: 10,
-              border: "3px solid transparent",
-              backgroundClip: "content-box",
-            },
-            "& ::-webkit-scrollbar-thumb:hover": { background: "#B3C6E4" },
           }}
         >
           <Editable

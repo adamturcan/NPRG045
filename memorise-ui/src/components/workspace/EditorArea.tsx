@@ -1,32 +1,48 @@
+// src/components/workspace/EditorArea.tsx
 import React from "react";
 import { Box, IconButton, Tooltip } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import LabelIcon from "@mui/icons-material/Label";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
+import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import NotationEditor, {
   type NerSpan,
 } from "../../components/editor/NotationEditor";
 
 interface Props {
+  editorInstanceKey?: string;
+
   text: string;
   setText: (v: string) => void;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClassify: () => void;
   onNer: () => void;
+
   spans?: NerSpan[];
   setSpans?: (s: NerSpan[] | ((p: NerSpan[]) => NerSpan[])) => void;
-  highlightedCategories?: string[]; // ← multi-select categories
+
+  highlightedCategories?: string[];
+  onSelectionChange?: (sel: { start: number; end: number } | null) => void;
+  deletableKeys?: Set<string>;
+
+  onDeleteSpan?: (span: NerSpan) => void; // ← NEW: pass-through for unified deletion
+  onSave?: () => void;
 }
 
 const EditorArea: React.FC<Props> = ({
+  editorInstanceKey,
   text,
   setText,
   onUpload,
   onClassify,
   onNer,
   spans,
-  setSpans,
+  // setSpans,  // not needed anymore for deletion
   highlightedCategories,
+  onSelectionChange,
+  deletableKeys,
+  onDeleteSpan,
+  onSave,
 }) => {
   return (
     <Box
@@ -35,33 +51,22 @@ const EditorArea: React.FC<Props> = ({
         position: "relative",
         mt: 2,
         height: "100%",
-        mr: { xs: 0, sm: 3 }, // gap to the right panel
+        mr: { xs: 0, sm: 3 },
       }}
     >
       <NotationEditor
+        key={editorInstanceKey}
         value={text}
         onChange={setText}
         placeholder="Paste text here or upload file"
         spans={spans}
-        highlightedCategories={highlightedCategories} // ← pass array
-        onDeleteSpan={
-          setSpans
-            ? (span) =>
-                setSpans((prev) =>
-                  prev.filter(
-                    (s) =>
-                      !(
-                        s.start === span.start &&
-                        s.end === span.end &&
-                        s.entity === span.entity
-                      )
-                  )
-                )
-            : undefined
-        }
+        highlightedCategories={highlightedCategories}
+        onSelectionChange={onSelectionChange}
+        deletableKeys={deletableKeys}
+        onDeleteSpan={onDeleteSpan} // ← unified delete goes straight to page
       />
 
-      {/* Action icons */}
+      {/* Actions */}
       <Box
         sx={{
           position: "absolute",
@@ -72,6 +77,20 @@ const EditorArea: React.FC<Props> = ({
           gap: 1.25,
         }}
       >
+        <Tooltip title="Save workspace (text & notes)">
+          <IconButton
+            onClick={onSave}
+            sx={{
+              backgroundColor: "rgba(33, 66, 108, 0.18)",
+              "&:hover": { backgroundColor: "rgba(33, 66, 108, 0.28)" },
+              color: "#21426C",
+              boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
+            }}
+          >
+            <SaveRoundedIcon sx={{ fontSize: 28 }} />
+          </IconButton>
+        </Tooltip>
+
         <Tooltip title="Upload file">
           <IconButton
             component="label"

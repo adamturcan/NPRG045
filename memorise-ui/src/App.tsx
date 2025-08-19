@@ -1,29 +1,28 @@
-import { useState } from "react";
-
+// src/App.tsx
+import { useState, useEffect } from "react";
 import {
   CssBaseline,
   ThemeProvider,
   createTheme,
   Box,
   responsiveFontSizes,
-  IconButton,
-  Tooltip,
   useMediaQuery,
 } from "@mui/material";
-import { Routes, Route } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  Navigate,
+} from "react-router-dom";
 
 import AccountPage from "./pages/AccoutPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
 import BubbleSidebar from "./components/Sidebar/BubbleSidebar";
-
-import TagIcon from "@mui/icons-material/Tag";
-import PersonSearchIcon from "@mui/icons-material/PersonSearch";
-import TranslateIcon from "@mui/icons-material/Translate";
-import NotesIcon from "@mui/icons-material/Notes";
+import LoginPage from "./pages/LoginPage";
 
 import type { Workspace } from "./types/Workspace";
-import { mockWorkspaces } from "./data/mockWorkspaces";
 
 let theme = createTheme({
   palette: {
@@ -44,27 +43,209 @@ let theme = createTheme({
 });
 theme = responsiveFontSizes(theme);
 
-const App: React.FC = () => {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(mockWorkspaces);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+const USER_KEY = "memorise.user.v1";
+const BASE_WS_KEY = "memorise.workspaces.v1"; // legacy/global
+const keyForUser = (u: string) => `${BASE_WS_KEY}:${u}`;
 
+/* ---------------- helpers ---------------- */
+
+const seedForUser = (owner: string): Workspace[] => [
+  {
+    id: crypto.randomUUID(),
+    name: "Workspace A",
+    isTemporary: false,
+    text: "",
+    userSpans: [],
+    updatedAt: Date.now(),
+    owner,
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "Workspace B",
+    isTemporary: false,
+    text: "",
+    userSpans: [],
+    updatedAt: Date.now(),
+    owner,
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "Workspace C",
+    isTemporary: false,
+    text: "",
+    userSpans: [],
+    updatedAt: Date.now(),
+    owner,
+  },
+];
+
+function normalizeOwner(arr: unknown, owner: string): Workspace[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((x) => x && typeof x === "object")
+    .map((w: any) => ({
+      ...w,
+      owner: w?.owner ?? owner,
+      text: typeof w?.text === "string" ? w.text : "",
+      userSpans: Array.isArray(w?.userSpans) ? w.userSpans : [],
+      updatedAt: typeof w?.updatedAt === "number" ? w.updatedAt : Date.now(),
+    })) as Workspace[];
+}
+
+function loadForUser(user: string): Workspace[] | null {
+  try {
+    const perUser = localStorage.getItem(keyForUser(user));
+    if (perUser) return normalizeOwner(JSON.parse(perUser), user);
+
+    // migrate old single-bucket storage if present
+    const legacy = localStorage.getItem(BASE_WS_KEY);
+    if (legacy) {
+      const migrated = normalizeOwner(JSON.parse(legacy), user);
+      localStorage.setItem(keyForUser(user), JSON.stringify(migrated));
+      return migrated;
+    }
+  } catch {}
+  return null;
+}
+
+function saveForUser(user: string, workspaces: Workspace[]) {
+  try {
+    localStorage.setItem(keyForUser(user), JSON.stringify(workspaces));
+  } catch {}
+}
+
+/* ---------------- App ---------------- */
+
+const App: React.FC = () => {
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // hydrate username synchronously from localStorage (no flicker)
+  const [username, setUsername] = useState<string | null>(() =>
+    localStorage.getItem(USER_KEY)
+  );
+
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [booted, setBooted] = useState(false); // ← boot/rehydration guard
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Boot: load user’s workspaces exactly once after username is known
+  useEffect(() => {
+    if (!username) {
+      setWorkspaces([]);
+      setBooted(true);
+      return;
+    }
+    const loaded = loadForUser(username);
+    if (loaded && loaded.length) {
+      setWorkspaces(loaded);
+    } else {
+      const seeded = seedForUser(username);
+      setWorkspaces(seeded);
+      saveForUser(username, seeded);
+    }
+    setBooted(true);
+  }, [username]);
+
+  // Persist whenever workspaces change — but only after boot
+  useEffect(() => {
+    if (!booted || !username) return;
+    saveForUser(username, workspaces);
+  }, [booted, username, workspaces]);
+
+  // Login / logout
+  const handleLogin = (name: string) => {
+    localStorage.setItem(USER_KEY, name);
+    setBooted(false); // force reload of correct bucket
+    setUsername(name);
+    navigate("/manage-workspaces");
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem(USER_KEY);
+    setUsername(null);
+    setWorkspaces([]);
+    setBooted(true);
+    navigate("/login");
+  };
+
+  // Create new workspace
   const handleAddWorkspace = () => {
+    if (!username) return { id: "", name: "", isTemporary: true } as Workspace;
     const newCount = workspaces.filter((w) =>
       w.name.startsWith("New Workspace")
     ).length;
-    const newName = `New Workspace #${newCount + 1}`;
-    const newId = crypto.randomUUID();
-
-    const newWs: Workspace = {
-      id: newId,
-      name: newName,
+    const ws: Workspace = {
+      id: crypto.randomUUID(),
+      name: `New Workspace #${newCount + 1}`,
       isTemporary: true,
+      text: "",
+      userSpans: [],
+      updatedAt: Date.now(),
+      owner: username,
     };
-
-    setWorkspaces([newWs, ...workspaces]);
-    return newWs;
+    setWorkspaces((prev) => [ws, ...prev]);
+    return ws;
   };
+
+  // Keep “recent” 3 by moving opened one to the front
+  const bumpWorkspaceToFront = (id: string) => {
+    setWorkspaces((prev) => {
+      const idx = prev.findIndex((w) => w.id === id);
+      if (idx <= 0) return prev;
+      const next = prev.slice();
+      const [item] = next.splice(idx, 1);
+      next.unshift(item);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const m = location.pathname.match(/^\/workspace\/([^/]+)$/);
+    if (!m) return;
+    const id = decodeURIComponent(m[1]);
+    if (id !== "new") bumpWorkspaceToFront(id);
+  }, [location.pathname]);
+
+  /* --------- Routing --------- */
+
+  // While booting, avoid rendering app that might write defaults over storage
+  if (!username) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Routes>
+          <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </ThemeProvider>
+    );
+  }
+
+  if (!booted) {
+    // optional tiny splash; prevents accidental writes before hydration
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            display: "grid",
+            placeItems: "center",
+            backgroundColor: "#E8F2F7",
+          }}
+        >
+          <img
+            src={import.meta.env.BASE_URL + "memorise.png"}
+            alt="Memorise"
+            style={{ height: 36, opacity: 0.7 }}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -73,134 +254,92 @@ const App: React.FC = () => {
         sx={{
           position: "fixed",
           inset: 0,
-
           width: "100vw",
           overflow: "clip",
           backgroundColor: "#E8F2F7",
-
-          color: "#DDD1A0",
-          WebkitTouchCallout: "none",
-          WebkitUserSelect: "none",
-          WebkitOverflowScrolling: "touch",
         }}
       >
-        {/* Top mobile action bar */}
+        {/* Top-left pill logo */}
         <Box
           sx={{
-            height: "40px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            px: 2,
-            pt: isMobile ? 0 : 1,
-            position: "relative",
-            zIndex: 1300,
+            position: "fixed",
+            top: 15,
+            left: -20,
+            zIndex: 1400,
+            display: { xs: "none", sm: "block" },
           }}
         >
           <Box
-            sx={{
-              display: { xs: "none", sm: "block" },
-              position: "absolute",
-              backgroundColor: "black",
-              p: 1.5,
-              borderRadius: 50,
-              px: 4.5,
-              left: -20,
-              top: 15,
-            }}
+            sx={{ backgroundColor: "black", p: 1.5, borderRadius: 50, px: 4.5 }}
           >
             <img
               src={import.meta.env.BASE_URL + "memorise.png"}
               alt="Memorise"
-              style={{
-                height: "26px", // ⬅️ was 20px — increased size
-                objectFit: "contain",
-              }}
+              style={{ height: 26, objectFit: "contain" }}
             />
-          </Box>
-
-          {/* Action icons visible only on mobile */}
-          <Box
-            sx={{
-              display: { xs: "flex", sm: "none" },
-              gap: 1,
-              alignItems: "center",
-            }}
-          >
-            <Tooltip title="Semantic Tagging">
-              <IconButton
-                onClick={() =>
-                  document.dispatchEvent(new Event("trigger:classify"))
-                }
-              >
-                <TagIcon sx={{ color: "#A0B8DD", fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="NER">
-              <IconButton
-                onClick={() => document.dispatchEvent(new Event("trigger:ner"))}
-              >
-                <PersonSearchIcon sx={{ color: "#DDD1A0", fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Translate">
-              <IconButton
-                onClick={() =>
-                  document.dispatchEvent(new Event("trigger:translate"))
-                }
-              >
-                <TranslateIcon sx={{ color: "#DDA0AF", fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Editor">
-              <IconButton
-                onClick={() =>
-                  document.dispatchEvent(new Event("trigger:editor"))
-                }
-              >
-                <NotesIcon sx={{ color: "#EDE8D4", fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
           </Box>
         </Box>
 
         {/* Sidebar */}
         <BubbleSidebar
+          onLogout={handleLogout}
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           workspaces={workspaces}
           onAddWorkspace={handleAddWorkspace}
         />
 
-        {/* Page content */}
+        {/* Pages */}
         <Box
           sx={{
             flexGrow: 1,
             px: { xs: 0, sm: 4 },
-            ml: {
-              xs: 10,
-              sm: sidebarOpen ? 15 : 15,
-            },
+            ml: { xs: 10, sm: sidebarOpen ? 15 : 15 },
+            pt: { xs: 0, sm: 5 },
             transition: "margin-left 0.3s ease",
           }}
         >
           <Routes>
             <Route
               path="/"
-              element={<WorkspacePage workspaces={workspaces} />}
+              element={<Navigate to="/manage-workspaces" replace />}
             />
             <Route
               path="/workspace/new"
-              element={<WorkspacePage workspaces={workspaces} />}
+              element={
+                <WorkspacePage
+                  workspaces={workspaces}
+                  setWorkspaces={setWorkspaces}
+                />
+              }
             />
             <Route
               path="/workspace/:id"
-              element={<WorkspacePage workspaces={workspaces} />}
+              element={
+                <WorkspacePage
+                  workspaces={workspaces}
+                  setWorkspaces={setWorkspaces}
+                />
+              }
             />
-            <Route path="/manage-account" element={<AccountPage />} />
+            <Route
+              path="/manage-account"
+              element={
+                <AccountPage username={username} workspaces={workspaces} />
+              }
+            />
             <Route
               path="/manage-workspaces"
-              element={<ManageWorkspacesPage workspaces={workspaces} />}
+              element={
+                <ManageWorkspacesPage
+                  workspaces={workspaces}
+                  setWorkspaces={setWorkspaces}
+                />
+              }
+            />
+            <Route
+              path="*"
+              element={<Navigate to="/manage-workspaces" replace />}
             />
           </Routes>
         </Box>

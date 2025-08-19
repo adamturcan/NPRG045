@@ -1,3 +1,4 @@
+// src/hooks/useSemanticTags.ts
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { TagItem } from "../types/Tag";
 import { classify as apiClassify, ner as apiNer } from "../lib/api";
@@ -12,9 +13,10 @@ export function useSemanticTags() {
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [customTagInput, setCustomTagInput] = useState("");
 
-  // scroll container ref for the right table
+  // Right-panel scroll container (used to scroll to top after classify)
   const tagTableRef = useRef<HTMLDivElement>(null);
 
+  // ── Derived: merged tags (custom first) ─────────────────────────────────────
   const combinedTags: TagItem[] = useMemo(() => {
     return [
       ...customTags.map((t) => ({ name: t, source: "custom" as const })),
@@ -25,6 +27,7 @@ export function useSemanticTags() {
     ];
   }, [customTags, classificationResults]);
 
+  // ── Tag actions ────────────────────────────────────────────────────────────
   const addCustomTag = useCallback(
     (name: string) => {
       const tag = name.trim();
@@ -44,6 +47,7 @@ export function useSemanticTags() {
     );
   }, []);
 
+  // ── Classify (semantic tags) ───────────────────────────────────────────────
   const runClassify = useCallback(async () => {
     const data = await apiClassify(text);
     setClassificationResults(data.results || []);
@@ -54,13 +58,12 @@ export function useSemanticTags() {
     );
   }, [text]);
 
+  // ── NER spans (notations) ──────────────────────────────────────────────────
   const [nerSpans, setNerSpans] = useState<NerSpan[]>([]);
 
   const runNer = useCallback(async () => {
     if (!text.trim()) return;
     const data = await apiNer(text);
-    // transform API to spans
-    console.log(data);
     setNerSpans(
       (data.results ?? []).map((r: any) => ({
         start: r.start,
@@ -70,6 +73,48 @@ export function useSemanticTags() {
       }))
     );
   }, [text]);
+
+  /**
+   * Append a new notation span (e.g., from current editor selection).
+   * Ensures start < end and prevents exact duplicates.
+   */
+  const addNotationSpan = useCallback(
+    (span: Pick<NerSpan, "start" | "end" | "entity">) => {
+      const start = Math.min(span.start, span.end);
+      const end = Math.max(span.start, span.end);
+      if (start === end) return; // ignore empty
+      setNerSpans((prev) => {
+        const dup = prev.some(
+          (s) => s.start === start && s.end === end && s.entity === span.entity
+        );
+        if (dup) return prev;
+        return [{ start, end, entity: span.entity }, ...prev];
+      });
+    },
+    []
+  );
+
+  /**
+   * Remove a notation span by identity.
+   */
+  const deleteNotationSpan = useCallback((span: NerSpan) => {
+    setNerSpans((prev) =>
+      prev.filter(
+        (s) =>
+          !(
+            s.start === span.start &&
+            s.end === span.end &&
+            s.entity === span.entity
+          )
+      )
+    );
+  }, []);
+
+  // Provide a handy list of distinct categories from current spans.
+  const notationCategories = useMemo(
+    () => Array.from(new Set(nerSpans.map((s) => s.entity))).filter(Boolean),
+    [nerSpans]
+  );
 
   return {
     // state
@@ -85,11 +130,17 @@ export function useSemanticTags() {
     combinedTags,
     tagTableRef,
 
-    // actions
+    // semantic tag actions
     addCustomTag,
     deleteTag,
     runClassify,
-    runNer,
+
+    // NER / notations
     nerSpans,
+    setNerSpans, // ← exposed for editor/panel integration
+    runNer,
+    addNotationSpan, // ← use to add selection as a span
+    deleteNotationSpan, // ← optional helper
+    notationCategories, // ← distinct entities for bubbles
   };
 }

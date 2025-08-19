@@ -1,3 +1,4 @@
+// src/components/Sidebar/BubbleSidebar.tsx
 import React, { useState } from "react";
 import type { Workspace } from "../../types/Workspace";
 import {
@@ -23,6 +24,8 @@ interface Props {
   open: boolean;
   onToggle: () => void;
   onAddWorkspace: () => Workspace;
+  /** NEW: logout callback */
+  onLogout: () => void;
 }
 
 const BubbleSidebar: React.FC<Props> = ({
@@ -30,6 +33,7 @@ const BubbleSidebar: React.FC<Props> = ({
   open,
   onToggle,
   onAddWorkspace,
+  onLogout, // ← NEW
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,8 +44,6 @@ const BubbleSidebar: React.FC<Props> = ({
   const isSelected = (path: string) => location.pathname === path;
   const isExpanded = !isMobile && open;
   const showBubbles = isMobile ? mobileOpen : true;
-
-  // single “open/closed” truth for icon flipping
   const isOpen = isMobile ? mobileOpen : open;
 
   const Bubble = ({
@@ -62,47 +64,40 @@ const BubbleSidebar: React.FC<Props> = ({
       sx={{
         bgcolor: selected ? color || "#DDD1A0" : "#0B0B0B",
         color: selected ? "#0B0B0B" : color || "#DDD1A0",
-        "&:hover": {
-          bgcolor: color || "#DDD1A0",
-          color: "#0B0B0B",
-        },
+        "&:hover": { bgcolor: color || "#DDD1A0", color: "#0B0B0B" },
         display: "flex",
         alignItems: "center",
         gap: 0,
-        width: isExpanded ? "200px" : "96px", // bigger bubble width
-        height: "56px", // bigger bubble height
-        borderRadius: "28px", // scale radius
+        width: isExpanded ? "200px" : "96px",
+        height: "56px",
+        borderRadius: "28px",
         boxShadow: "none",
         transition: "all 0.3s ease",
         justifyContent: isExpanded ? "space-between" : "center",
-        px: isExpanded ? 2.5 : 0, // more padding
+        px: isExpanded ? 2.5 : 0,
         pl: 4.5,
       }}
     >
-      {/* Bigger label */}
       {isExpanded && (
         <Typography
-          variant="body1" // bigger base variant
+          variant="body1"
           fontWeight={600}
           sx={{
             textTransform: "uppercase",
-            fontSize: "0.9rem", // bigger font
+            fontSize: "0.9rem",
             lineHeight: 1.2,
           }}
         >
           {label}
         </Typography>
       )}
-      {/* Icon stays right */}
       <Box
         component="span"
         sx={{
           display: "inline-flex",
           alignItems: "center",
-          justifyContent: "center",
           ml: isExpanded ? 1 : 0,
-          flexShrink: 0,
-          "& svg": { fontSize: "1.5rem" }, // bigger icon
+          "& svg": { fontSize: "1.5rem" },
         }}
       >
         {icon}
@@ -125,7 +120,6 @@ const BubbleSidebar: React.FC<Props> = ({
       }}
     >
       <Box display="flex" flexDirection="column" gap={2}>
-        {/* Collapse / Expand control with flipping chevron */}
         <Bubble
           label={isOpen ? "Collapse" : "Expand"}
           icon={isOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
@@ -191,7 +185,7 @@ const BubbleSidebar: React.FC<Props> = ({
           <Bubble
             label="Logout"
             icon={<LogoutIcon />}
-            onClick={() => alert("Logging out...")}
+            onClick={onLogout} // ← call the real logout
             color="#DDA0AF"
           />
         </Box>
