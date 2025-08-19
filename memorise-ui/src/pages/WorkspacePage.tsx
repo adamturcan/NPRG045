@@ -1,3 +1,4 @@
+// src/pages/WorkspacePage.tsx
 import React, {
   useMemo,
   useState,
@@ -14,67 +15,101 @@ import {
   Alert,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
+
 import type { Workspace } from "../types/Workspace";
+import type { TagItem } from "../types/Tag";
+import type { NerSpan } from "../components/editor/NotationEditor";
+
 import BookmarkBar from "../components/workspace/BookmarkBar";
 import EditorArea from "../components/workspace/EditorArea";
 import TagInput from "../components/tags/TagInput";
 import RightPanel, { type TagRow } from "../components/right/RightPanel";
-import { useSemanticTags } from "../hooks/useSemanticTags";
-import type { NerSpan } from "../components/editor/NotationEditor";
-import { ner as apiNer } from "../lib/api"; // ← call NER directly here
+
+import { classify as apiClassify, ner as apiNer } from "../lib/api";
+
+// --- helpers -----------------------------------------------------------------
+const keyOfSpan = (s: NerSpan) => `${s.start}:${s.end}:${s.entity}`;
 
 interface Props {
   workspaces: Workspace[];
   setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
 }
 
-const keyOf = (s: NerSpan) => `${s.start}:${s.end}:${s.entity}`;
-
 const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const { id: routeId } = useParams();
 
-  // Pick current workspace (fallback to first)
+  // 1) Pick current workspace (fallback to first — matches your old behavior)
   const currentWs = useMemo(
     () => workspaces.find((w) => w.id === routeId) ?? workspaces[0],
     [workspaces, routeId]
   );
   const currentId = currentWs?.id;
 
-  // Force Slate remount per workspace
+  // 2) Editor & state (same structure as the working version)
   const [editorInstanceKey, setEditorInstanceKey] = useState<string>("");
 
-  const [bookmarks, setBookmarks] = useState<string[]>([]);
-  const [bookmarkAnchor, setBookmarkAnchor] = useState<HTMLElement | null>(
-    null
-  );
+  const [text, setText] = useState<string>("");
 
-  // We still use the tag/classify bits from the hook (but not its nerSpans)
-  const {
-    text,
-    setText,
-    combinedTags,
-    customTagInput,
-    setCustomTagInput,
-    addCustomTag,
-    deleteTag,
-    runClassify,
-  } = useSemanticTags();
+  const [userSpans, setUserSpans] = useState<NerSpan[]>([]);
+  const [apiSpans, setApiSpans] = useState<NerSpan[]>([]);
+  const [deletedApiKeys, setDeletedApiKeys] = useState<Set<string>>(new Set());
 
-  // Selection & local spans
+  // Tags (persist per workspace)
+  const [userTags, setUserTags] = useState<TagItem[]>([]); // source: "user"
+  const [apiTags, setApiTags] = useState<TagItem[]>([]); // source: "api"
+  const [customTagInput, setCustomTagInput] = useState("");
+
+  const combinedTags: TagItem[] = useMemo(() => {
+    // dedupe by lowercased name + source
+    const map = new Map<string, TagItem>();
+    [...userTags, ...apiTags].forEach((t) => {
+      map.set(`${t.source}:${t.name.toLowerCase()}`, t);
+    });
+    return Array.from(map.values());
+  }, [userTags, apiTags]);
+
+  // 3) Selection & filtering (unchanged logic)
   const [selectionRange, setSelectionRange] = useState<{
     start: number;
     end: number;
   } | null>(null);
-  const [userSpans, setUserSpans] = useState<NerSpan[]>([]);
-  const [apiSpans, setApiSpans] = useState<NerSpan[]>([]); // ← per-workspace API spans
-  const [deletedApiKeys, setDeletedApiKeys] = useState<Set<string>>(new Set());
+  const filteredApiSpans = useMemo(
+    () => apiSpans.filter((s) => !deletedApiKeys.has(keyOfSpan(s))),
+    [apiSpans, deletedApiKeys]
+  );
+  const combinedSpans = useMemo<NerSpan[]>(
+    () => [...filteredApiSpans, ...userSpans],
+    [filteredApiSpans, userSpans]
+  );
 
-  // Hydration guard
+  const notationCategories = useMemo(
+    () => Array.from(new Set(apiSpans.map((s) => s.entity))).filter(Boolean),
+    [apiSpans]
+  );
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+
+  // 4) Bookmarks & notices (UI niceties)
+  const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [bookmarkAnchor, setBookmarkAnchor] = useState<HTMLElement | null>(
+    null
+  );
+  const openBookmarkMenu = (e: React.MouseEvent<HTMLElement>) =>
+    setBookmarkAnchor(e.currentTarget);
+  const closeBookmarkMenu = () => setBookmarkAnchor(null);
+  const handleBookmarkSelect = (lang: string) => {
+    setBookmarks((prev) => (prev.includes(lang) ? prev : [lang, ...prev]));
+    closeBookmarkMenu();
+  };
+
+  const [notice, setNotice] = useState<string | null>(null);
+  const showNotice = useCallback((msg: string) => setNotice(msg), []);
+
+  // 5) Hydration guard (exactly like your working version)
   const hydratedIdRef = useRef<string | null>(null);
 
-  // Load content from the selected workspace
+  // 6) HYDRATE from current workspace on id change
   useEffect(() => {
     if (!currentId) return;
     hydratedIdRef.current = null; // block autosave while loading
@@ -83,9 +118,16 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     setUserSpans((currentWs?.userSpans as NerSpan[]) ?? []);
     setApiSpans((currentWs?.apiSpans as NerSpan[]) ?? []);
     setDeletedApiKeys(new Set(currentWs?.deletedApiKeys ?? []));
+
+    // hydrate tags
+    const tags: TagItem[] = currentWs?.tags ?? [];
+    setUserTags(tags.filter((t) => t.source === "user"));
+    setApiTags(tags.filter((t) => t.source === "api"));
+
     // clear active category chips when switching workspaces
     setActiveCategories([]);
 
+    // force Slate remount for a clean selection & placeholder state
     Promise.resolve().then(() => {
       hydratedIdRef.current = currentId;
       setEditorInstanceKey(`${currentId}:${currentWs?.updatedAt ?? 0}`);
@@ -93,30 +135,192 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId]);
 
-  // UI: categories are derived from *this* workspace's API spans
-  const notationCategories = useMemo(
-    () => Array.from(new Set(apiSpans.map((s) => s.entity))).filter(Boolean),
-    [apiSpans]
+  // 7) AUTOSAVE (debounced, hydration-aware) — save EXACTLY to current workspace
+  const saveTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!currentId) return;
+    if (hydratedIdRef.current !== currentId) return; // skip while hydrating
+
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === currentId
+            ? {
+                ...w,
+                text,
+                userSpans,
+                apiSpans,
+                deletedApiKeys: Array.from(deletedApiKeys),
+                tags: combinedTags, // ← persist tags here
+                updatedAt: Date.now(),
+              }
+            : w
+        )
+      );
+    }, 350);
+
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+  }, [
+    currentId,
+    text,
+    userSpans,
+    apiSpans,
+    deletedApiKeys,
+    combinedTags, // include so tags persist
+    setWorkspaces,
+  ]);
+
+  // 8) Explicit SAVE (toolbar button)
+  const handleSave = useCallback(() => {
+    if (!currentId) return;
+    hydratedIdRef.current = currentId; // allow save
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === currentId
+          ? {
+              ...w,
+              text,
+              userSpans,
+              apiSpans,
+              deletedApiKeys: Array.from(deletedApiKeys),
+              tags: combinedTags,
+              updatedAt: Date.now(),
+            }
+          : w
+      )
+    );
+    setNotice("Workspace saved.");
+  }, [
+    currentId,
+    text,
+    userSpans,
+    apiSpans,
+    deletedApiKeys,
+    combinedTags,
+    setWorkspaces,
+  ]);
+
+  // 9) Classification → write API tags to THIS workspace
+  const handleRunClassify = useCallback(async () => {
+    if (!text.trim()) {
+      showNotice("Paste some text before running classify.");
+      return;
+    }
+    const data = await apiClassify(text);
+    const newApiTags: TagItem[] = (data.results || []).map((r: any) => ({
+      name: r.name,
+      source: "api",
+    }));
+    setApiTags(newApiTags);
+    if (currentId) {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === currentId
+            ? {
+                ...w,
+                tags: [...userTags, ...newApiTags],
+                updatedAt: Date.now(),
+              }
+            : w
+        )
+      );
+    }
+    showNotice("Classification completed.");
+  }, [text, currentId, userTags, setWorkspaces, showNotice]);
+
+  // 10) NER → write API spans to THIS workspace
+  const handleRunNer = useCallback(async () => {
+    if (!text.trim()) {
+      showNotice("Paste some text before running NER.");
+      return;
+    }
+    try {
+      const data = await apiNer(text);
+      const spans: NerSpan[] = (data.results ?? []).map((r: any) => ({
+        start: r.start,
+        end: r.end,
+        entity: r.entity,
+        score: r.score,
+      }));
+      setApiSpans(spans);
+      if (currentId) {
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === currentId
+              ? { ...w, apiSpans: spans, updatedAt: Date.now() }
+              : w
+          )
+        );
+      }
+      showNotice("NER completed.");
+    } catch {
+      showNotice("NER failed. Try again.");
+    }
+  }, [text, currentId, setWorkspaces, showNotice]);
+
+  // 11) Tag input handlers (user tags)
+  const addCustomTag = useCallback(
+    (name: string) => {
+      const tag = name.trim();
+      if (!tag) return;
+      const exists =
+        userTags.some((t) => t.name.toLowerCase() === tag.toLowerCase()) ||
+        apiTags.some((t) => t.name.toLowerCase() === tag.toLowerCase());
+      if (exists) return;
+      const next = [{ name: tag, source: "user" as const }, ...userTags];
+      setUserTags(next);
+      if (currentId) {
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === currentId
+              ? { ...w, tags: [...next, ...apiTags], updatedAt: Date.now() }
+              : w
+          )
+        );
+      }
+    },
+    [userTags, apiTags, currentId, setWorkspaces]
   );
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
 
-  // Hide API spans that were "deleted" (tombstoned) in this workspace
-  const filteredApiSpans = useMemo(
-    () => apiSpans.filter((s) => !deletedApiKeys.has(keyOf(s))),
-    [apiSpans, deletedApiKeys]
+  const deleteTag = useCallback(
+    (name: string) => {
+      const nextUser = userTags.filter((t) => t.name !== name);
+      const nextApi = apiTags.filter((t) => t.name !== name);
+      setUserTags(nextUser);
+      setApiTags(nextApi);
+      if (currentId) {
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === currentId
+              ? { ...w, tags: [...nextUser, ...nextApi], updatedAt: Date.now() }
+              : w
+          )
+        );
+      }
+    },
+    [userTags, apiTags, currentId, setWorkspaces]
   );
 
-  // Spans shown in the editor
-  const combinedSpans = useMemo<NerSpan[]>(
-    () => [...filteredApiSpans, ...userSpans],
-    [filteredApiSpans, userSpans]
+  const tagInputField = (
+    <TagInput
+      value={customTagInput}
+      onChange={setCustomTagInput}
+      onSubmit={() => {
+        addCustomTag(customTagInput);
+        setCustomTagInput("");
+      }}
+    />
   );
 
-  // Notices
-  const [notice, setNotice] = useState<string | null>(null);
-  const showNotice = useCallback((msg: string) => setNotice(msg), []);
+  const tagRows: TagRow[] = useMemo(
+    () => combinedTags.map((t) => ({ name: t.name, source: t.source })),
+    [combinedTags]
+  );
 
-  // Validation
+  // 12) Annotation helpers (exactly like your working page)
   const hasOverlap = useCallback(
     (start: number, end: number) =>
       combinedSpans.some(
@@ -139,135 +343,26 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     [selectionRange, hasOverlap, showNotice]
   );
 
-  // Run NER for the *current* workspace and store locally
-  const handleRunNer = useCallback(async () => {
-    if (!text.trim()) {
-      showNotice("Paste some text before running NER.");
-      return;
-    }
-    try {
-      const data = await apiNer(text);
-      const spans: NerSpan[] = (data.results ?? []).map((r: any) => ({
-        start: r.start,
-        end: r.end,
-        entity: r.entity,
-        score: r.score,
-      }));
-      setApiSpans(spans);
-      // persist immediately
-      if (currentId) {
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === currentId
-              ? { ...w, apiSpans: spans, updatedAt: Date.now() }
-              : w
-          )
-        );
-      }
-      showNotice("NER completed.");
-    } catch (e) {
-      showNotice("NER failed. Try again.");
-    }
-  }, [text, currentId, setWorkspaces, showNotice]);
-
-  // Bookmarks UI
-  const openBookmarkMenu = (e: React.MouseEvent<HTMLElement>) =>
-    setBookmarkAnchor(e.currentTarget);
-  const closeBookmarkMenu = () => setBookmarkAnchor(null);
-  const handleBookmarkSelect = (lang: string) => {
-    setBookmarks((prev) => (prev.includes(lang) ? prev : [lang, ...prev]));
-    closeBookmarkMenu();
-  };
-
-  const tagInputField = (
-    <TagInput
-      value={customTagInput}
-      onChange={setCustomTagInput}
-      onSubmit={() => {
-        addCustomTag(customTagInput);
-        setCustomTagInput("");
-      }}
-    />
-  );
-
-  const tagRows: TagRow[] = useMemo(
-    () => combinedTags.map((t) => ({ name: t.name, source: t.source })),
-    [combinedTags]
-  );
-
-  // AUTOSAVE (debounced, hydration-aware) — saves text, userSpans, apiSpans & deletedApiKeys
-  const saveTimer = useRef<number | null>(null);
-  useEffect(() => {
-    if (!currentId) return;
-    if (hydratedIdRef.current !== currentId) return;
-
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      setWorkspaces((prev) =>
-        prev.map((w) =>
-          w.id === currentId
-            ? {
-                ...w,
-                text,
-                userSpans,
-                apiSpans,
-                deletedApiKeys: Array.from(deletedApiKeys),
-                updatedAt: Date.now(),
-              }
-            : w
-        )
-      );
-    }, 350);
-
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [currentId, text, userSpans, apiSpans, deletedApiKeys, setWorkspaces]);
-
-  // Explicit Save
-  const handleSave = useCallback(() => {
-    if (!currentId) return;
-    hydratedIdRef.current = currentId;
-    setWorkspaces((prev) =>
-      prev.map((w) =>
-        w.id === currentId
-          ? {
-              ...w,
-              text,
-              userSpans,
-              apiSpans,
-              deletedApiKeys: Array.from(deletedApiKeys),
-              updatedAt: Date.now(),
-            }
-          : w
-      )
-    );
-    setNotice("Workspace saved.");
-  }, [currentId, text, userSpans, apiSpans, deletedApiKeys, setWorkspaces]);
-
-  // Delete handler for both user & API spans
   const handleDeleteSpan = useCallback(
     (span: NerSpan) => {
-      const k = keyOf(span);
-      // Try remove from userSpans
-      if (userSpans.some((s) => keyOf(s) === k)) {
-        setUserSpans((prev) => prev.filter((s) => keyOf(s) !== k));
+      const k = keyOfSpan(span);
+      if (userSpans.some((s) => keyOfSpan(s) === k)) {
+        setUserSpans((prev) => prev.filter((s) => keyOfSpan(s) !== k));
       } else {
-        // Mark API span deleted (tombstone)
         setDeletedApiKeys((prev) => new Set(prev).add(k));
       }
     },
     [userSpans]
   );
 
-  // Deletable keys = all visible spans (API + user)
   const deletableKeys = useMemo(() => {
     const keys = new Set<string>();
-    filteredApiSpans.forEach((s) => keys.add(keyOf(s)));
-    userSpans.forEach((s) => keys.add(keyOf(s)));
+    filteredApiSpans.forEach((s) => keys.add(keyOfSpan(s)));
+    userSpans.forEach((s) => keys.add(keyOfSpan(s)));
     return keys;
   }, [filteredApiSpans, userSpans]);
 
+  // 13) Render
   return (
     <Box
       sx={{
@@ -300,7 +395,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
         />
 
         <EditorArea
-          editorInstanceKey={editorInstanceKey}
+          editorInstanceKey={editorInstanceKey} // remount per workspace
           text={text}
           setText={setText}
           onUpload={async (e) => {
@@ -309,8 +404,8 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
             const content = await file.text();
             setText(content);
           }}
-          onClassify={runClassify}
-          onNer={handleRunNer} // ← use local NER
+          onClassify={handleRunClassify}
+          onNer={handleRunNer}
           spans={combinedSpans}
           highlightedCategories={activeCategories}
           onSelectionChange={setSelectionRange}

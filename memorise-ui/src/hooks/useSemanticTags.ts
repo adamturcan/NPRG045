@@ -1,64 +1,87 @@
-// src/hooks/useSemanticTags.ts
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { TagItem } from "../types/Tag";
 import { classify as apiClassify, ner as apiNer } from "../lib/api";
-
 import type { NerSpan } from "../components/editor/NotationEditor";
 
-export function useSemanticTags() {
+type Options = {
+  initialTags?: TagItem[];
+  /** changes when a different workspace is selected; used to trigger a one-time hydrate */
+  hydrateKey?: string | null;
+};
+
+export function useSemanticTags(opts?: Options) {
   const [text, setText] = useState("");
-  const [classificationResults, setClassificationResults] = useState<
-    any[] | null
-  >(null);
-  const [customTags, setCustomTags] = useState<string[]>([]);
+
+  // separate sources
+  const [userTags, setUserTags] = useState<TagItem[]>([]);
+  const [apiTags, setApiTags] = useState<TagItem[]>([]);
   const [customTagInput, setCustomTagInput] = useState("");
 
   // Right-panel scroll container (used to scroll to top after classify)
   const tagTableRef = useRef<HTMLDivElement>(null);
 
-  // ── Derived: merged tags (custom first) ─────────────────────────────────────
-  const combinedTags: TagItem[] = useMemo(() => {
-    return [
-      ...customTags.map((t) => ({ name: t, source: "custom" as const })),
-      ...(classificationResults?.map((r: any) => ({
-        name: r.name,
-        source: "api" as const,
-      })) || []),
-    ];
-  }, [customTags, classificationResults]);
+  // ---- Init from props (WorkspacePage hydration) ----------------------------
+  // IMPORTANT: hydrate only when hydrateKey changes (workspace switched),
+  // not whenever the parent re-renders or tags array identity changes.
+  useEffect(() => {
+    const tags = opts?.initialTags ?? [];
+    const u = tags.filter((t) => t.source === "user");
+    const a = tags.filter((t) => t.source === "api");
+    setUserTags(u);
+    setApiTags(a);
+  }, [opts?.hydrateKey]);
 
-  // ── Tag actions ────────────────────────────────────────────────────────────
+  // ---- Derived: merged tags -------------------------------------------------
+  const combinedTags: TagItem[] = useMemo(() => {
+    const key = (t: TagItem) => `${t.source}:${t.name.toLowerCase()}`;
+    const map = new Map<string, TagItem>();
+    [...userTags, ...apiTags].forEach((t) => map.set(key(t), t));
+    return Array.from(map.values());
+  }, [userTags, apiTags]);
+
+  // ---- Actions --------------------------------------------------------------
   const addCustomTag = useCallback(
     (name: string) => {
       const tag = name.trim();
       if (!tag) return;
-      const exists =
-        customTags.includes(tag) ||
-        classificationResults?.some((r) => r.name === tag);
-      if (!exists) setCustomTags((prev) => [tag, ...prev]);
+      const exists = combinedTags.some(
+        (t) => t.name.toLowerCase() === tag.toLowerCase()
+      );
+      if (!exists) {
+        setUserTags((prev) => [{ name: tag, source: "user" }, ...prev]);
+      }
     },
-    [customTags, classificationResults]
+    [combinedTags]
   );
 
   const deleteTag = useCallback((name: string) => {
-    setCustomTags((prev) => prev.filter((t) => t !== name));
-    setClassificationResults(
-      (prev) => prev?.filter((r: any) => r.name !== name) || null
-    );
+    setUserTags((prev) => prev.filter((t) => t.name !== name));
+    setApiTags((prev) => prev.filter((t) => t.name !== name));
   }, []);
 
-  // ── Classify (semantic tags) ───────────────────────────────────────────────
+  const replaceAllTags = useCallback((tags: TagItem[]) => {
+    const u = tags.filter((t) => t.source === "user");
+    const a = tags.filter((t) => t.source === "api");
+    setUserTags(u);
+    setApiTags(a);
+  }, []);
+
+  // ---- Classify (API) -------------------------------------------------------
   const runClassify = useCallback(async () => {
+    if (!text.trim()) return;
     const data = await apiClassify(text);
-    setClassificationResults(data.results || []);
-    // scroll to top after content updates
+    const newTags: TagItem[] = (data.results || []).map((r: any) => ({
+      name: r.name,
+      source: "api" as const,
+    }));
+    setApiTags(newTags);
     setTimeout(
       () => tagTableRef.current?.scrollTo({ top: 0, behavior: "smooth" }),
       100
     );
   }, [text]);
 
-  // ── NER spans (notations) ──────────────────────────────────────────────────
+  // ---- NER spans ------------------------------------------------------------
   const [nerSpans, setNerSpans] = useState<NerSpan[]>([]);
 
   const runNer = useCallback(async () => {
@@ -74,15 +97,11 @@ export function useSemanticTags() {
     );
   }, [text]);
 
-  /**
-   * Append a new notation span (e.g., from current editor selection).
-   * Ensures start < end and prevents exact duplicates.
-   */
   const addNotationSpan = useCallback(
     (span: Pick<NerSpan, "start" | "end" | "entity">) => {
       const start = Math.min(span.start, span.end);
       const end = Math.max(span.start, span.end);
-      if (start === end) return; // ignore empty
+      if (start === end) return;
       setNerSpans((prev) => {
         const dup = prev.some(
           (s) => s.start === start && s.end === end && s.entity === span.entity
@@ -94,9 +113,6 @@ export function useSemanticTags() {
     []
   );
 
-  /**
-   * Remove a notation span by identity.
-   */
   const deleteNotationSpan = useCallback((span: NerSpan) => {
     setNerSpans((prev) =>
       prev.filter(
@@ -110,7 +126,6 @@ export function useSemanticTags() {
     );
   }, []);
 
-  // Provide a handy list of distinct categories from current spans.
   const notationCategories = useMemo(
     () => Array.from(new Set(nerSpans.map((s) => s.entity))).filter(Boolean),
     [nerSpans]
@@ -120,27 +135,23 @@ export function useSemanticTags() {
     // state
     text,
     setText,
-    classificationResults,
-    customTags,
-    setCustomTags,
     customTagInput,
     setCustomTagInput,
 
-    // derived
+    // tags
     combinedTags,
-    tagTableRef,
-
-    // semantic tag actions
     addCustomTag,
     deleteTag,
+    replaceAllTags,
     runClassify,
+    tagTableRef,
 
-    // NER / notations
+    // spans
     nerSpans,
-    setNerSpans, // ← exposed for editor/panel integration
+    setNerSpans,
     runNer,
-    addNotationSpan, // ← use to add selection as a span
-    deleteNotationSpan, // ← optional helper
-    notationCategories, // ← distinct entities for bubbles
+    addNotationSpan,
+    deleteNotationSpan,
+    notationCategories,
   };
 }

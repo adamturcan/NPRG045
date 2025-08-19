@@ -2,7 +2,7 @@ import React from "react";
 import { Box, IconButton, Paper, Typography } from "@mui/material";
 import ClearIcon from "@mui/icons-material/Clear";
 
-export type TagRow = { name: string; source: "api" | "custom" };
+export type TagRow = { name: string; source: "api" | "user" };
 
 interface Props {
   data: TagRow[];
@@ -89,7 +89,7 @@ const TagTable: React.FC<Props> = ({ data, onDelete, inputField }) => {
                 sx={{
                   maxWidth: "100%",
                   backgroundColor:
-                    row.source === "custom"
+                    row.source === "user"
                       ? "rgba(210, 132, 150, 0.18)"
                       : "rgba(160, 184, 221, 0.18)",
                   borderRadius: "999px",
@@ -119,7 +119,7 @@ const TagTable: React.FC<Props> = ({ data, onDelete, inputField }) => {
                 size="small"
                 sx={{
                   mt: 0.25,
-                  color: row.source === "custom" ? "#C2185B" : "#1976D2",
+                  color: row.source === "user" ? "#C2185B" : "#1976D2",
                   width: 26,
                   height: 26,
                   flexShrink: 0,

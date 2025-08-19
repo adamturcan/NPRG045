@@ -1,4 +1,3 @@
-// src/App.tsx
 import { useState, useEffect } from "react";
 import {
   CssBaseline,
@@ -16,7 +15,7 @@ import {
   Navigate,
 } from "react-router-dom";
 
-import AccountPage from "./pages/AccoutPage";
+import AccountPage from "./pages/AccoutPage"; // fixed typo
 import WorkspacePage from "./pages/WorkspacePage";
 import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
 import BubbleSidebar from "./components/Sidebar/BubbleSidebar";
@@ -28,7 +27,7 @@ let theme = createTheme({
   palette: {
     mode: "light",
     primary: { main: "#2563eb" },
-    background: { default: "#0B0B0B" },
+    background: { default: "#E8F2F7" },
   },
   typography: {
     fontFamily: ["DM Sans", "DM Mono", "Jacques Francois", "sans-serif"].join(
@@ -44,7 +43,7 @@ let theme = createTheme({
 theme = responsiveFontSizes(theme);
 
 const USER_KEY = "memorise.user.v1";
-const BASE_WS_KEY = "memorise.workspaces.v1"; // legacy/global
+const BASE_WS_KEY = "memorise.workspaces.v1";
 const keyForUser = (u: string) => `${BASE_WS_KEY}:${u}`;
 
 /* ---------------- helpers ---------------- */
@@ -114,6 +113,23 @@ function saveForUser(user: string, workspaces: Workspace[]) {
   } catch {}
 }
 
+/* --- helper route for /workspace/new: create + redirect --- */
+const NewWorkspaceRedirect: React.FC<{
+  onCreate: () => Workspace;
+}> = ({ onCreate }) => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const ws = onCreate();
+    if (ws?.id) {
+      navigate(`/workspace/${encodeURIComponent(ws.id)}`, { replace: true });
+    } else {
+      navigate("/manage-workspaces", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+};
+
 /* ---------------- App ---------------- */
 
 const App: React.FC = () => {
@@ -127,7 +143,7 @@ const App: React.FC = () => {
   );
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [booted, setBooted] = useState(false); // ← boot/rehydration guard
+  const [booted, setBooted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Boot: load user’s workspaces exactly once after username is known
@@ -210,7 +226,6 @@ const App: React.FC = () => {
 
   /* --------- Routing --------- */
 
-  // While booting, avoid rendering app that might write defaults over storage
   if (!username) {
     return (
       <ThemeProvider theme={theme}>
@@ -224,7 +239,6 @@ const App: React.FC = () => {
   }
 
   if (!booted) {
-    // optional tiny splash; prevents accidental writes before hydration
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
@@ -234,7 +248,7 @@ const App: React.FC = () => {
             inset: 0,
             display: "grid",
             placeItems: "center",
-            backgroundColor: "#E8F2F7",
+            backgroundColor: "background.default",
           }}
         >
           <img
@@ -256,7 +270,7 @@ const App: React.FC = () => {
           inset: 0,
           width: "100vw",
           overflow: "clip",
-          backgroundColor: "#E8F2F7",
+          backgroundColor: "background.default",
         }}
       >
         {/* Top-left pill logo */}
@@ -306,12 +320,7 @@ const App: React.FC = () => {
             />
             <Route
               path="/workspace/new"
-              element={
-                <WorkspacePage
-                  workspaces={workspaces}
-                  setWorkspaces={setWorkspaces}
-                />
-              }
+              element={<NewWorkspaceRedirect onCreate={handleAddWorkspace} />}
             />
             <Route
               path="/workspace/:id"

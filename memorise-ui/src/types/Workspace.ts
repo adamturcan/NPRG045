@@ -1,5 +1,5 @@
 import type { NerSpan } from "../components/editor/NotationEditor";
-
+import type { TagItem } from "./Tag";
 export type Workspace = {
   id: string;
   name: string;
@@ -10,4 +10,5 @@ export type Workspace = {
   updatedAt?: number;
   apiSpans?: NerSpan[];
   owner?: string;
+  tags?: TagItem[];
 };

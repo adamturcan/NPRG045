@@ -5,7 +5,7 @@ import BubbleChartIcon from "@mui/icons-material/BubbleChart";
 import TagTable from "../tags/TagTable";
 import NotationsPanel from "./NotationsPanel";
 
-export type TagRow = { name: string; source: "api" | "custom" };
+export type TagRow = { name: string; source: "api" | "user" };
 
 export type NotationsProps = {
   categories: string[];
