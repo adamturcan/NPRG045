@@ -19,14 +19,14 @@ interface Props {
   onNer: () => void;
 
   spans?: NerSpan[];
-  // setSpans?: (s: NerSpan[] | ((p: NerSpan[]) => NerSpan[])) => void;
+  setSpans?: (s: NerSpan[] | ((p: NerSpan[]) => NerSpan[])) => void;
 
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
   deletableKeys?: Set<string>;
 
-  onDeleteSpan?: (span: NerSpan) => void;
-  onAddSpan?: (span: NerSpan) => void; // ← NEW: pass-through add/change
+  onDeleteSpan?: (span: NerSpan) => void; // ← unified deletion
+  onAddSpan?: (span: NerSpan) => void;   // ← NEW: add from selection picker
   onSave?: () => void;
 }
 
@@ -38,11 +38,11 @@ const EditorArea: React.FC<Props> = ({
   onClassify,
   onNer,
   spans,
+  // setSpans,  // not needed anymore for deletion
   highlightedCategories,
   onSelectionChange,
   deletableKeys,
   onDeleteSpan,
-  onAddSpan, // ← NEW
   onSave,
 }) => {
   return (
@@ -64,8 +64,8 @@ const EditorArea: React.FC<Props> = ({
         highlightedCategories={highlightedCategories}
         onSelectionChange={onSelectionChange}
         deletableKeys={deletableKeys}
-        onDeleteSpan={onDeleteSpan}
-        onAddSpan={onAddSpan} // ← NEW
+        onDeleteSpan={onDeleteSpan} // ← unified delete goes straight to page
+        onAddSpan={onAddSpan}        // ← new
       />
 
       {/* Actions */}

@@ -1,36 +1,14 @@
-// src/components/right/RightPanel.tsx
 import React from "react";
 import { Box, Paper, Typography } from "@mui/material";
 import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
 import TagTable from "../tags/TagTable";
-import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 
 export type TagRow = { name: string; source: "api" | "user" };
-
-type TaxonomyNode = {
-  path?: string[];
-  synonyms?: string[];
-};
 
 interface Props {
   tags: TagRow[];
   onDeleteTag: (name: string) => void;
-
-  /** Old way: pass any custom input (kept for backwards compatibility). */
-  tagInputField?: React.ReactNode;
-
-  /** New way: let TagTable render the thesaurus input for you. */
-  thesaurus?: {
-    onAdd: (name: string) => void;
-    fetchSuggestions: (query: string) => Promise<ThesaurusItem[]>;
-    restrictToThesaurus?: boolean;
-    onRestrictChange?: (v: boolean) => void;
-    defaultRestrictToThesaurus?: boolean;
-    placeholder?: string;
-  };
-
-  /** Optional taxonomy mapping to enable non-flat grouping by top-level category. */
-  taxonomy?: Record<string, TaxonomyNode>;
+  tagInputField: React.ReactNode;
 }
 
 const COLORS = {
@@ -39,13 +17,7 @@ const COLORS = {
   pillBg: "white",
 };
 
-const RightPanel: React.FC<Props> = ({
-  tags,
-  onDeleteTag,
-  tagInputField,
-  thesaurus,
-  taxonomy,
-}) => {
+const RightPanel: React.FC<Props> = ({ tags, onDeleteTag, tagInputField }) => {
   return (
     <Box
       sx={{
@@ -112,8 +84,6 @@ const RightPanel: React.FC<Props> = ({
               data={tags}
               onDelete={onDeleteTag}
               inputField={tagInputField}
-              thesaurus={thesaurus}
-              taxonomy={taxonomy}
             />
           </Box>
         </Box>

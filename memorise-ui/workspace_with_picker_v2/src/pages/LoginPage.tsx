@@ -1,6 +1,15 @@
 import React, { useMemo, useState } from "react";
-import { Box, Paper, TextField, Button, InputAdornment } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Typography,
+  TextField,
+  Button,
+  InputAdornment,
+  IconButton,
+} from "@mui/material";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 
 type Props = {
   onLogin: (username: string) => void;

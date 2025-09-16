@@ -1,9 +1,24 @@
-import React, { useEffect, useMemo, useCallback, useState } from "react";
-import { createEditor, Node, Path, Editor, Text, Range } from "slate";
+// src/components/editor/NotationEditor.tsx
+import React, {
+  useEffect,
+  useMemo,
+  useCallback,
+  useState,
+  useRef,
+} from "react";
+import { createEditor, Node, Path, Editor, Text, Range, Point } from "slate";
 import type { Descendant, BaseEditor } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory, HistoryEditor } from "slate-history";
-import { Box } from "@mui/material";
+import {
+  Box,
+  IconButton,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Divider,
+} from "@mui/material";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 
 /** ---- Slate custom types ---- */
 type ParagraphElement = { type: "paragraph"; children: { text: string }[] };
@@ -12,7 +27,7 @@ declare module "slate" {
   interface CustomTypes {
     Editor: BaseEditor & ReactEditor & HistoryEditor;
     Element: ParagraphElement;
-    Text: { text: string }; // decoration props added at runtime
+    Text: { text: string };
   }
 }
 
@@ -26,6 +41,14 @@ export type NerSpan = {
 
 const NEWLINE = "\n";
 
+/** App palette */
+const COLORS = {
+  text: "#0F172A",
+  border: "#E2E8F0",
+  borderHover: "#CBD5E1",
+  borderFocus: "#94A3B8",
+};
+
 /** visible entity colors */
 const ENTITY_COLORS: Record<string, string> = {
   PERS: "#C2185B",
@@ -35,13 +58,8 @@ const ENTITY_COLORS: Record<string, string> = {
   CAMP: "#6A1B9A",
 };
 
-const hexToRgba = (hex: string, a: number) => {
-  const m = hex.replace("#", "");
-  const r = parseInt(m.substring(0, 2), 16);
-  const g = parseInt(m.substring(2, 4), 16);
-  const b = parseInt(m.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${a})`;
-};
+/** fixed category list for the quick-add / edit menu */
+const CATEGORY_LIST = ["PERS", "DATE", "LOC", "ORG", "CAMP"];
 
 const toInitialValue = (text: string): Descendant[] => [
   { type: "paragraph", children: [{ text }] },
@@ -49,6 +67,15 @@ const toInitialValue = (text: string): Descendant[] => [
 
 const toPlainTextWithNewlines = (value: Descendant[]): string =>
   (value as Descendant[]).map((n) => Node.string(n as any)).join(NEWLINE);
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const h = hex.replace("#", "");
+  const bigint = parseInt(h, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 interface Props {
   value: string;
@@ -60,14 +87,13 @@ interface Props {
 
   highlightedCategories?: string[];
 
-  /** selection reporter (global offsets) */
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
 
-  /** NEW: which spans can show a delete “×”
-   * keys are `${start}:${end}:${entity}` for spans that are user-created (deletable)
-   * if omitted, all spans are considered deletable
-   */
+  /** keys: `${start}:${end}:${entity}` */
   deletableKeys?: Set<string>;
+
+  /** adding a span via selection “…” menu or change-category */
+  onAddSpan?: (span: NerSpan) => void;
 }
 
 const NotationEditor: React.FC<Props> = ({
@@ -78,17 +104,14 @@ const NotationEditor: React.FC<Props> = ({
   onDeleteSpan,
   highlightedCategories = [],
   onSelectionChange,
-  deletableKeys,
+  onAddSpan,
 }) => {
   const editor = useMemo(() => withHistory(withReact(createEditor())), []);
   const [slateValue, setSlateValue] = useState<Descendant[]>(() =>
     toInitialValue(value)
   );
 
-  // clicked/active span (for full highlight)
   const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
-
-  // local mirror for instant UX
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
   useEffect(() => setLocalSpans(spans), [spans]);
 
@@ -97,7 +120,28 @@ const NotationEditor: React.FC<Props> = ({
     setActiveSpan(null);
   }, [value]);
 
-  /** ---- global offset index across leaves (newline-aware) ---- */
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const [selBox, setSelBox] = useState<{
+    top: number;
+    left: number;
+    start: number;
+    end: number;
+  } | null>(null);
+  const [selMenuAnchor, setSelMenuAnchor] = useState<HTMLElement | null>(null);
+
+  const [spanBox, setSpanBox] = useState<{
+    top: number;
+    left: number;
+    span: NerSpan;
+  } | null>(null);
+  const [spanMenuAnchor, setSpanMenuAnchor] = useState<HTMLElement | null>(
+    null
+  );
+
+  const suppressCloseRef = useRef(false);
+
+  /** ---- global offset index ---- */
   type LeafInfo = { path: Path; gStart: number; gEnd: number; len: number };
   const leafIndex = useMemo<LeafInfo[]>(() => {
     const leaves: LeafInfo[] = [];
@@ -125,7 +169,6 @@ const NotationEditor: React.FC<Props> = ({
     return m;
   }, [leafIndex]);
 
-  /** helper: convert a Slate point to global offset */
   const pointToGlobal = useCallback(
     (path: Path, offset: number): number => {
       const info = indexByPath.get(keyFromPath(path));
@@ -133,6 +176,39 @@ const NotationEditor: React.FC<Props> = ({
       return info.gStart + offset;
     },
     [indexByPath]
+  );
+
+  const globalToPoint = useCallback(
+    (g: number): Point => {
+      const info = leafIndex.find((lf) => g >= lf.gStart && g <= lf.gEnd);
+      if (!info) {
+        const last = leafIndex[leafIndex.length - 1];
+        return {
+          path: last?.path ?? [0, 0],
+          offset: Math.max(0, (last?.len ?? 1) - 1),
+        };
+      }
+      const offset = Math.max(0, Math.min(info.len, g - info.gStart));
+      return { path: info.path, offset };
+    },
+    [leafIndex]
+  );
+
+  /** ---- util: bubble at end of last line ---- */
+  const posFromDomRange = useCallback(
+    (domRange: globalThis.Range, containerRect: DOMRect) => {
+      const rects = Array.from(domRange.getClientRects());
+      const r =
+        rects.length > 0
+          ? rects[rects.length - 1]
+          : domRange.getBoundingClientRect();
+      const leftRaw = r.right - containerRect.left + 6;
+      const topRaw = r.top - containerRect.top - 32;
+      const left = Math.max(6, Math.min(leftRaw, containerRect.width - 36));
+      const top = Math.max(6, topRaw);
+      return { left, top, width: r.width, height: r.height };
+    },
+    []
   );
 
   /** ---- Decorations ---- */
@@ -158,10 +234,6 @@ const NotationEditor: React.FC<Props> = ({
           (highlightedCategories.length > 0 &&
             highlightedCategories.includes(s.entity));
 
-        // Only show × for deletable spans (if a list is provided)
-        const key = `${s.start}:${s.end}:${s.entity}`;
-        const isDeletable = !deletableKeys || deletableKeys.has(key);
-
         ranges.push({
           anchor: { path, offset: start - info.gStart },
           focus: { path, offset: end - info.gStart },
@@ -170,67 +242,62 @@ const NotationEditor: React.FC<Props> = ({
           spanStart: s.start,
           spanEnd: s.end,
           active: isActive,
-          // One × per span: only on the leaf containing the span start
-          showDelete:
-            isDeletable &&
-            // If the span is ACTIVE (clicked), show × on ANY leaf segment
-            (isActive ||
-              // If it’s just category-highlighted, show × only on the leaf containing the start
-              (highlightedCategories.includes(s.entity) &&
-                s.start >= info.gStart &&
-                s.start < info.gEnd)),
         });
       }
       return ranges;
     },
-    [indexByPath, localSpans, activeSpan, highlightedCategories, deletableKeys]
+    [indexByPath, localSpans, activeSpan, highlightedCategories]
   );
 
-  /** delete span */
-  const handleDelete = useCallback(
-    (span: NerSpan) => {
-      setLocalSpans((prev) =>
-        prev.filter(
-          (s) =>
-            !(
-              s.start === span.start &&
-              s.end === span.end &&
-              s.entity === span.entity
-            )
-        )
-      );
-      setActiveSpan(null);
-      onDeleteSpan?.(span);
-    },
-    [onDeleteSpan]
-  );
-
-  /** render leaf with dotted underline + optional × */
+  /** render leaf */
   const renderLeaf = useCallback(
     (props: any) => {
       const { attributes, children, leaf } = props;
 
       if (leaf.underline) {
-        const color = ENTITY_COLORS[leaf.entity as string] ?? "#37474F";
-        const bg = leaf.active ? hexToRgba(color, 0.35) : "transparent";
+        const base = ENTITY_COLORS[leaf.entity as string] ?? "#37474F";
+        const bg = hexToRgba(base, leaf.active ? 0.3 : 0.18);
+        const outline = hexToRgba(base, 0.55);
 
         const handleMouseDown: React.MouseEventHandler<HTMLSpanElement> = (
           e
         ) => {
-          e.preventDefault(); // keep caret from moving
-          if (
+          e.preventDefault();
+          e.stopPropagation();
+          suppressCloseRef.current = true;
+
+          const clicked: NerSpan = {
+            start: leaf.spanStart,
+            end: leaf.spanEnd,
+            entity: leaf.entity,
+          };
+
+          const same =
             activeSpan &&
-            activeSpan.start === leaf.spanStart &&
-            activeSpan.end === leaf.spanEnd &&
-            activeSpan.entity === leaf.entity
-          ) {
-            setActiveSpan(null);
-          } else {
-            setActiveSpan({
-              start: leaf.spanStart,
-              end: leaf.spanEnd,
-              entity: leaf.entity,
-            });
+            activeSpan.start === clicked.start &&
+            activeSpan.end === clicked.end &&
+            activeSpan.entity === clicked.entity;
+
+          setActiveSpan(same ? null : clicked);
+          setSelBox(null);
+
+          try {
+            const range: Range = {
+              anchor: globalToPoint(leaf.spanStart),
+              focus: globalToPoint(leaf.spanEnd),
+            };
+            const domRange = ReactEditor.toDOMRange(editor, range);
+            const containerRect = containerRef.current?.getBoundingClientRect();
+            if (containerRect) {
+              const p = posFromDomRange(domRange, containerRect);
+              if (p.width > 0 && p.height > 0) {
+                setSpanBox({ top: p.top, left: p.left, span: clicked });
+              } else {
+                setSpanBox(null);
+              }
+            }
+          } catch {
+            setSpanBox(null);
           }
         };
 
@@ -240,75 +307,49 @@ const NotationEditor: React.FC<Props> = ({
             onMouseDown={handleMouseDown}
             style={{
               position: "relative",
-              backgroundColor: bg,
               borderRadius: 4,
+              backgroundColor: bg,
+              boxShadow: leaf.active
+                ? `inset 0 0 0 1.5px ${outline}`
+                : undefined,
               textDecoration: "underline",
               textDecorationStyle: "dotted",
-              textDecorationColor: color,
-              textDecorationThickness: "2.5px",
-              textUnderlineOffset: "4px",
+              textDecorationColor: base,
+              textDecorationThickness: "3px",
+              textUnderlineOffset: "5px",
               cursor: "pointer",
-              color: "#1E293B",
-              transition: "background-color 0.2s ease",
-              paddingRight: leaf.showDelete ? "18px" : undefined,
+              color: COLORS.text,
+              transition: "box-shadow 0.15s ease",
             }}
             title={`${leaf.entity}`}
           >
             {children}
-            {leaf.showDelete && (
-              <span
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDelete({
-                    start: leaf.spanStart,
-                    end: leaf.spanEnd,
-                    entity: leaf.entity,
-                  });
-                }}
-                style={{
-                  position: "absolute",
-                  top: "-6px",
-                  right: "-6px",
-                  width: "16px",
-                  height: "16px",
-                  backgroundColor: "#FFFFFF",
-                  border: `1px solid ${color}`,
-                  borderRadius: "50%",
-                  fontSize: "12px",
-                  lineHeight: "14px",
-                  textAlign: "center",
-                  cursor: "pointer",
-                  color,
-                  fontWeight: "bold",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
-                  userSelect: "none",
-                  zIndex: 10,
-                }}
-              >
-                ×
-              </span>
-            )}
           </span>
         );
       }
 
       return (
-        <span {...attributes} style={{ color: "#1E293B" }}>
+        <span {...attributes} style={{ color: COLORS.text }}>
           {children}
         </span>
       );
     },
-    [activeSpan, handleDelete]
+    [activeSpan, editor, globalToPoint, posFromDomRange]
   );
 
-  /** report selection offsets on any editor change */
-  const reportSelection = useCallback(() => {
-    if (!onSelectionChange) return;
+  /** overlap check (blocks any intersection with existing spans) */
+  const selectionOverlapsExisting = useCallback(
+    (start: number, end: number) =>
+      localSpans.some((s) => !(end <= s.start || start >= s.end)),
+    [localSpans]
+  );
 
+  /** update selection overlay */
+  const updateSelectionOverlay = useCallback(() => {
     const sel = editor.selection;
-    if (!sel || !Range.isRange(sel)) {
-      onSelectionChange(null);
+    if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
+      setSelBox(null);
+      onSelectionChange?.(null);
       return;
     }
     const [startPoint, endPoint] = Range.edges(sel);
@@ -317,9 +358,137 @@ const NotationEditor: React.FC<Props> = ({
     const start = Math.min(gStart, gEnd);
     const end = Math.max(gStart, gEnd);
 
-    if (start === end) onSelectionChange(null);
-    else onSelectionChange({ start, end });
-  }, [editor, onSelectionChange, pointToGlobal]);
+    // Hide bubble if selection overlaps any existing span
+    if (selectionOverlapsExisting(start, end)) {
+      setSelBox(null);
+      onSelectionChange?.({ start, end });
+      return;
+    }
+
+    try {
+      const domRange = ReactEditor.toDOMRange(editor, sel);
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (containerRect) {
+        const p = posFromDomRange(domRange, containerRect);
+        if (p.width > 0 && p.height > 0) {
+          setSelBox({ top: p.top, left: p.left, start, end });
+        } else {
+          setSelBox(null);
+        }
+      }
+    } catch {
+      setSelBox(null);
+    }
+
+    onSelectionChange?.({ start, end });
+  }, [
+    editor,
+    pointToGlobal,
+    onSelectionChange,
+    posFromDomRange,
+    selectionOverlapsExisting,
+  ]);
+
+  /** category pick */
+  const pickCategoryForRange =
+    (start: number, end: number, currentEntity?: string) =>
+    (entity: string) => {
+      if (!onAddSpan) return;
+
+      // Block adding if selection overlaps an existing span
+      // but allow when we're editing an existing span (currentEntity defined)
+      if (!currentEntity && selectionOverlapsExisting(start, end)) {
+        closeAllUI();
+        return;
+      }
+
+      if (currentEntity && entity === currentEntity) {
+        closeAllUI();
+        return;
+      }
+
+      if (currentEntity && onDeleteSpan)
+        onDeleteSpan({ start, end, entity: currentEntity });
+      onAddSpan({ start, end, entity });
+
+      // optimistic local update for instant feedback
+      setLocalSpans((prev) => {
+        const withoutOld = currentEntity
+          ? prev.filter(
+              (s) =>
+                !(
+                  s.start === start &&
+                  s.end === end &&
+                  s.entity === currentEntity
+                )
+            )
+          : prev.slice();
+        const exists = withoutOld.some(
+          (s) => s.start === start && s.end === end && s.entity === entity
+        );
+        return exists
+          ? withoutOld
+          : [...withoutOld, { start, end, entity } as NerSpan];
+      });
+
+      closeAllUI();
+    };
+
+  const deleteCurrentSpan = () => {
+    if (spanBox && onDeleteSpan) onDeleteSpan(spanBox.span);
+    setLocalSpans((prev) =>
+      prev.filter(
+        (s) =>
+          !(
+            s.start === spanBox?.span.start &&
+            s.end === spanBox?.span.end &&
+            s.entity === spanBox?.span.entity
+          )
+      )
+    );
+    closeAllUI();
+  };
+
+  /** helpers to close UI */
+  const closeAllUI = useCallback(() => {
+    setSelBox(null);
+    setSpanBox(null);
+    setSelMenuAnchor(null);
+    setSpanMenuAnchor(null);
+    setActiveSpan(null);
+    ReactEditor.blur(editor);
+  }, [editor]);
+
+  /** close on outside click + Escape */
+  useEffect(() => {
+    const onGlobalDown = () => {
+      if (suppressCloseRef.current) {
+        suppressCloseRef.current = false;
+        return;
+      }
+      closeAllUI();
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeAllUI();
+    };
+
+    document.addEventListener("mousedown", onGlobalDown, false);
+    document.addEventListener("keydown", onKey, false);
+    return () => {
+      document.removeEventListener("mousedown", onGlobalDown, false);
+      document.removeEventListener("keydown", onKey, false);
+    };
+  }, [closeAllUI]);
+
+  /** close on scroll inside the editor pane */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => closeAllUI();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [closeAllUI]);
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -329,26 +498,26 @@ const NotationEditor: React.FC<Props> = ({
         onChange={(val) => {
           setSlateValue(val);
           onChange(toPlainTextWithNewlines(val));
-          reportSelection();
+          updateSelectionOverlay();
         }}
       >
         <Box
+          ref={containerRef}
           sx={{
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            border: "1px solid #BFD0E8",
-            borderRadius: "14px",
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.35) 100%)",
-            backdropFilter: "blur(6px)",
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: "16px",
+            background: "#FFFFFF",
             boxShadow:
-              "0 1px 0 rgba(12, 24, 38, 0.04), 0 6px 16px rgba(12, 24, 38, 0.06)",
-            "&:hover": { borderColor: "#93ACD8" },
-            "&:focus-within": { borderColor: "#7A91B4" },
-            color: "#1E293B",
+              "0 14px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.25)",
+            "&:hover": { borderColor: COLORS.borderHover },
+            "&:focus-within": { borderColor: COLORS.borderFocus },
+            color: COLORS.text,
             fontFamily: "DM Mono, monospace",
             overflow: "hidden",
+            position: "relative",
           }}
         >
           <Editable
@@ -356,13 +525,19 @@ const NotationEditor: React.FC<Props> = ({
             decorate={decorate}
             renderLeaf={renderLeaf}
             spellCheck={false}
+            onKeyDown={() => {
+              setSelBox(null);
+              setSpanBox(null);
+              setSelMenuAnchor(null);
+              setSpanMenuAnchor(null);
+            }}
             style={{
               flex: 1,
-              padding: "14px 14px 18px 14px",
+              padding: "18px 18px 22px 18px",
               minHeight: 0,
               overflowY: "auto",
               whiteSpace: "pre-wrap",
-              caretColor: "#1E293B",
+              caretColor: COLORS.text,
               position: "relative",
             }}
             renderPlaceholder={(props) => (
@@ -380,6 +555,181 @@ const NotationEditor: React.FC<Props> = ({
               </span>
             )}
           />
+
+          {/* floating selection "…" button */}
+          {selBox && (
+            <Tooltip title="Add to category">
+              <IconButton
+                size="small"
+                disableRipple
+                disableFocusRipple
+                disableTouchRipple
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  suppressCloseRef.current = true;
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelMenuAnchor(e.currentTarget);
+                }}
+                sx={{
+                  position: "absolute",
+                  top: selBox.top,
+                  left: selBox.left,
+                  width: 30,
+                  height: 30,
+                  borderRadius: "999px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid rgba(2,6,23,0.28)",
+                  boxShadow:
+                    "0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+                  "&:hover": {
+                    backgroundColor: "#ffffff",
+                    borderColor: "rgba(2,6,23,0.45)",
+                  },
+                  color: "#0F172A",
+                  zIndex: 60,
+                }}
+              >
+                <MoreHorizIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* selection categories menu */}
+          <Menu
+            anchorEl={selMenuAnchor}
+            open={!!selMenuAnchor}
+            onClose={() => setSelMenuAnchor(null)}
+            MenuListProps={{
+              dense: true,
+              onMouseDown: (e: React.MouseEvent) => {
+                e.stopPropagation();
+                suppressCloseRef.current = true;
+              },
+            }}
+            PaperProps={{
+              onMouseDown: (e: React.MouseEvent) => {
+                e.stopPropagation();
+                suppressCloseRef.current = true;
+              },
+            }}
+          >
+            {CATEGORY_LIST.map((c) => (
+              <MenuItem
+                key={c}
+                onClick={() =>
+                  selBox && pickCategoryForRange(selBox.start, selBox.end)(c)
+                }
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: ENTITY_COLORS[c] ?? "#64748B",
+                    marginRight: 8,
+                  }}
+                />
+                {c}
+              </MenuItem>
+            ))}
+          </Menu>
+
+          {/* span edit bubble (change category / delete) */}
+          {spanBox && (
+            <Tooltip title="Edit entity">
+              <IconButton
+                size="small"
+                disableRipple
+                disableFocusRipple
+                disableTouchRipple
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  suppressCloseRef.current = true;
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSpanMenuAnchor(e.currentTarget);
+                }}
+                sx={{
+                  position: "absolute",
+                  top: spanBox.top,
+                  left: spanBox.left,
+                  width: 30,
+                  height: 30,
+                  borderRadius: "999px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid rgba(2,6,23,0.28)",
+                  boxShadow:
+                    "0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+                  "&:hover": {
+                    backgroundColor: "#ffffff",
+                    borderColor: "rgba(2,6,23,0.45)",
+                  },
+                  color: "#0F172A",
+                  zIndex: 60,
+                }}
+              >
+                <MoreHorizIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          <Menu
+            anchorEl={spanMenuAnchor}
+            open={!!spanMenuAnchor}
+            onClose={() => setSpanMenuAnchor(null)}
+            MenuListProps={{
+              dense: true,
+              onMouseDown: (e: React.MouseEvent) => {
+                e.stopPropagation();
+                suppressCloseRef.current = true;
+              },
+            }}
+            PaperProps={{
+              onMouseDown: (e: React.MouseEvent) => {
+                e.stopPropagation();
+                suppressCloseRef.current = true;
+              },
+            }}
+          >
+            {spanBox &&
+              CATEGORY_LIST.map((c) => (
+                <MenuItem
+                  key={c}
+                  onClick={() =>
+                    pickCategoryForRange(
+                      spanBox.span.start,
+                      spanBox.span.end,
+                      spanBox.span.entity
+                    )(c)
+                  }
+                >
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: ENTITY_COLORS[c] ?? "#64748B",
+                      marginRight: 8,
+                    }}
+                  />
+                  {c}
+                </MenuItem>
+              ))}
+            <Divider />
+            <MenuItem
+              onClick={deleteCurrentSpan}
+              sx={{ color: "#b91c1c", fontWeight: 600 }}
+            >
+              Delete
+            </MenuItem>
+          </Menu>
         </Box>
       </Slate>
     </Box>

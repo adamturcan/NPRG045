@@ -22,8 +22,8 @@ import type { NerSpan } from "../components/editor/NotationEditor";
 
 import BookmarkBar from "../components/workspace/BookmarkBar";
 import EditorArea from "../components/workspace/EditorArea";
+import TagInput from "../components/tags/TagInput";
 import RightPanel, { type TagRow } from "../components/right/RightPanel";
-import type { ThesaurusItem } from "../components/tags/TagThesaurusInput";
 
 import { classify as apiClassify, ner as apiNer } from "../lib/api";
 
@@ -57,12 +57,32 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
   const [text, setText] = useState<string>("");
 
   const [userSpans, setUserSpans] = useState<NerSpan[]>([]);
+
+  // Add span from editor selection picker
+  const handleAddSpan = useCallback((span: NerSpan) => {
+    setUserSpans((prev) => {
+      const key = `${span.start}:${span.end}:${span.entity}`;
+      const seen = new Set(prev.map(s => `${s.start}:${s.end}:${s.entity}`));
+      if (seen.has(key)) return prev;
+      return [...prev, span];
+    });
+    if (currentId) {
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === currentId
+            ? { ...w, userSpans: [...(w.userSpans ?? []), span], updatedAt: Date.now() }
+            : w
+        )
+      );
+    }
+  }, [currentId, setWorkspaces]);
   const [apiSpans, setApiSpans] = useState<NerSpan[]>([]);
   const [deletedApiKeys, setDeletedApiKeys] = useState<Set<string>>(new Set());
 
   // Tags (persist per workspace)
   const [userTags, setUserTags] = useState<TagItem[]>([]); // source: "user"
   const [apiTags, setApiTags] = useState<TagItem[]>([]); // source: "api"
+  const [customTagInput, setCustomTagInput] = useState("");
 
   const combinedTags: TagItem[] = useMemo(() => {
     const map = new Map<string, TagItem>(); // dedupe by name+source
@@ -240,7 +260,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     }
   }, [text, currentId, setWorkspaces, showNotice]);
 
-  // 11) Tag handlers (user tags)
+  // 11) Tag input handlers (user tags)
   const addCustomTag = useCallback(
     (name: string) => {
       const tag = name.trim();
@@ -283,28 +303,16 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     [userTags, apiTags, currentId, setWorkspaces]
   );
 
-  // Thesaurus suggestion loader (replace URL/shape with your real API)
-  // Replace your fetchThesaurus with this:
-  const fetchThesaurus = async (q: string): Promise<ThesaurusItem[]> => {
-    if (!q.trim()) return [];
-    // Try true synonyms first, then fall back to similar-meaning
-    const tryOne = async (url: string) => {
-      const r = await fetch(url);
-      return (await r.json()) as Array<{ word: string }>;
-    };
-
-    const syn = await tryOne(
-      `https://api.datamuse.com/words?rel_syn=${encodeURIComponent(q)}&max=20`
-    );
-    const base = syn.length
-      ? syn
-      : await tryOne(
-          `https://api.datamuse.com/words?ml=${encodeURIComponent(q)}&max=20`
-        );
-
-    // Map to your ThesaurusItem shape
-    return base.map((d) => ({ name: d.word }));
-  };
+  const tagInputField = (
+    <TagInput
+      value={customTagInput}
+      onChange={setCustomTagInput}
+      onSubmit={() => {
+        addCustomTag(customTagInput);
+        setCustomTagInput("");
+      }}
+    />
+  );
 
   const tagRows: TagRow[] = useMemo(
     () => combinedTags.map((t) => ({ name: t.name, source: t.source })),
@@ -332,24 +340,6 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     },
     [userSpans]
   );
-
-  // Add/change span coming from NotationEditor (selection menu or category change)
-  const handleAddSpan = useCallback(
-    (span: NerSpan) => {
-      const k = keyOfSpan(span);
-      setDeletedApiKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(k);
-        return next;
-      });
-      setUserSpans((prev) => {
-        if (prev.some((s) => keyOfSpan(s) === k)) return prev;
-        return [...prev, span];
-      });
-    },
-    [setUserSpans, setDeletedApiKeys]
-  );
-
   const deletableKeys = useMemo(() => {
     const keys = new Set<string>();
     filteredApiSpans.forEach((s) => keys.add(keyOfSpan(s)));
@@ -407,7 +397,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
           deletableKeys={deletableKeys}
           onDeleteSpan={handleDeleteSpan}
           onAddSpan={handleAddSpan}
-          onSave={handleSave}
+                    onSave={handleSave}
         />
       </Box>
 
@@ -421,7 +411,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
           flexDirection: "column",
           mt: isMobile ? 2 : 4,
           p: isMobile ? 2 : 0,
-          pr: { xs: 0, sm: 1 },
+          pr: { xs: 0, sm: 1 }, // ← add this
           minHeight: 0,
           overflow: "visible",
           ml: { xs: 0, sm: 2 },
@@ -431,11 +421,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
           <RightPanel
             tags={tagRows}
             onDeleteTag={deleteTag}
-            thesaurus={{
-              onAdd: (name) => addCustomTag(name),
-              fetchSuggestions: fetchThesaurus,
-              defaultRestrictToThesaurus: false, // allow custom tags too
-            }}
+            tagInputField={tagInputField}
           />
         ) : (
           <>
@@ -456,11 +442,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
               <RightPanel
                 tags={tagRows}
                 onDeleteTag={deleteTag}
-                thesaurus={{
-                  onAdd: (name) => addCustomTag(name),
-                  fetchSuggestions: fetchThesaurus,
-                  defaultRestrictToThesaurus: false,
-                }}
+                tagInputField={tagInputField}
               />
             </Box>
           </>
