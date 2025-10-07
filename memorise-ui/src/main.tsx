@@ -6,7 +6,7 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter basename="/~55063713/memorise-ui">
+    <BrowserRouter basename="NPRG045">
       <App />
     </BrowserRouter>
   </React.StrictMode>
