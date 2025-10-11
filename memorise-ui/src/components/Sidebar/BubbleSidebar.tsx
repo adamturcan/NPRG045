@@ -139,7 +139,7 @@ const BubbleSidebar: React.FC<Props> = ({
       sx={{
         position: "fixed",
         top: 80,
-        left: 16, // ✅ push it slightly inward from the edge
+        left: 16, //  push it slightly inward from the edge
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",

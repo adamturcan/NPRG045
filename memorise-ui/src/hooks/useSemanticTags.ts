@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { TagItem } from "../types/Tag";
 import { classify as apiClassify, ner as apiNer } from "../lib/api";
-import type { NerSpan } from "../components/editor/NotationEditor";
+import type { NerSpan } from "../types/NotationEditor";
 
 type Options = {
   initialTags?: TagItem[];
@@ -70,6 +70,7 @@ export function useSemanticTags(opts?: Options) {
   const runClassify = useCallback(async () => {
     if (!text.trim()) return;
     const data = await apiClassify(text);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const newTags: TagItem[] = (data.results || []).map((r: any) => ({
       name: r.name,
       source: "api" as const,
@@ -88,6 +89,7 @@ export function useSemanticTags(opts?: Options) {
     if (!text.trim()) return;
     const data = await apiNer(text);
     setNerSpans(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (data.results ?? []).map((r: any) => ({
         start: r.start,
         end: r.end,

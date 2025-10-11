@@ -1,6 +1,6 @@
 export async function classify(text: string) {
   const res = await fetch(
-    "https://semtag-api.dev.memorise.sdu.dk/semtag/classify",
+    "https://semtag-api.dev.memorise.sdu.dk/classify",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -12,7 +12,7 @@ export async function classify(text: string) {
 }
 
 export async function ner(text: string) {
-  const res = await fetch("https://semtag-api.dev.memorise.sdu.dk/ner/ner", {
+  const res = await fetch("https://ner-api.dev.memorise.sdu.dk/recognize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),

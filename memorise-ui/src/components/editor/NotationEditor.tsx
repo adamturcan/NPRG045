@@ -1,4 +1,34 @@
 // src/components/editor/NotationEditor.tsx
+/**
+ * NotationEditor - Main NER (Named Entity Recognition) annotation editor
+ * 
+ * This is a full-featured text annotation editor built on Slate.js that allows users to:
+ * - Edit text content
+ * - Select text and annotate it with entity categories (Person, Location, Organization, etc.)
+ * - Click existing annotations to edit or delete them
+ * - Prevent overlapping annotations
+ * 
+ * ARCHITECTURE:
+ * 
+ * 1. Coordinate System:
+ *    - Slate uses Path/Offset for internal positioning (e.g., [0, 0], offset: 5)
+ *    - We use "global offsets" for API communication (single integer positions)
+ *    - leafIndex maps between these two coordinate systems
+ * 
+ * 2. Decorations:
+ *    - Entity spans are rendered using Slate's decoration system
+ *    - The decorate() function converts global offsets to Slate ranges
+ *    - Each decoration adds underline/entity properties to leaf nodes
+ * 
+ * 3. UI Bubbles:
+ *    - SelectionBubble: Appears when text is selected (for new annotations)
+ *    - SpanBubble: Appears when an annotation is clicked (for editing)
+ *    - Both position themselves relative to the EditorContainer
+ * 
+ * 4. Event Handling:
+ *    - suppressCloseRef prevents bubbles from closing during interaction
+ *    - Outside clicks, Escape key, and scroll events close all UI
+ */
 import React, {
   useEffect,
   useMemo,
@@ -6,97 +36,35 @@ import React, {
   useState,
   useRef,
 } from "react";
-import { createEditor, Node, Path, Editor, Text, Range, Point } from "slate";
-import type { Descendant, BaseEditor } from "slate";
+import { createEditor, Path, Editor, Text, Range, Point } from "slate";
+import type { Descendant } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
-import { withHistory, HistoryEditor } from "slate-history";
-import {
-  Box,
-  IconButton,
-  Menu,
-  MenuItem,
-  Tooltip,
-  Divider,
-} from "@mui/material";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import { withHistory } from "slate-history";
+import { Box } from "@mui/material";
 
-/** ---- Slate custom types ---- */
-type ParagraphElement = { type: "paragraph"; children: { text: string }[] };
+// Import types and constants
+import type { 
+  NotationEditorProps, 
+  NerSpan, 
+  SelectionBox, 
+  SpanBox, 
+  LeafInfo 
+} from "../../types/NotationEditor";
+import { 
+  NEWLINE, 
+  COLORS, 
+  toInitialValue, 
+  toPlainTextWithNewlines 
+} from "../../constants/notationEditor";
 
-declare module "slate" {
-  interface CustomTypes {
-    Editor: BaseEditor & ReactEditor & HistoryEditor;
-    Element: ParagraphElement;
-    Text: { text: string };
-  }
-}
+// Import subcomponents
+import EntityLeaf from "./EntityLeaf";
+import SelectionBubble from "./SelectionBubble";
+import SpanBubble from "./SpanBubble";
+import CategoryMenu from "./CategoryMenu";
+import EditorContainer from "./EditorContainer";
 
-/** ---- Span type ---- */
-export type NerSpan = {
-  start: number;
-  end: number;
-  entity: string;
-  score?: number;
-};
-
-const NEWLINE = "\n";
-
-/** App palette */
-const COLORS = {
-  text: "#0F172A",
-  border: "#E2E8F0",
-  borderHover: "#CBD5E1",
-  borderFocus: "#94A3B8",
-};
-
-/** visible entity colors */
-const ENTITY_COLORS: Record<string, string> = {
-  PERS: "#C2185B",
-  DATE: "#1976D2",
-  LOC: "#388E3C",
-  ORG: "#F57C00",
-  CAMP: "#6A1B9A",
-};
-
-/** fixed category list for the quick-add / edit menu */
-const CATEGORY_LIST = ["PERS", "DATE", "LOC", "ORG", "CAMP"];
-
-const toInitialValue = (text: string): Descendant[] => [
-  { type: "paragraph", children: [{ text }] },
-];
-
-const toPlainTextWithNewlines = (value: Descendant[]): string =>
-  (value as Descendant[]).map((n) => Node.string(n as any)).join(NEWLINE);
-
-const hexToRgba = (hex: string, alpha: number) => {
-  const h = hex.replace("#", "");
-  const bigint = parseInt(h, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-interface Props {
-  value: string;
-  onChange: (text: string) => void;
-  placeholder?: string;
-
-  spans?: NerSpan[];
-  onDeleteSpan?: (span: NerSpan) => void;
-
-  highlightedCategories?: string[];
-
-  onSelectionChange?: (sel: { start: number; end: number } | null) => void;
-
-  /** keys: `${start}:${end}:${entity}` */
-  deletableKeys?: Set<string>;
-
-  /** adding a span via selection “…” menu or change-category */
-  onAddSpan?: (span: NerSpan) => void;
-}
-
-const NotationEditor: React.FC<Props> = ({
+const NotationEditor: React.FC<NotationEditorProps> = ({
   value,
   onChange,
   placeholder,
@@ -106,53 +74,69 @@ const NotationEditor: React.FC<Props> = ({
   onSelectionChange,
   onAddSpan,
 }) => {
-  const editor = useMemo(() => withHistory(withReact(createEditor())), []);
+  // Initialize Slate editor with React and History plugins
+  const editor = useMemo(() => {
+    const baseEditor = createEditor();
+    return withHistory(withReact(baseEditor));
+  }, []);
+
+  // Internal Slate document state
   const [slateValue, setSlateValue] = useState<Descendant[]>(() =>
     toInitialValue(value)
   );
 
+  // Track the currently clicked/active annotation span
   const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
+  
+  // Local copy of spans for optimistic UI updates
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
   useEffect(() => setLocalSpans(spans), [spans]);
 
+  // Sync internal state when external value prop changes
   useEffect(() => {
     setSlateValue(toInitialValue(value));
     setActiveSpan(null);
   }, [value]);
 
+  // Container ref used to calculate bubble positions
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const [selBox, setSelBox] = useState<{
-    top: number;
-    left: number;
-    start: number;
-    end: number;
-  } | null>(null);
+  // Selection bubble state (for new annotations)
+  const [selBox, setSelBox] = useState<SelectionBox | null>(null);
   const [selMenuAnchor, setSelMenuAnchor] = useState<HTMLElement | null>(null);
 
-  const [spanBox, setSpanBox] = useState<{
-    top: number;
-    left: number;
-    span: NerSpan;
-  } | null>(null);
+  // Span bubble state (for editing existing annotations)
+  const [spanBox, setSpanBox] = useState<SpanBox | null>(null);
   const [spanMenuAnchor, setSpanMenuAnchor] = useState<HTMLElement | null>(
     null
   );
 
+  // Flag to prevent bubbles from closing during interaction
   const suppressCloseRef = useRef(false);
 
-  /** ---- global offset index ---- */
-  type LeafInfo = { path: Path; gStart: number; gEnd: number; len: number };
+  /**
+   * ============================================================================
+   * COORDINATE SYSTEM: Converting between Slate paths and global offsets
+   * ============================================================================
+   * 
+   * Slate uses [path, offset] (e.g., [0, 0], 5) to identify positions.
+   * The API uses global integer offsets (e.g., 42).
+   * 
+   * leafIndex: Array of all text leaves with their global start/end positions
+   * indexByPath: Map for quick lookup of leaf info by path
+   */
   const leafIndex = useMemo<LeafInfo[]>(() => {
     const leaves: LeafInfo[] = [];
-    let g = 0;
+    let g = 0; // Global offset counter
     let prevBlock: Path | null = null;
 
+    // Walk through all text nodes in the document
     for (const [node, path] of Editor.nodes(editor, {
       at: [],
       match: Text.isText,
     })) {
       const parent = Path.parent(path);
+      // Add newline length when crossing block boundaries
       if (prevBlock && !Path.equals(parent, prevBlock)) g += NEWLINE.length;
       const len = (node as Text).text.length;
       leaves.push({ path, gStart: g, gEnd: g + len, len });
@@ -160,15 +144,22 @@ const NotationEditor: React.FC<Props> = ({
       prevBlock = parent;
     }
     return leaves;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, slateValue]);
 
+  // Helper to create map keys from paths
   const keyFromPath = (p: number[]) => p.join(".");
+  
+  // Index for quick path-to-info lookups
   const indexByPath = useMemo(() => {
     const m = new Map<string, LeafInfo>();
     for (const info of leafIndex) m.set(keyFromPath(info.path), info);
     return m;
   }, [leafIndex]);
 
+  /**
+   * Convert Slate point (path + offset) to global offset
+   */
   const pointToGlobal = useCallback(
     (path: Path, offset: number): number => {
       const info = indexByPath.get(keyFromPath(path));
@@ -178,10 +169,14 @@ const NotationEditor: React.FC<Props> = ({
     [indexByPath]
   );
 
+  /**
+   * Convert global offset to Slate point (path + offset)
+   */
   const globalToPoint = useCallback(
     (g: number): Point => {
       const info = leafIndex.find((lf) => g >= lf.gStart && g <= lf.gEnd);
       if (!info) {
+        // Fallback to end of document
         const last = leafIndex[leafIndex.length - 1];
         return {
           path: last?.path ?? [0, 0],
@@ -194,16 +189,21 @@ const NotationEditor: React.FC<Props> = ({
     [leafIndex]
   );
 
-  /** ---- util: bubble at end of last line ---- */
+  /**
+   * Calculate bubble position from a DOM range
+   * Positions the bubble at the end of the last line of the selection/span
+   */
   const posFromDomRange = useCallback(
     (domRange: globalThis.Range, containerRect: DOMRect) => {
       const rects = Array.from(domRange.getClientRects());
+      // Use the last rect (end of selection)
       const r =
         rects.length > 0
           ? rects[rects.length - 1]
           : domRange.getBoundingClientRect();
       const leftRaw = r.right - containerRect.left + 6;
       const topRaw = r.top - containerRect.top - 32;
+      // Clamp position to stay within container
       const left = Math.max(6, Math.min(leftRaw, containerRect.width - 36));
       const top = Math.max(6, topRaw);
       return { left, top, width: r.width, height: r.height };
@@ -211,21 +211,34 @@ const NotationEditor: React.FC<Props> = ({
     []
   );
 
-  /** ---- Decorations ---- */
+  /**
+   * ============================================================================
+   * DECORATIONS: Apply visual styling to annotated spans
+   * ============================================================================
+   * 
+   * Slate's decorate function is called for each text node to determine what
+   * visual properties (decorations) should be applied. We use this to add
+   * underline/entity properties to text that falls within annotation spans.
+   */
   const decorate = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (entry: [any, Path]) => {
       const [node, path] = entry;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ranges: any[] = [];
       if (!Text.isText(node)) return ranges;
 
+      // Get the global offset range for this text node
       const info = indexByPath.get(keyFromPath(path));
       if (!info) return ranges;
 
+      // Check each span to see if it overlaps this text node
       for (const s of localSpans) {
         const start = Math.max(s.start, info.gStart);
         const end = Math.min(s.end, info.gEnd);
-        if (end <= start) continue;
+        if (end <= start) continue; // No overlap
 
+        // Determine if this span should be highlighted
         const isActive =
           (!!activeSpan &&
             activeSpan.start === s.start &&
@@ -234,6 +247,7 @@ const NotationEditor: React.FC<Props> = ({
           (highlightedCategories.length > 0 &&
             highlightedCategories.includes(s.entity));
 
+        // Add decoration range for this span
         ranges.push({
           anchor: { path, offset: start - info.gStart },
           focus: { path, offset: end - info.gStart },
@@ -249,42 +263,29 @@ const NotationEditor: React.FC<Props> = ({
     [indexByPath, localSpans, activeSpan, highlightedCategories]
   );
 
-  /** render leaf */
-  const renderLeaf = useCallback(
+  /**
+   * Custom leaf renderer that delegates to EntityLeaf component
+   * Handles span click events to show/hide the SpanBubble
+   */
+  const renderLeaf = useCallback( 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (props: any) => {
       const { attributes, children, leaf } = props;
 
-      if (leaf.underline) {
-        const base = ENTITY_COLORS[leaf.entity as string] ?? "#37474F";
-        const bg = hexToRgba(base, leaf.active ? 0.3 : 0.18);
-        const outline = hexToRgba(base, 0.55);
-
-        const handleMouseDown: React.MouseEventHandler<HTMLSpanElement> = (
-          e
-        ) => {
-          e.preventDefault();
-          e.stopPropagation();
-          suppressCloseRef.current = true;
-
-          const clicked: NerSpan = {
-            start: leaf.spanStart,
-            end: leaf.spanEnd,
-            entity: leaf.entity,
-          };
-
-          const same =
-            activeSpan &&
-            activeSpan.start === clicked.start &&
-            activeSpan.end === clicked.end &&
-            activeSpan.entity === clicked.entity;
-
-          setActiveSpan(same ? null : clicked);
-          setSelBox(null);
+      /**
+       * Handle when user clicks on an annotated span
+       */
+      const handleSpanClick = (clicked: NerSpan | null) => {
+        if (clicked) {
+          // Show the SpanBubble for editing
+          setActiveSpan(clicked);
+          setSelBox(null); // Hide selection bubble if visible
 
           try {
+            // Calculate bubble position
             const range: Range = {
-              anchor: globalToPoint(leaf.spanStart),
-              focus: globalToPoint(leaf.spanEnd),
+              anchor: globalToPoint(clicked.start),
+              focus: globalToPoint(clicked.end),
             };
             const domRange = ReactEditor.toDOMRange(editor, range);
             const containerRect = containerRef.current?.getBoundingClientRect();
@@ -299,59 +300,56 @@ const NotationEditor: React.FC<Props> = ({
           } catch {
             setSpanBox(null);
           }
-        };
-
-        return (
-          <span
-            {...attributes}
-            onMouseDown={handleMouseDown}
-            style={{
-              position: "relative",
-              borderRadius: 4,
-              backgroundColor: bg,
-              boxShadow: leaf.active
-                ? `inset 0 0 0 1.5px ${outline}`
-                : undefined,
-              textDecoration: "underline",
-              textDecorationStyle: "dotted",
-              textDecorationColor: base,
-              textDecorationThickness: "3px",
-              textUnderlineOffset: "5px",
-              cursor: "pointer",
-              color: COLORS.text,
-              transition: "box-shadow 0.15s ease",
-            }}
-            title={`${leaf.entity}`}
-          >
-            {children}
-          </span>
-        );
-      }
+        } else {
+          // Deselect
+          setActiveSpan(null);
+          setSpanBox(null);
+        }
+      };
 
       return (
-        <span {...attributes} style={{ color: COLORS.text }}>
-          {children}
-        </span>
+        <EntityLeaf
+          attributes={attributes}
+          children={children}
+          leaf={leaf}
+          onSpanClick={handleSpanClick}
+          activeSpan={activeSpan}
+        />
       );
     },
     [activeSpan, editor, globalToPoint, posFromDomRange]
   );
 
-  /** overlap check (blocks any intersection with existing spans) */
+  /**
+   * Check if a selection overlaps with any existing annotation
+   * Returns true if there's any intersection
+   */
   const selectionOverlapsExisting = useCallback(
     (start: number, end: number) =>
       localSpans.some((s) => !(end <= s.start || start >= s.end)),
     [localSpans]
   );
 
-  /** update selection overlay */
+  /**
+   * ============================================================================
+   * SELECTION HANDLING: Show/hide the SelectionBubble
+   * ============================================================================
+   * 
+   * Called whenever the editor selection changes. Determines whether to show
+   * the SelectionBubble based on:
+   * - Is there a non-collapsed selection?
+   * - Does it overlap with existing annotations?
+   */
   const updateSelectionOverlay = useCallback(() => {
     const sel = editor.selection;
+    // No selection or cursor only (collapsed)
     if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
       setSelBox(null);
       onSelectionChange?.(null);
       return;
     }
+
+    // Convert selection to global offsets
     const [startPoint, endPoint] = Range.edges(sel);
     const gStart = pointToGlobal(startPoint.path, startPoint.offset);
     const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
@@ -365,6 +363,7 @@ const NotationEditor: React.FC<Props> = ({
       return;
     }
 
+    // Calculate bubble position
     try {
       const domRange = ReactEditor.toDOMRange(editor, sel);
       const containerRect = containerRef.current?.getBoundingClientRect();
@@ -375,6 +374,8 @@ const NotationEditor: React.FC<Props> = ({
         } else {
           setSelBox(null);
         }
+      } else {
+        setSelBox(null);
       }
     } catch {
       setSelBox(null);
@@ -389,7 +390,16 @@ const NotationEditor: React.FC<Props> = ({
     selectionOverlapsExisting,
   ]);
 
-  /** category pick */
+  /**
+   * ============================================================================
+   * ANNOTATION ACTIONS: Add, edit, delete
+   * ============================================================================
+   */
+
+  /**
+   * Create a category picker function for a specific text range
+   * Used by both SelectionBubble (new annotation) and SpanBubble (edit)
+   */
   const pickCategoryForRange =
     (start: number, end: number, currentEntity?: string) =>
     (entity: string) => {
@@ -402,16 +412,20 @@ const NotationEditor: React.FC<Props> = ({
         return;
       }
 
+      // No change - same entity selected
       if (currentEntity && entity === currentEntity) {
         closeAllUI();
         return;
       }
 
+      // If editing, delete the old annotation first
       if (currentEntity && onDeleteSpan)
         onDeleteSpan({ start, end, entity: currentEntity });
+      
+      // Add the new annotation
       onAddSpan({ start, end, entity });
 
-      // optimistic local update for instant feedback
+      // Optimistic local update for instant visual feedback
       setLocalSpans((prev) => {
         const withoutOld = currentEntity
           ? prev.filter(
@@ -434,8 +448,13 @@ const NotationEditor: React.FC<Props> = ({
       closeAllUI();
     };
 
+  /**
+   * Delete the currently active annotation span
+   */
   const deleteCurrentSpan = () => {
     if (spanBox && onDeleteSpan) onDeleteSpan(spanBox.span);
+    
+    // Remove from local state
     setLocalSpans((prev) =>
       prev.filter(
         (s) =>
@@ -449,7 +468,9 @@ const NotationEditor: React.FC<Props> = ({
     closeAllUI();
   };
 
-  /** helpers to close UI */
+  /**
+   * Close all bubbles and menus
+   */
   const closeAllUI = useCallback(() => {
     setSelBox(null);
     setSpanBox(null);
@@ -459,7 +480,16 @@ const NotationEditor: React.FC<Props> = ({
     ReactEditor.blur(editor);
   }, [editor]);
 
-  /** close on outside click + Escape */
+  /**
+   * ============================================================================
+   * EVENT HANDLERS: Close UI on outside clicks, Escape, scroll
+   * ============================================================================
+   */
+
+  /**
+   * Close bubbles on outside clicks and Escape key
+   * suppressCloseRef prevents closing during bubble/menu interaction
+   */
   useEffect(() => {
     const onGlobalDown = () => {
       if (suppressCloseRef.current) {
@@ -481,7 +511,10 @@ const NotationEditor: React.FC<Props> = ({
     };
   }, [closeAllUI]);
 
-  /** close on scroll inside the editor pane */
+  /**
+   * Close bubbles when scrolling the editor
+   * (otherwise bubble positions become incorrect)
+   */
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -490,6 +523,41 @@ const NotationEditor: React.FC<Props> = ({
     return () => el.removeEventListener("scroll", onScroll);
   }, [closeAllUI]);
 
+  /**
+   * Bubble event handlers that prevent accidental closing
+   */
+  const handleSelectionMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    suppressCloseRef.current = true;
+  };
+
+  const handleSelectionClick = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    setSelMenuAnchor(e.currentTarget);
+  };
+
+  const handleSpanMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    suppressCloseRef.current = true;
+  };
+
+  const handleSpanClick = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    setSpanMenuAnchor(e.currentTarget);
+  };
+
+  const handleMenuMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    suppressCloseRef.current = true;
+  };
+
+  /**
+   * ============================================================================
+   * RENDER
+   * ============================================================================
+   */
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Slate
@@ -501,35 +569,30 @@ const NotationEditor: React.FC<Props> = ({
           updateSelectionOverlay();
         }}
       >
-        <Box
-          ref={containerRef}
-          sx={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: "16px",
-            background: "#FFFFFF",
-            boxShadow:
-              "0 14px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.25)",
-            "&:hover": { borderColor: COLORS.borderHover },
-            "&:focus-within": { borderColor: COLORS.borderFocus },
-            color: COLORS.text,
-            fontFamily: "DM Mono, monospace",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
+        <EditorContainer containerRef={containerRef}>
           <Editable
             placeholder={placeholder ?? "Paste text here or upload file"}
             decorate={decorate}
             renderLeaf={renderLeaf}
             spellCheck={false}
-            onKeyDown={() => {
-              setSelBox(null);
-              setSpanBox(null);
-              setSelMenuAnchor(null);
-              setSpanMenuAnchor(null);
+            onKeyDown={(event) => {
+              // Only clear UI state for specific keys that should close the bubble
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeAllUI();
+              } else if (event.key === "Enter" || event.key === " ") {
+                // Clear selection bubble on Enter or Space
+                setSelBox(null);
+                setSpanBox(null);
+                setSelMenuAnchor(null);
+                setSpanMenuAnchor(null);
+              }
+              // For other keys (typing, arrow keys, backspace), don't clear the bubble
+              // Let the selection change naturally trigger updateSelectionOverlay
+            }}
+            onSelect={() => {
+              // Update selection overlay when selection changes
+              updateSelectionOverlay();
             }}
             style={{
               flex: 1,
@@ -556,181 +619,51 @@ const NotationEditor: React.FC<Props> = ({
             )}
           />
 
-          {/* floating selection "…" button */}
+          {/* Floating selection "..." button for new annotations */}
           {selBox && (
-            <Tooltip title="Add to category">
-              <IconButton
-                size="small"
-                disableRipple
-                disableFocusRipple
-                disableTouchRipple
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  suppressCloseRef.current = true;
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelMenuAnchor(e.currentTarget);
-                }}
-                sx={{
-                  position: "absolute",
-                  top: selBox.top,
-                  left: selBox.left,
-                  width: 30,
-                  height: 30,
-                  borderRadius: "999px",
-                  backgroundColor: "#ffffff",
-                  border: "1px solid rgba(2,6,23,0.28)",
-                  boxShadow:
-                    "0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
-                  "&:hover": {
-                    backgroundColor: "#ffffff",
-                    borderColor: "rgba(2,6,23,0.45)",
-                  },
-                  color: "#0F172A",
-                  zIndex: 60,
-                }}
-              >
-                <MoreHorizIcon sx={{ fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
+            <SelectionBubble
+              selectionBox={selBox}
+              onMenuClick={handleSelectionClick}
+              onMouseDown={handleSelectionMouseDown}
+            />
           )}
 
-          {/* selection categories menu */}
-          <Menu
+          {/* Category menu for new annotations */}
+          <CategoryMenu
             anchorEl={selMenuAnchor}
-            open={!!selMenuAnchor}
             onClose={() => setSelMenuAnchor(null)}
-            MenuListProps={{
-              dense: true,
-              onMouseDown: (e: React.MouseEvent) => {
-                e.stopPropagation();
-                suppressCloseRef.current = true;
-              },
-            }}
-            PaperProps={{
-              onMouseDown: (e: React.MouseEvent) => {
-                e.stopPropagation();
-                suppressCloseRef.current = true;
-              },
-            }}
-          >
-            {CATEGORY_LIST.map((c) => (
-              <MenuItem
-                key={c}
-                onClick={() =>
-                  selBox && pickCategoryForRange(selBox.start, selBox.end)(c)
-                }
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    background: ENTITY_COLORS[c] ?? "#64748B",
-                    marginRight: 8,
-                  }}
-                />
-                {c}
-              </MenuItem>
-            ))}
-          </Menu>
+            onCategorySelect={(category) =>
+              selBox && pickCategoryForRange(selBox.start, selBox.end)(category)
+            }
+            onMouseDown={handleMenuMouseDown}
+          />
 
-          {/* span edit bubble (change category / delete) */}
+          {/* Floating "..." button for editing existing annotations */}
           {spanBox && (
-            <Tooltip title="Edit entity">
-              <IconButton
-                size="small"
-                disableRipple
-                disableFocusRipple
-                disableTouchRipple
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  suppressCloseRef.current = true;
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSpanMenuAnchor(e.currentTarget);
-                }}
-                sx={{
-                  position: "absolute",
-                  top: spanBox.top,
-                  left: spanBox.left,
-                  width: 30,
-                  height: 30,
-                  borderRadius: "999px",
-                  backgroundColor: "#ffffff",
-                  border: "1px solid rgba(2,6,23,0.28)",
-                  boxShadow:
-                    "0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
-                  "&:hover": {
-                    backgroundColor: "#ffffff",
-                    borderColor: "rgba(2,6,23,0.45)",
-                  },
-                  color: "#0F172A",
-                  zIndex: 60,
-                }}
-              >
-                <MoreHorizIcon sx={{ fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
+            <SpanBubble
+              spanBox={spanBox}
+              onMenuClick={handleSpanClick}
+              onMouseDown={handleSpanMouseDown}
+            />
           )}
 
-          <Menu
+          {/* Category menu for editing (includes Delete option) */}
+          <CategoryMenu
             anchorEl={spanMenuAnchor}
-            open={!!spanMenuAnchor}
             onClose={() => setSpanMenuAnchor(null)}
-            MenuListProps={{
-              dense: true,
-              onMouseDown: (e: React.MouseEvent) => {
-                e.stopPropagation();
-                suppressCloseRef.current = true;
-              },
-            }}
-            PaperProps={{
-              onMouseDown: (e: React.MouseEvent) => {
-                e.stopPropagation();
-                suppressCloseRef.current = true;
-              },
-            }}
-          >
-            {spanBox &&
-              CATEGORY_LIST.map((c) => (
-                <MenuItem
-                  key={c}
-                  onClick={() =>
-                    pickCategoryForRange(
-                      spanBox.span.start,
-                      spanBox.span.end,
-                      spanBox.span.entity
-                    )(c)
-                  }
-                >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: ENTITY_COLORS[c] ?? "#64748B",
-                      marginRight: 8,
-                    }}
-                  />
-                  {c}
-                </MenuItem>
-              ))}
-            <Divider />
-            <MenuItem
-              onClick={deleteCurrentSpan}
-              sx={{ color: "#b91c1c", fontWeight: 600 }}
-            >
-              Delete
-            </MenuItem>
-          </Menu>
-        </Box>
+            onCategorySelect={(category) =>
+              spanBox &&
+              pickCategoryForRange(
+                spanBox.span.start,
+                spanBox.span.end,
+                spanBox.span.entity
+              )(category)
+            }
+            onMouseDown={handleMenuMouseDown}
+            showDelete={true}
+            onDelete={deleteCurrentSpan}
+          />
+        </EditorContainer>
       </Slate>
     </Box>
   );
