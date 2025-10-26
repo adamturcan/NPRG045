@@ -30,6 +30,17 @@ jobs:
         working-directory: memorise-ui
         run: npm ci
 
+      - name: Build thesaurus index (if available)
+        working-directory: memorise-ui
+        run: |
+          if [ -f "public/thesaurus-full.json" ]; then
+            echo "Building thesaurus index..."
+            npm run build:thesaurus
+          else
+            echo " Warning: thesaurus-full.json not found, skipping thesaurus build"
+            echo " (This is OK if you don't need thesaurus functionality)"
+          fi
+
       - name: Build
         working-directory: memorise-ui
         run: |
