@@ -23,8 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Thesaurus files (large, don't commit to git)
-public/thesaurus-full.json
+# Thesaurus files
+# Note: thesaurus-full.json is NOW tracked for GitHub Pages deployment
 public/thesaurus-index.json
 
 # Cursor-generated documentation

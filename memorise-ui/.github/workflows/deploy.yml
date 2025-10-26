@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: memorise-ui/package-lock.json
+
+      - name: Install deps
+        working-directory: memorise-ui
+        run: npm ci
+
+      - name: Build thesaurus index (if available)
+        working-directory: memorise-ui
+        run: |
+          if [ -f "public/thesaurus-full.json" ]; then
+            echo "Building thesaurus index..."
+            npm run build:thesaurus
+          else
+            echo "⚠️  Warning: thesaurus-full.json not found, skipping thesaurus build"
+            echo "   (This is OK if you don't need thesaurus functionality)"
+          fi
+
+      - name: Build
+        working-directory: memorise-ui
+        run: |
+          npm run build
+          # SPA fallback so /routes work on Pages
+          cp dist/index.html dist/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: memorise-ui/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
