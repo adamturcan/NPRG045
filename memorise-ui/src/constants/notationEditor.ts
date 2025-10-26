@@ -14,15 +14,18 @@ export const COLORS = {
 
 /** visible entity colors */
 export const ENTITY_COLORS: Record<string, string> = {
-  PERS: "#C2185B",
-  DATE: "#1976D2",
-  LOC: "#388E3C",
-  ORG: "#F57C00",
-  CAMP: "#6A1B9A",
+  PER: "#C2185B",      // Person (magenta)
+  PERS: "#C2185B",     // Person (magenta) - alternative
+  DATE: "#1976D2",     // Date (blue)
+  LOC: "#388E3C",      // Location (green)
+  ORG: "#F57C00",      // Organization (orange)
+  CAMP: "#6A1B9A",    // Camp (purple)
+  GHETTO: "#9C27B0",   // Ghetto (purple)
+  MISC: "#607D8B",     // Miscellaneous (blue-grey)
 } as const;
 
 /** fixed category list for the quick-add / edit menu */
-export const CATEGORY_LIST = ["PERS", "DATE", "LOC", "ORG", "CAMP"] as const;
+export const CATEGORY_LIST = ["PER", "LOC", "GHETTO", "DATE", "ORG", "CAMP"] as const;
 
 export const toInitialValue = (text: string): Descendant[] => [
   { type: "paragraph", children: [{ text }] },

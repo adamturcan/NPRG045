@@ -19,6 +19,8 @@ import WorkspacePage from "./pages/WorkspacePage";
 import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
 import BubbleSidebar from "./components/Sidebar/BubbleSidebar";
 import LoginPage from "./pages/LoginPage";
+import { useWorkspaceStore } from "./stores/workspaceStore";
+import { WorkspaceService } from "./services/workspaceService";
 
 import type { Workspace } from "./types/Workspace";
 
@@ -42,75 +44,6 @@ let theme = createTheme({
 theme = responsiveFontSizes(theme);
 
 const USER_KEY = "memorise.user.v1";
-const BASE_WS_KEY = "memorise.workspaces.v1";
-const keyForUser = (u: string) => `${BASE_WS_KEY}:${u}`;
-
-/* ---------------- helpers ---------------- */
-
-const seedForUser = (owner: string): Workspace[] => [
-  {
-    id: crypto.randomUUID(),
-    name: "Workspace A",
-    isTemporary: false,
-    text: "",
-    userSpans: [],
-    updatedAt: Date.now(),
-    owner,
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "Workspace B",
-    isTemporary: false,
-    text: "",
-    userSpans: [],
-    updatedAt: Date.now(),
-    owner,
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "Workspace C",
-    isTemporary: false,
-    text: "",
-    userSpans: [],
-    updatedAt: Date.now(),
-    owner,
-  },
-];
-
-function normalizeOwner(arr: unknown, owner: string): Workspace[] {
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .filter((x) => x && typeof x === "object")
-    .map((w: any) => ({
-      ...w,
-      owner: w?.owner ?? owner,
-      text: typeof w?.text === "string" ? w.text : "",
-      userSpans: Array.isArray(w?.userSpans) ? w.userSpans : [],
-      updatedAt: typeof w?.updatedAt === "number" ? w.updatedAt : Date.now(),
-    })) as Workspace[];
-}
-
-function loadForUser(user: string): Workspace[] | null {
-  try {
-    const perUser = localStorage.getItem(keyForUser(user));
-    if (perUser) return normalizeOwner(JSON.parse(perUser), user);
-
-    // migrate old single-bucket storage if present
-    const legacy = localStorage.getItem(BASE_WS_KEY);
-    if (legacy) {
-      const migrated = normalizeOwner(JSON.parse(legacy), user);
-      localStorage.setItem(keyForUser(user), JSON.stringify(migrated));
-      return migrated;
-    }
-  } catch {}
-  return null;
-}
-
-function saveForUser(user: string, workspaces: Workspace[]) {
-  try {
-    localStorage.setItem(keyForUser(user), JSON.stringify(workspaces));
-  } catch {}
-}
 
 /* --- helper route for /workspace/new: create + redirect --- */
 const NewWorkspaceRedirect: React.FC<{
@@ -140,32 +73,38 @@ const App: React.FC = () => {
     localStorage.getItem(USER_KEY)
   );
 
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [booted, setBooted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Zustand store
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
+  const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
 
-  // Boot: load user’s workspaces exactly once after username is known
+  // Wrapper function to update workspaces array (for compatibility with old setWorkspaces API)
+  const setWorkspaces = (updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
+    const newWorkspaces = typeof updater === 'function' 
+      ? updater(workspaces)
+      : updater;
+    useWorkspaceStore.setState({ workspaces: newWorkspaces });
+  };
+
+  // Boot: load user's workspaces exactly once after username is known
   useEffect(() => {
     if (!username) {
-      setWorkspaces([]);
       setBooted(true);
       return;
     }
-    const loaded = loadForUser(username);
-    if (loaded && loaded.length) {
-      setWorkspaces(loaded);
-    } else {
-      const seeded = seedForUser(username);
-      setWorkspaces(seeded);
-      saveForUser(username, seeded);
-    }
-    setBooted(true);
+    loadWorkspaces(username).then(() => {
+      setBooted(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   // Persist whenever workspaces change — but only after boot
   useEffect(() => {
     if (!booted || !username) return;
-    saveForUser(username, workspaces);
+    WorkspaceService.saveForUser(username, workspaces);
   }, [booted, username, workspaces]);
 
   // Login / logout
@@ -179,7 +118,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem(USER_KEY);
     setUsername(null);
-    setWorkspaces([]);
+    useWorkspaceStore.setState({ workspaces: [] });
     setBooted(true);
     navigate("/login");
   };
@@ -190,29 +129,31 @@ const App: React.FC = () => {
     const newCount = workspaces.filter((w) =>
       w.name.startsWith("New Workspace")
     ).length;
-    const ws: Workspace = {
-      id: crypto.randomUUID(),
-      name: `New Workspace #${newCount + 1}`,
-      isTemporary: true,
-      text: "",
-      userSpans: [],
-      updatedAt: Date.now(),
-      owner: username,
-    };
-    setWorkspaces((prev) => [ws, ...prev]);
+    const ws = WorkspaceService.createWorkspace(
+      username,
+      `New Workspace #${newCount + 1}`
+    );
+    createWorkspaceAction({
+      name: ws.name,
+      isTemporary: ws.isTemporary,
+      text: ws.text,
+      userSpans: ws.userSpans,
+      owner: ws.owner,
+      updatedAt: ws.updatedAt,
+    });
     return ws;
   };
 
-  // Keep “recent” 3 by moving opened one to the front
+  // Keep "recent" 3 by moving opened one to the front
   const bumpWorkspaceToFront = (id: string) => {
-    setWorkspaces((prev) => {
-      const idx = prev.findIndex((w) => w.id === id);
-      if (idx <= 0) return prev;
-      const next = prev.slice();
-      const [item] = next.splice(idx, 1);
-      next.unshift(item);
-      return next;
-    });
+    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
+    const idx = currentWorkspaces.findIndex((w) => w.id === id);
+    if (idx <= 0) return;
+    const next = [...currentWorkspaces];
+    const [item] = next.splice(idx, 1);
+    next.unshift(item);
+    // Use Zustand's setState to replace the entire array
+    useWorkspaceStore.setState({ workspaces: next });
   };
 
   useEffect(() => {
@@ -321,10 +262,7 @@ const App: React.FC = () => {
             <Route
               path="/workspace/:id"
               element={
-                <WorkspacePage
-                  workspaces={workspaces}
-                  setWorkspaces={setWorkspaces}
-                />
+                <WorkspacePage workspaces={workspaces} setWorkspaces={setWorkspaces} />
               }
             />
             <Route
@@ -336,10 +274,7 @@ const App: React.FC = () => {
             <Route
               path="/manage-workspaces"
               element={
-                <ManageWorkspacesPage
-                  workspaces={workspaces}
-                  setWorkspaces={setWorkspaces}
-                />
+                <ManageWorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />
               }
             />
             <Route

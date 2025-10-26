@@ -57,17 +57,16 @@ const CategoryMenu: React.FC<CategoryMenuProps> = ({
         </MenuItem>
       ))}
       {/* Show delete option when editing existing annotations */}
-      {showDelete && (
-        <>
-          <Divider />
-          <MenuItem
-            onClick={onDelete}
-            sx={{ color: "#b91c1c", fontWeight: 600 }}
-          >
-            Delete
-          </MenuItem>
-        </>
-      )}
+      {showDelete && [
+        <Divider key="divider" />,
+        <MenuItem
+          key="delete"
+          onClick={onDelete}
+          sx={{ color: "#b91c1c", fontWeight: 600 }}
+        >
+          Delete
+        </MenuItem>
+      ]}
     </Menu>
   );
 };

@@ -1,13 +1,12 @@
 // src/components/workspace/EditorArea.tsx
-import React from "react";
-import { Box, IconButton, Tooltip } from "@mui/material";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import LabelIcon from "@mui/icons-material/Label";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
-import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
-import NotationEditor, {
+import { Box, IconButton, Tooltip } from "@mui/material";
+import React from "react";
+import {
   type NerSpan,
-} from "../../components/editor/NotationEditor";
+} from "../../types/NotationEditor";
+import NotationEditor from "../editor/NotationEditor";
 
 interface Props {
   editorInstanceKey?: string;
@@ -19,14 +18,13 @@ interface Props {
   onNer: () => void;
 
   spans?: NerSpan[];
-  // setSpans?: (s: NerSpan[] | ((p: NerSpan[]) => NerSpan[])) => void;
 
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
   deletableKeys?: Set<string>;
 
   onDeleteSpan?: (span: NerSpan) => void;
-  onAddSpan?: (span: NerSpan) => void; // ← NEW: pass-through add/change
+  onAddSpan?: (span: NerSpan) => void;
   onSave?: () => void;
 }
 
@@ -34,7 +32,6 @@ const EditorArea: React.FC<Props> = ({
   editorInstanceKey,
   text,
   setText,
-  onUpload,
   onClassify,
   onNer,
   spans,
@@ -42,8 +39,7 @@ const EditorArea: React.FC<Props> = ({
   onSelectionChange,
   deletableKeys,
   onDeleteSpan,
-  onAddSpan, // ← NEW
-  onSave,
+  onAddSpan,
 }) => {
   return (
     <Box
@@ -65,10 +61,10 @@ const EditorArea: React.FC<Props> = ({
         onSelectionChange={onSelectionChange}
         deletableKeys={deletableKeys}
         onDeleteSpan={onDeleteSpan}
-        onAddSpan={onAddSpan} // ← NEW
+        onAddSpan={onAddSpan}
       />
 
-      {/* Actions */}
+      {/* Action buttons */}
       <Box
         sx={{
           position: "absolute",
@@ -79,35 +75,6 @@ const EditorArea: React.FC<Props> = ({
           gap: 1.25,
         }}
       >
-        <Tooltip title="Save workspace (text & notes)">
-          <IconButton
-            onClick={onSave}
-            sx={{
-              backgroundColor: "rgba(33, 66, 108, 0.18)",
-              "&:hover": { backgroundColor: "rgba(33, 66, 108, 0.28)" },
-              color: "#21426C",
-              boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
-            }}
-          >
-            <SaveRoundedIcon sx={{ fontSize: 28 }} />
-          </IconButton>
-        </Tooltip>
-
-        <Tooltip title="Upload file">
-          <IconButton
-            component="label"
-            sx={{
-              backgroundColor: "rgba(237, 232, 212, 0.18)",
-              "&:hover": { backgroundColor: "rgba(237, 232, 212, 0.28)" },
-              color: "#E0CFA5",
-              boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
-            }}
-          >
-            <CloudUploadIcon sx={{ fontSize: 28 }} />
-            <input type="file" hidden onChange={onUpload} />
-          </IconButton>
-        </Tooltip>
-
         <Tooltip title="Semantic Tagging">
           <IconButton
             onClick={onClassify}
