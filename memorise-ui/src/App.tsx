@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   CssBaseline,
   ThemeProvider,
@@ -82,12 +82,14 @@ const App: React.FC = () => {
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
 
   // Wrapper function to update workspaces array (for compatibility with old setWorkspaces API)
-  const setWorkspaces = (updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
+  // Memoize to prevent infinite loops in child components
+  const setWorkspaces = useCallback((updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
+    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
     const newWorkspaces = typeof updater === 'function' 
-      ? updater(workspaces)
+      ? updater(currentWorkspaces)
       : updater;
     useWorkspaceStore.setState({ workspaces: newWorkspaces });
-  };
+  }, []); // Empty deps - function is stable
 
   // Boot: load user's workspaces exactly once after username is known
   useEffect(() => {

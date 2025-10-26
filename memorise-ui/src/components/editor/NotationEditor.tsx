@@ -90,7 +90,9 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   
   // Local copy of spans for optimistic UI updates
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
-  useEffect(() => setLocalSpans(spans), [spans]);
+  useEffect(() => {
+    setLocalSpans(spans);
+  }, [spans]);
 
   // Sync internal state when external value prop changes
   useEffect(() => {

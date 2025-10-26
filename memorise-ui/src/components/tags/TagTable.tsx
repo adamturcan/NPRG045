@@ -394,7 +394,7 @@ const TagTable: React.FC<Props> = ({
                   )
                   .map((row) => (
                     <Box
-                      key={`${groupKey}::${row.name}`}
+                      key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}`}
                       sx={{
                         display: "flex",
                         alignItems: "center",
@@ -698,7 +698,7 @@ const TagTable: React.FC<Props> = ({
                         
                         return (
                           <Box
-                            key={`${groupKey}::${row.name}`}
+                            key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}`}
                             sx={{
                               display: "grid",
                               gridTemplateColumns: "1fr auto", // Tag pill | Delete button
