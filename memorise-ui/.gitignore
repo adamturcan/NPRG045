@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Thesaurus files (large, don't commit to git)
+public/thesaurus-full.json
+public/thesaurus-index.json
+
+# Cursor-generated documentation
+*.md
+!README.md
