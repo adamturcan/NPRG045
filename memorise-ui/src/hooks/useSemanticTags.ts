@@ -50,17 +50,54 @@ export function useSemanticTags(opts?: Options) {
    * This effect runs when hydrateKey changes (typically the workspace ID).
    * It loads the saved tags from the workspace and separates them by source.
    * 
-   * IMPORTANT: We use hydrateKey instead of initialTags in the dependency array
-   * to prevent re-hydrating on every render. Only hydrate when workspace changes.
+   * BUG FIX: Only trigger hydration when workspace ID changes, not when tags update.
+   * If we include initialTags in dependencies, we create a circular loop:
+   * 1. runClassify updates apiTags -> combinedTags changes
+   * 2. WorkspaceContainer saves tags -> workspace.tags changes -> initialTags changes
+   * 3. Hydration effect runs -> resets apiTags/userTags -> combinedTags changes
+   * 4. Loop continues infinitely
+   * 
+   * Solution: Only depend on hydrateKey (workspace ID). Read initialTags inside
+   * the effect but don't include it in dependencies. Use a ref to track last
+   * hydrated workspace to prevent unnecessary re-hydrations.
    */
+  const lastHydratedWorkspaceRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const tags = opts?.initialTags ?? [];
+    // Reset ref when no workspace is selected (allows re-hydration when workspace is selected again)
+    if (!opts?.hydrateKey) {
+      lastHydratedWorkspaceRef.current = null;
+      // Clear tags when no workspace is selected
+      setUserTags([]);
+      setApiTags([]);
+      return;
+    }
+    
+    // Only hydrate when workspace ID changes, not when tags in workspace update
+    if (lastHydratedWorkspaceRef.current === opts.hydrateKey) {
+      return;
+    }
+    
+    // Mark this workspace as hydrated
+    lastHydratedWorkspaceRef.current = opts.hydrateKey;
+    
+    // Always read the current value of initialTags (not from closure)
+    // This ensures we get the tags for the NEW workspace, not the old one
+    // Handle undefined/null/empty explicitly for new workspaces that don't have tags initialized
+    // If initialTags is undefined, null, or not an array, treat as empty (no tags)
+    const tags = Array.isArray(opts?.initialTags) ? opts.initialTags : [];
     const u = tags.filter((t) => t.source === "user");
     const a = tags.filter((t) => t.source === "api");
+    
+    // ALWAYS reset tags when workspace changes (even if empty arrays)
+    // This clears previous workspace tags and loads new workspace tags
+    // Empty arrays ensure empty workspaces don't inherit tags from previous workspace
     setUserTags(u);
     setApiTags(a);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts?.hydrateKey]);
+  }, [
+    opts?.hydrateKey // Only depend on workspace ID, not on initialTags (prevents infinite loop when tags update)
+  ]);
 
   /**
    * ============================================================================

@@ -90,9 +90,26 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   
   // Local copy of spans for optimistic UI updates
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
+  
+  // Serialize spans for stable dependency comparison to prevent infinite loops
+  // Compare content, not array reference
+  const spansSerialized = useMemo(
+    () => JSON.stringify(spans),
+    [spans]
+  );
+  
+  // Track previous serialized value to prevent unnecessary updates
+  const prevSpansSerializedRef = useRef<string | null>(null);
+  
   useEffect(() => {
-    setLocalSpans(spans);
-  }, [spans]);
+    // Only update if spans content actually changed (not just reference)
+    // Skip on initial mount (prevSpansSerializedRef.current is null)
+    if (prevSpansSerializedRef.current !== null && spansSerialized !== prevSpansSerializedRef.current) {
+      setLocalSpans(spans);
+    }
+    // Always update the ref to track current value
+    prevSpansSerializedRef.current = spansSerialized;
+  }, [spansSerialized, spans]);
 
   // Sync internal state when external value prop changes
   useEffect(() => {

@@ -83,6 +83,7 @@ export class WorkspaceService {
       isTemporary: true,
       text: "",
       userSpans: [],
+      tags: [], // Initialize empty tags array for new workspaces
       updatedAt: Date.now(),
       owner,
     };

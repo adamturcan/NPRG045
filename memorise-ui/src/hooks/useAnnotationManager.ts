@@ -194,13 +194,16 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
    * Run NER API to automatically detect and annotate entities
    * 
    * Flow:
-   * 1. Call NER API with current text
+   * 1. Call NER API with current text (from active tab)
    * 2. Update apiSpans state
    * 3. Clear deletedApiKeys (show all new results)
    * 4. Save to workspace (if workspaceId and setWorkspaces provided)
+   *    - If original tab: save to workspace root
+   *    - If translation tab: save to that translation's data
    * 5. Show success notification
    * 
    * Replaces API spans but preserves user spans.
+   * Each translation has its own separate NER spans.
    */
   const runNer = useCallback(
     async (text: string, workspaceId?: string | null) => {
@@ -212,10 +215,10 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
       try {
         // Call NER API directly
         const { ner: apiNer } = await import("../lib/api");
-        const data = await apiNer(text);
+        const data = await apiNer(text) as { result?: Array<{ start: number; end: number; type: string }> };
         
         // Transform API response into NerSpan array
-        const spans = (data.result ?? []).map((r: any) => ({
+        const spans = (data.result ?? []).map((r) => ({
           start: r.start,
           end: r.end,
           entity: r.type, // API returns 'type' field, map to 'entity'
@@ -228,13 +231,47 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
         setDeletedApiKeys(new Set());
         
         // Save to workspace (if callbacks provided)
+        // Save to correct location based on activeTab (original or translation)
         if (workspaceId && setWorkspaces) {
           setWorkspaces((prev) =>
-            prev.map((w) =>
-              w.id === workspaceId
-                ? { ...w, apiSpans: spans, deletedApiKeys: [], updatedAt: Date.now() }
-                : w
-            )
+            prev.map((w) => {
+              if (w.id !== workspaceId) return w;
+              
+              if (activeTab === "original") {
+                // Save to workspace root for original tab
+                return {
+                  ...w,
+                  apiSpans: spans,
+                  deletedApiKeys: [],
+                  updatedAt: Date.now(),
+                };
+              } else {
+                // Save to translation for translation tab
+                const translations = w.translations || [];
+                const translationIndex = translations.findIndex(
+                  (t) => t.language === activeTab
+                );
+                
+                if (translationIndex >= 0) {
+                  // Update existing translation
+                  const updatedTranslations = [...translations];
+                  updatedTranslations[translationIndex] = {
+                    ...updatedTranslations[translationIndex],
+                    apiSpans: spans,
+                    deletedApiKeys: [],
+                    updatedAt: Date.now(),
+                  };
+                  return {
+                    ...w,
+                    translations: updatedTranslations,
+                    updatedAt: Date.now(),
+                  };
+                } else {
+                  // Translation not found (shouldn't happen, but handle gracefully)
+                  return w;
+                }
+              }
+            })
           );
         }
         
@@ -244,7 +281,7 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
         onNotice?.("NER failed. Try again.");
       }
     },
-    [onNotice, setWorkspaces]
+    [onNotice, setWorkspaces, activeTab]
   );
 
   return {

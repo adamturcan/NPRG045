@@ -50,6 +50,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           id: crypto.randomUUID(),
           ...workspaceData,
           userSpans: workspaceData.userSpans || [],
+          tags: workspaceData.tags || [], // Initialize empty tags array for new workspaces
           updatedAt: Date.now(),
         };
         set((state) => ({ workspaces: [newWorkspace, ...state.workspaces] }));
