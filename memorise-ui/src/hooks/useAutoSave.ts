@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import type { Workspace } from "../types/Workspace";
 import type { NerSpan } from "../types/NotationEditor";
 import type { TagItem } from "../types/Tag";
@@ -61,6 +61,32 @@ export function useAutoSave(
    * Timer reference for debounced autosave
    */
   const saveTimer = useRef<number | null>(null);
+
+  /**
+   * Serialize deletedApiKeys Set to sorted string for stable dependency comparison.
+   * Sets are compared by reference, so we serialize to detect actual content changes.
+   * This prevents infinite loops when Set reference changes but contents are the same.
+   */
+  const deletedApiKeysSerialized = useMemo(() => {
+    return Array.from(data.deletedApiKeys).sort().join(',');
+  }, [data.deletedApiKeys.size, Array.from(data.deletedApiKeys).sort().join(',')]);
+
+  /**
+   * Serialize spans arrays for stable dependency comparison
+   * Use JSON.stringify length + content hash to avoid re-triggering on shallow reference changes
+   */
+  const spansHash = useMemo(
+    () => JSON.stringify(data.userSpans) + JSON.stringify(data.apiSpans),
+    [data.userSpans, data.apiSpans]
+  );
+
+  /**
+   * Serialize tags array for stable dependency comparison
+   */
+  const tagsHash = useMemo(
+    () => JSON.stringify(data.tags),
+    [data.tags]
+  );
 
   /**
    * Autosave effect: Debounced automatic saving
@@ -140,14 +166,16 @@ export function useAutoSave(
         window.clearTimeout(saveTimer.current);
       }
     };
+    // Using serialized values instead of direct array/Set references to avoid infinite loops
+    // when references change but content is the same
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     workspaceId,
     activeTab,
     data.text,
-    data.userSpans,
-    data.apiSpans,
-    data.deletedApiKeys,
-    data.tags,
+    spansHash,
+    deletedApiKeysSerialized,
+    tagsHash,
     delay,
     enabled,
     setWorkspaces,
@@ -219,14 +247,16 @@ export function useAutoSave(
         onNotice("Workspace saved.");
       }
     },
+    // Using serialized values instead of direct array/Set references to avoid infinite loops
+    // when references change but content is the same
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       workspaceId,
       activeTab,
       data.text,
-      data.userSpans,
-      data.apiSpans,
-      data.deletedApiKeys,
-      data.tags,
+      spansHash,
+      deletedApiKeysSerialized,
+      tagsHash,
       setWorkspaces,
     ]
   );

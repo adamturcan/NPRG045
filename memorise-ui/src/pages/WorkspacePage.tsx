@@ -41,6 +41,7 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import {
   Box,
@@ -65,6 +66,7 @@ import { useThesaurusWorker } from "../hooks/useThesaurusWorker";
 import { useWorkspaceState } from "../hooks/useWorkspaceState";
 import { useAutoSave } from "../hooks/useAutoSave";
 import { useAnnotationManager } from "../hooks/useAnnotationManager";
+import { useTranslationManager } from "../hooks/useTranslationManager";
 import { loadThesaurusIndex } from "../lib/thesaurusHelpers";
 import type { ThesaurusIndexItem } from "../types/Thesaurus";
 
@@ -166,39 +168,51 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
    */
 
   /**
-   * ============================================================================
-   * TRANSLATION TAB SYSTEM
-   * ============================================================================
-   */
-
-  /**
-   * Active tab: "original" or language code (e.g., "ces", "dan")
-   * Determines which content is shown in the editor
-   */
-  const [activeTab, setActiveTab] = useState<string>("original");
-
-  /**
-   * Language selection menu for adding translations
-   */
-  const [translationMenuAnchor, setTranslationMenuAnchor] =
-    useState<HTMLElement | null>(null);
-  const openTranslationMenu = (e: React.MouseEvent<HTMLElement>) =>
-    setTranslationMenuAnchor(e.currentTarget);
-  const closeTranslationMenu = () => setTranslationMenuAnchor(null);
-
-  /**
-   * Get list of existing translation languages for this workspace
-   */
-  const translationLanguages = useMemo(
-    () => (currentWs?.translations || []).map((t) => t.language),
-    [currentWs]
-  );
-
-  /**
    * Snackbar notification system (declared early for use in handlers)
    */
   const [notice, setNotice] = useState<string | null>(null);
   const showNotice = useCallback((msg: string) => setNotice(msg), []);
+
+  /**
+   * Ref to store annotations for use in translation hook getters
+   * (avoids circular dependency during hook initialization)
+   */
+  const annotationsRef = useRef<{
+    userSpans: NerSpan[];
+    apiSpans: NerSpan[];
+    deletedApiKeys: Set<string>;
+  } | null>(null);
+
+  /**
+   * ============================================================================
+   * TRANSLATION TAB SYSTEM (via custom hook)
+   * ============================================================================
+   * 
+   * Manages:
+   * - Active tab state (original vs translation languages)
+   * - Translation menu anchor (for adding translations)
+   * - Tab switching (saves current, loads new)
+   * - Adding translations (with language detection)
+   * - Updating translations (re-translation from original)
+   * - Deleting translations
+   * 
+   * Each translation tab maintains its own text and NER spans.
+   * 
+   * Note: Initialized before annotations to provide activeTab value,
+   * but uses refs for annotation getters to avoid circular dependency.
+   */
+  const translations = useTranslationManager({
+    workspaceId: currentId ?? null,
+    workspace: currentWs,
+    getCurrentText: () => text,
+    getUserSpans: () => annotationsRef.current?.userSpans ?? [],
+    getApiSpans: () => annotationsRef.current?.apiSpans ?? [],
+    getDeletedApiKeys: () => annotationsRef.current?.deletedApiKeys ?? new Set(),
+    setText,
+    setEditorInstanceKey,
+    setWorkspaces,
+    onNotice: showNotice,
+  });
 
   /**
    * ============================================================================
@@ -213,278 +227,27 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
    * - Preserving user annotations when re-running NER
    * - Allowing users to hide API spans without deleting them (soft delete)
    * - Automatic hydration when workspace changes
+   * - Uses activeTab from translations hook to load correct spans per tab
    */
   const annotations = useAnnotationManager({
     initialUserSpans: currentWs?.userSpans as NerSpan[],
     initialApiSpans: currentWs?.apiSpans as NerSpan[],
     initialDeletedKeys: currentWs?.deletedApiKeys ?? [],
     hydrateKey: currentId,
-    activeTab,
+    activeTab: translations.activeTab, // Use activeTab from translations hook
     workspace: currentWs,
     onNotice: showNotice,
     setWorkspaces,
   });
-
-  /**
-   * Handle switching between tabs
-   * Save current content AND NER spans before switching
-   */
-  const handleTabSwitch = useCallback(
-    (tabId: string) => {
-      if (!currentId || !currentWs) return;
-
-      // Step 1: Save current content AND spans to workspace
-      setWorkspaces((prev) => {
-        return prev.map((w) => {
-          if (w.id !== currentId) return w;
-
-          if (activeTab === "original") {
-            // Save original text and spans
-            return { 
-              ...w, 
-              text, 
-              userSpans: annotations.userSpans,
-              apiSpans: annotations.apiSpans,
-              deletedApiKeys: Array.from(annotations.deletedApiKeys),
-              updatedAt: Date.now() 
-            };
-          } else {
-            // Save translation text and spans
-            return {
-              ...w,
-              translations: (w.translations || []).map((t) =>
-                t.language === activeTab
-                  ? { 
-                      ...t, 
-                      text, 
-                      userSpans: annotations.userSpans,
-                      apiSpans: annotations.apiSpans,
-                      deletedApiKeys: Array.from(annotations.deletedApiKeys),
-                      updatedAt: Date.now() 
-                    }
-                  : t
-              ),
-              updatedAt: Date.now(),
-            };
-          }
-        });
-      });
-
-      // Step 2: Load new content from current workspace state
-      // Spans will be automatically loaded by useAnnotationManager hook when activeTab changes
-      let newText = "";
-
-      if (tabId === "original") {
-        // Load original text
-        newText = currentWs.text || "";
-      } else {
-        // Load translation text
-        const translation = currentWs.translations?.find(
-          (t) => t.language === tabId
-        );
-        newText = translation?.text || "";
-      }
-      
-      // Update editor with new content
-      setText(newText);
-
-      // Step 3: Update UI state (this triggers hook hydration for spans)
-      setActiveTab(tabId);
-      setEditorInstanceKey(`${currentId}:${tabId}:${Date.now()}`);
-    },
-    [activeTab, currentId, currentWs, text, annotations, setWorkspaces]
-  );
-
-  /**
-   * Add a new translation language
-   * Creates translation via API and adds to workspace
-   */
-  const handleAddTranslation = useCallback(
-    async (targetLang: string) => {
-      closeTranslationMenu();
-
-      if (!currentId || !currentWs) return;
-
-      // Capture the current workspace ID and original text at this moment
-      // This prevents race conditions if user switches workspaces during translation
-      const workspaceId = currentId;
-      const originalText = currentWs.text || "";
-      
-      if (!originalText.trim()) {
-        showNotice("Add some text before creating translation.");
-        return;
-      }
-
-      try {
-        // Import translation API and language detection
-        const { translateText, detectLanguage } = await import("../lib/translation");
-
-        // Auto-detect source language from the captured original text
-        showNotice(`Detecting language...`);
-        const detectedLang = await detectLanguage(originalText);
-        
-        showNotice(`Detected ${detectedLang} → Translating to ${targetLang}...`);
-
-        // Call translation API with the captured original text
-        const result = await translateText({
-          text: originalText,
-          sourceLang: detectedLang as any,
-          targetLang: targetLang as any,
-        });
-
-        // Create new translation object (store detected source language)
-        const newTranslation = {
-          language: targetLang,
-          text: result.translatedText,
-          sourceLang: detectedLang,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-
-        // Add to workspace (use captured workspaceId)
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === workspaceId
-              ? {
-                  ...w,
-                  translations: [...(w.translations || []), newTranslation],
-                  updatedAt: Date.now(),
-                }
-              : w
-          )
-        );
-
-        // Only switch tabs and update editor if still on the same workspace
-        if (currentId === workspaceId) {
-          // Switch to the new translation tab and load its text
-          setActiveTab(targetLang);
-          
-          // Ensure we have valid text (Slate editor breaks with undefined/null)
-          const translatedContent = result.translatedText || "";
-          setText(translatedContent);
-          
-          // Force editor remount for clean state
-          setEditorInstanceKey(`${workspaceId}:${targetLang}:${Date.now()}`);
-        }
-
-        // Show completion message with detected language info
-        if (detectedLang && detectedLang !== "en") {
-          showNotice(`Detected ${detectedLang} → Translated to ${targetLang}!`);
-        } else {
-          showNotice(`Translation to ${targetLang} completed!`);
-        }
-      } catch (error) {
-        console.error("Translation failed:", error);
-        showNotice("Translation failed. Try again.");
-      }
-    },
-    [currentId, currentWs, setWorkspaces, showNotice]
-  );
-
-  /**
-   * Update a translation by re-translating from current original text
-   * Useful when original text has been edited
-   */
-  const handleUpdateTranslation = useCallback(
-    async (targetLang: string) => {
-      if (!currentId || !currentWs) return;
-
-      // Capture state at the moment user clicks update
-      // This prevents race conditions if user switches tabs during translation
-      const workspaceId = currentId;
-      const originalText = currentWs.text || "";
-      
-      if (!originalText.trim()) {
-        showNotice("Add some text before updating translation.");
-        return;
-      }
-
-      try {
-        // Import translation API and language detection
-        const { translateText, detectLanguage } = await import("../lib/translation");
-
-        // Auto-detect source language from the captured original text
-        showNotice(`Detecting language...`);
-        const detectedLang = await detectLanguage(originalText);
-        
-        showNotice(`Detected ${detectedLang} → Updating ${targetLang}...`);
-
-        // Call translation API with the captured original text
-        const result = await translateText({
-          text: originalText,
-          sourceLang: detectedLang as any,
-          targetLang: targetLang as any,
-        });
-
-        // Update existing translation in workspace (ALWAYS happens in background)
-        // We DON'T update the editor here to avoid race conditions
-        // User will see the updated translation when they switch back to that tab
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === workspaceId
-              ? {
-                  ...w,
-                  translations: (w.translations || []).map((t) =>
-                    t.language === targetLang
-                      ? { ...t, text: result.translatedText, updatedAt: Date.now() }
-                      : t
-                  ),
-                  updatedAt: Date.now(),
-                }
-              : w
-          )
-        );
-
-        // If user hasn't switched tabs, reload the current tab to show update
-        if (currentId === workspaceId && activeTab === targetLang) {
-          // User is still on the same tab - trigger a reload
-          handleTabSwitch(targetLang);
-        }
-
-        showNotice(`Translation "${targetLang}" updated!`);
-      } catch (error) {
-        console.error("Translation update failed:", error);
-        showNotice("Update failed. Try again.");
-      }
-    },
-    [currentId, currentWs, activeTab, setWorkspaces, showNotice, handleTabSwitch]
-  );
-
-  /**
-   * Delete a translation language
-   * If deleting the active tab, switch to "original" first
-   */
-  const handleDeleteTranslation = useCallback(
-    (targetLang: string) => {
-      if (!currentId) return;
-
-      // If deleting the currently active tab, switch to original first
-      if (activeTab === targetLang) {
-        setActiveTab("original");
-        // Ensure text is always a string
-        setText(currentWs?.text || "");
-        setEditorInstanceKey(`${currentId}:original:${Date.now()}`);
-      }
-
-      // Remove translation from workspace
-      setWorkspaces((prev) =>
-        prev.map((w) =>
-          w.id === currentId
-            ? {
-                ...w,
-                translations: (w.translations || []).filter(
-                  (t) => t.language !== targetLang
-                ),
-                updatedAt: Date.now(),
-              }
-            : w
-        )
-      );
-
-      showNotice(`Translation "${targetLang}" deleted.`);
-    },
-    [currentId, currentWs, activeTab, setWorkspaces, showNotice]
-  );
+  
+  // Update ref whenever annotations change (for use in translation hook getters)
+  useEffect(() => {
+    annotationsRef.current = {
+      userSpans: annotations.userSpans,
+      apiSpans: annotations.apiSpans,
+      deletedApiKeys: annotations.deletedApiKeys,
+    };
+  }, [annotations.userSpans, annotations.apiSpans, annotations.deletedApiKeys]);
 
   /**
    * ============================================================================
@@ -507,7 +270,7 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     {
       delay: 350,
       enabled: true,
-      activeTab,
+      activeTab: translations.activeTab,
     }
   );
 
@@ -532,7 +295,10 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     autosave.setHydrated(null);
 
     // Reset to original tab when switching workspaces
-    setActiveTab("original");
+    translations.setActiveTab("original");
+    
+    // Note: annotations hook will automatically re-hydrate with correct spans
+    // because it depends on translations.activeTab
 
     // Load text content (ensure it's always a string)
     setText(currentWs?.text || "");
@@ -782,15 +548,15 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
       >
         {/* Translation tabs bar */}
         <BookmarkBar
-          translationLanguages={translationLanguages}
-          activeTab={activeTab}
-          onTabClick={handleTabSwitch}
-          onAddClick={openTranslationMenu}
-          anchorEl={translationMenuAnchor}
-          onClose={closeTranslationMenu}
-          onSelectLanguage={handleAddTranslation}
-          onDeleteTranslation={handleDeleteTranslation}
-          onUpdateTranslation={handleUpdateTranslation}
+          translationLanguages={translations.translationLanguages}
+          activeTab={translations.activeTab}
+          onTabClick={translations.onTabSwitch}
+          onAddClick={translations.openMenu}
+          anchorEl={translations.menuAnchor}
+          onClose={translations.closeMenu}
+          onSelectLanguage={translations.onAddTranslation}
+          onDeleteTranslation={translations.onDeleteTranslation}
+          onUpdateTranslation={translations.onUpdateTranslation}
         />
 
         {/* Main editor with text input, NER annotations, and action buttons */}
