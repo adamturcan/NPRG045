@@ -17,7 +17,7 @@ import {
 import AccountPage from "./pages/AccoutPage"; // fixed typo
 import WorkspacePage from "./pages/WorkspacePage";
 import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
-import BubbleSidebar from "./components/Sidebar/BubbleSidebar";
+import BubbleSidebar from "./components/sidebar/BubbleSidebar";
 import LoginPage from "./pages/LoginPage";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { WorkspaceService } from "./services/workspaceService";

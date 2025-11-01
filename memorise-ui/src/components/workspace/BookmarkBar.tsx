@@ -97,51 +97,49 @@ const BookmarkBar: React.FC<Props> = ({
       </Button>
 
       {translationLanguages.map((lang, idx) => (
-        <Box
+        <Button
           key={lang}
+          variant="contained"
+          size="small"
+          component="div"
+          onClick={() => onTabClick(lang)}
+          onContextMenu={activeTab === lang ? handleContextMenu : undefined}
           sx={{
+            backgroundColor:
+              BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length],
+            color: "#000",
+            textTransform: "uppercase",
+            opacity: activeTab === lang ? 1 : 0.7,
+            pr: activeTab === lang ? 0.5 : 1,
             display: "flex",
             alignItems: "center",
-            position: "relative",
+            gap: 0.5,
+            cursor: "pointer",
           }}
         >
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => onTabClick(lang)}
-            onContextMenu={activeTab === lang ? handleContextMenu : undefined}
-            sx={{
-              backgroundColor:
-                BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length],
-              color: "#000",
-              textTransform: "uppercase",
-              opacity: activeTab === lang ? 1 : 0.7,
-              pr: activeTab === lang ? 0.5 : 1,
-            }}
-          >
-            {lang}
-            {activeTab === lang && (
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleContextMenu(e);
-                }}
-                sx={{
-                  color: "#000",
-                  ml: 0.5,
-                  p: 0.25,
-                  minWidth: "auto",
-                  "&:hover": {
-                    backgroundColor: "rgba(0,0,0,0.1)",
-                  },
-                }}
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
-            )}
-          </Button>
-        </Box>
+          {lang}
+          {activeTab === lang && (
+            <IconButton
+              size="small"
+              component="div"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleContextMenu(e);
+              }}
+              sx={{
+                color: "#000",
+                p: 0.25,
+                minWidth: "auto",
+                margin: 0,
+                "&:hover": {
+                  backgroundColor: "rgba(0,0,0,0.1)",
+                },
+              }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          )}
+        </Button>
       ))}
 
       <Tooltip title="Add translation">

@@ -58,11 +58,13 @@ import type { HierarchyNode } from "../../lib/thesaurusHelpers";
  * - name: The tag text (human-readable label)
  * - source: "user" (manual) or "api" (ML-generated)
  * - keywordId: Optional KeywordID from thesaurus (for hierarchical matching)
+ * - parentId: Optional ParentID to disambiguate duplicate KeywordIDs
  */
 export type TagRow = { 
   name: string; 
   source: "api" | "user";
   keywordId?: number;
+  parentId?: number;
 };
 
 /**
@@ -394,7 +396,7 @@ const TagTable: React.FC<Props> = ({
                   )
                   .map((row) => (
                     <Box
-                      key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}`}
+                      key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}::${row.parentId || 'no-parent'}`}
                       sx={{
                         display: "flex",
                         alignItems: "center",
@@ -698,7 +700,7 @@ const TagTable: React.FC<Props> = ({
                         
                         return (
                           <Box
-                            key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}`}
+                            key={`${groupKey}::${row.name}::${row.source}::${row.keywordId || 'no-id'}::${row.parentId || 'no-parent'}`}
                             sx={{
                               display: "grid",
                               gridTemplateColumns: "1fr auto", // Tag pill | Delete button

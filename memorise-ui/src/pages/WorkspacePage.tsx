@@ -41,7 +41,6 @@ import React, {
   useState,
   useCallback,
   useEffect,
-  useRef,
 } from "react";
 import {
   Box,
@@ -64,6 +63,7 @@ import type { ThesaurusItem } from "../components/tags/TagThesaurusInput";
 import { useSemanticTags } from "../hooks/useSemanticTags";
 import { useThesaurusWorker } from "../hooks/useThesaurusWorker";
 import { useWorkspaceState } from "../hooks/useWorkspaceState";
+import { useAutoSave } from "../hooks/useAutoSave";
 import { loadThesaurusIndex } from "../lib/thesaurusHelpers";
 import type { ThesaurusIndexItem } from "../types/Thesaurus";
 
@@ -500,13 +500,28 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
 
   /**
    * ============================================================================
-   * HYDRATION GUARD
+   * AUTOSAVE HOOK
    * ============================================================================
    * 
-   * Prevents autosave from firing while loading workspace data.
-   * Set to null during hydration, then set to workspace ID when complete.
+   * Manages automatic and manual workspace saving with debouncing.
+   * Handles hydration guard internally.
    */
-  const hydratedIdRef = useRef<string | null>(null);
+  const autosave = useAutoSave(
+    currentId ?? null,
+    {
+      text,
+      userSpans,
+      apiSpans,
+      deletedApiKeys,
+      tags: tags.combinedTags,
+    },
+    setWorkspaces,
+    {
+      delay: 350,
+      enabled: true,
+      activeTab,
+    }
+  );
 
   /**
    * ============================================================================
@@ -516,17 +531,17 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
    * Runs when currentId changes (user switches workspace via URL).
    * 
    * Process:
-   * 1. Block autosave (set hydratedIdRef to null)
+   * 1. Block autosave (set hydratedIdRef to null via setHydrated)
    * 2. Load text, spans, and metadata from workspace
    * 3. Tags auto-hydrate via useSemanticTags hook (hydrateKey dep)
    * 4. Force Slate editor remount with new key
-   * 5. Re-enable autosave (set hydratedIdRef to currentId)
+   * 5. Re-enable autosave (set hydratedIdRef to currentId via setHydrated)
    */
   useEffect(() => {
     if (!currentId) return;
     
     // Block autosave while loading
-    hydratedIdRef.current = null;
+    autosave.setHydrated(null);
 
     // Reset to original tab when switching workspaces
     setActiveTab("original");
@@ -544,96 +559,11 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
 
     // Force Slate editor remount for clean state (prevents stale selections/placeholders)
     Promise.resolve().then(() => {
-      hydratedIdRef.current = currentId;
+      autosave.setHydrated(currentId);
       setEditorInstanceKey(`${currentId}:${currentWs?.updatedAt ?? 0}`);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId]);
-
-  /**
-   * ============================================================================
-   * AUTOSAVE: Debounced automatic saving
-   * ============================================================================
-   * 
-   * Automatically saves workspace changes 350ms after user stops editing.
-   * 
-   * Guards:
-   * - Only saves after hydration complete (hydratedIdRef check)
-   * - Cancels previous timer if user is still editing
-   * 
-   * What gets saved:
-   * - Text content (original or translation based on activeTab)
-   * - User and API NER spans
-   * - Deleted span keys (soft deletes)
-   * - Combined tags from hook
-   * - Updated timestamp
-   */
-  const saveTimer = useRef<number | null>(null);
-  useEffect(() => {
-    // Don't save if no workspace selected
-    if (!currentId) return;
-    
-    // Don't save if still loading workspace (hydration in progress)
-    if (hydratedIdRef.current !== currentId) return;
-
-    // Cancel previous save timer
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    
-    // Schedule save for 350ms from now
-    saveTimer.current = window.setTimeout(() => {
-      setWorkspaces((prev) =>
-        prev.map((w) => {
-          if (w.id !== currentId) return w;
-
-          // If on original tab, save text and spans to workspace root
-          if (activeTab === "original") {
-            return {
-              ...w,
-              text,
-              userSpans,
-              apiSpans,
-              deletedApiKeys: Array.from(deletedApiKeys),
-              tags: tags.combinedTags,
-              updatedAt: Date.now(),
-            };
-          }
-
-          // If on translation tab, save text and spans to that translation
-          return {
-            ...w,
-            translations: (w.translations || []).map((t) =>
-              t.language === activeTab
-                ? { 
-                    ...t, 
-                    text, 
-                    userSpans,
-                    apiSpans,
-                    deletedApiKeys: Array.from(deletedApiKeys),
-                    updatedAt: Date.now() 
-                  }
-                : t
-            ),
-            tags: tags.combinedTags,
-            updatedAt: Date.now(),
-          };
-        })
-      );
-    }, 350);
-
-    // Cleanup: cancel timer if component unmounts or dependencies change
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [
-    currentId,
-    activeTab,
-    text,
-    userSpans,
-    apiSpans,
-    deletedApiKeys,
-    tags.combinedTags,
-    setWorkspaces,
-  ]);
 
   /**
    * ============================================================================
@@ -643,65 +573,11 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
    * Immediately saves all workspace data (no debounce).
    * Called by EditorArea when user presses Cmd+S/Ctrl+S or clicks save button.
    * 
-   * Ensures hydratedIdRef is set (enables autosave after manual save).
+   * Delegates to autosave hook's saveNow function.
    */
   const handleSave = useCallback(() => {
-    if (!currentId) return;
-    
-    // Mark as hydrated (enables autosave)
-    hydratedIdRef.current = currentId;
-    
-    // Save workspace data
-    setWorkspaces((prev) =>
-      prev.map((w) => {
-        if (w.id !== currentId) return w;
-
-        // If on original tab, save text and spans to workspace root
-        if (activeTab === "original") {
-          return {
-            ...w,
-            text,
-            userSpans,
-            apiSpans,
-            deletedApiKeys: Array.from(deletedApiKeys),
-            tags: tags.combinedTags,
-            updatedAt: Date.now(),
-          };
-        }
-
-        // If on translation tab, save text and spans to that translation
-        return {
-          ...w,
-          translations: (w.translations || []).map((t) =>
-            t.language === activeTab
-              ? { 
-                  ...t, 
-                  text, 
-                  userSpans,
-                  apiSpans,
-                  deletedApiKeys: Array.from(deletedApiKeys),
-                  updatedAt: Date.now() 
-                }
-              : t
-          ),
-          tags: tags.combinedTags,
-          updatedAt: Date.now(),
-        };
-      })
-    );
-    
-    // Show confirmation
-    setNotice("Workspace saved.");
-  }, [
-    currentId,
-    activeTab,
-    text,
-    userSpans,
-    apiSpans,
-    deletedApiKeys,
-    tags.combinedTags,
-    setWorkspaces,
-  ]);
+    autosave.saveNow(showNotice);
+  }, [autosave, showNotice]);
 
   /**
    * ============================================================================
