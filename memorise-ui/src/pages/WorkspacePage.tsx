@@ -63,6 +63,7 @@ import type { ThesaurusItem } from "../components/tags/TagThesaurusInput";
 
 import { useSemanticTags } from "../hooks/useSemanticTags";
 import { useThesaurusWorker } from "../hooks/useThesaurusWorker";
+import { useWorkspaceState } from "../hooks/useWorkspaceState";
 import { loadThesaurusIndex } from "../lib/thesaurusHelpers";
 import type { ThesaurusIndexItem } from "../types/Thesaurus";
 
@@ -93,14 +94,12 @@ const WorkspacePage: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
    */
 
   /**
-   * Find the current workspace from URL parameter
-   * Falls back to first workspace if ID not found
+   * Workspace selection hook - finds current workspace from route parameter
    */
-  const currentWs = useMemo(
-    () => workspaces.find((w) => w.id === routeId) ?? workspaces[0],
-    [workspaces, routeId]
+  const { currentWorkspace: currentWs, currentId } = useWorkspaceState(
+    workspaces,
+    routeId
   );
-  const currentId = currentWs?.id;
 
   /**
    * ============================================================================
