@@ -1,0 +1,60 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/**/*.ts", "src/**/*.tsx"],
+  "out": "docs/api",
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**",
+    "**/test/**",
+    "node_modules/**",
+    "dist/**",
+    "coverage/**"
+  ],
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": false,
+  "readme": "README.md",
+  "name": "Memorise UI API Documentation",
+  "includeVersion": true,
+  "gitRevision": "main",
+  "plugin": [],
+  "theme": "default",
+  "navigation": {
+    "includeGroups": true,
+    "includeCategories": true
+  },
+  "groupOrder": [
+    "Hooks",
+    "Components",
+    "Services",
+    "Types",
+    "Utils"
+  ],
+  "categoryOrder": [
+    "Hooks",
+    "Components", 
+    "Services",
+    "Types",
+    "Utils"
+  ],
+  "sort": ["source-order"],
+  "kindSortOrder": [
+    "Project",
+    "Module",
+    "Namespace",
+    "Enum",
+    "Class",
+    "Interface",
+    "TypeAlias",
+    "Constructor",
+    "Property",
+    "Method",
+    "Function",
+    "Accessor",
+    "Variable"
+  ],
+  "categorizeByGroup": true,
+  "logLevel": "Warn"
+}
+

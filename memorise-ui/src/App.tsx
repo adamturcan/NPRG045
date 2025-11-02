@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   CssBaseline,
   ThemeProvider,
@@ -13,16 +13,16 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
-
-import AccountPage from "./pages/AccoutPage"; // fixed typo
-import WorkspacePage from "./pages/WorkspacePage";
-import ManageWorkspacesPage from "./pages/ManageWorkspacesPage";
 import BubbleSidebar from "./components/sidebar/BubbleSidebar";
-import LoginPage from "./pages/LoginPage";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { WorkspaceService } from "./services/workspaceService";
-
 import type { Workspace } from "./types/Workspace";
+
+// Lazy load pages for code splitting
+const AccountPage = lazy(() => import("./pages/AccoutPage"));
+const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
+const ManageWorkspacesPage = lazy(() => import("./pages/ManageWorkspacesPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 let theme = createTheme({
   palette: {
@@ -171,10 +171,28 @@ const App: React.FC = () => {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Routes>
-          <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+        <Suspense fallback={
+          <Box
+            sx={{
+              position: "fixed",
+              inset: 0,
+              display: "grid",
+              placeItems: "center",
+              backgroundColor: "background.default",
+            }}
+          >
+            <img
+              src={import.meta.env.BASE_URL + "memorise.png"}
+              alt="Memorise"
+              style={{ height: 36, opacity: 0.7 }}
+            />
+          </Box>
+        }>
+          <Routes>
+            <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
       </ThemeProvider>
     );
   }
@@ -252,38 +270,55 @@ const App: React.FC = () => {
             transition: "margin-left 0.3s ease",
           }}
         >
-          <Routes>
-            <Route
-              path="/"
-              element={<Navigate to="/manage-account" replace />}
-            />
-            <Route
-              path="/workspace/new"
-              element={<NewWorkspaceRedirect onCreate={handleAddWorkspace} />}
-            />
-            <Route
-              path="/workspace/:id"
-              element={
-                <WorkspacePage workspaces={workspaces} setWorkspaces={setWorkspaces} />
-              }
-            />
-            <Route
-              path="/manage-account"
-              element={
-                <AccountPage username={username} workspaces={workspaces} />
-              }
-            />
-            <Route
-              path="/manage-workspaces"
-              element={
-                <ManageWorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />
-              }
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/manage-workspaces" replace />}
-            />
-          </Routes>
+          <Suspense fallback={
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "200px",
+              }}
+            >
+              <img
+                src={import.meta.env.BASE_URL + "memorise.png"}
+                alt="Loading"
+                style={{ height: 24, opacity: 0.5 }}
+              />
+            </Box>
+          }>
+            <Routes>
+              <Route
+                path="/"
+                element={<Navigate to="/manage-account" replace />}
+              />
+              <Route
+                path="/workspace/new"
+                element={<NewWorkspaceRedirect onCreate={handleAddWorkspace} />}
+              />
+              <Route
+                path="/workspace/:id"
+                element={
+                  <WorkspacePage workspaces={workspaces} setWorkspaces={setWorkspaces} />
+                }
+              />
+              <Route
+                path="/manage-account"
+                element={
+                  <AccountPage username={username} workspaces={workspaces} />
+                }
+              />
+              <Route
+                path="/manage-workspaces"
+                element={
+                  <ManageWorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />
+                }
+              />
+              <Route
+                path="*"
+                element={<Navigate to="/manage-workspaces" replace />}
+              />
+            </Routes>
+          </Suspense>
         </Box>
       </Box>
     </ThemeProvider>

@@ -69,7 +69,7 @@ export function useAutoSave(
    */
   const deletedApiKeysSerialized = useMemo(() => {
     return Array.from(data.deletedApiKeys).sort().join(',');
-  }, [data.deletedApiKeys.size, Array.from(data.deletedApiKeys).sort().join(',')]);
+  }, [data.deletedApiKeys]);
 
   /**
    * Serialize spans arrays for stable dependency comparison
