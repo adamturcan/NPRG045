@@ -297,9 +297,7 @@ const App: React.FC = () => {
               />
               <Route
                 path="/workspace/:id"
-                element={
-                  <WorkspacePage workspaces={workspaces} setWorkspaces={setWorkspaces} />
-                }
+                element={<WorkspacePage />}
               />
               <Route
                 path="/manage-account"

@@ -26,21 +26,65 @@ import { useWorkspaceState } from "../../hooks/useWorkspaceState";
 import { useAutoSave } from "../../hooks/useAutoSave";
 import { useAnnotationManager } from "../../hooks/useAnnotationManager";
 import { useTranslationManager } from "../../hooks/useTranslationManager";
+import { useWorkspaceHydration } from "../../hooks/useWorkspaceHydration";
+import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { loadThesaurusIndex } from "../../lib/thesaurusHelpers";
 import type { ThesaurusIndexItem } from "../../types/Thesaurus";
 
-interface Props {
-  workspaces: Workspace[];
-  setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
-}
-
+/**
+ * WorkspaceContainer - Container component that orchestrates workspace editing
+ * 
+ * Uses Zustand store directly instead of props (Phase 1/2 approach).
+ * All workspace state management goes through Zustand store.
+ * 
+ * Architecture:
+ * - Gets workspaces from Zustand store
+ * - Uses custom hooks for business logic
+ * - Coordinates between hooks
+ * - Renders presentational components
+ */
 const COLORS = {
   text: "#0F172A",
   gold: "#DDD1A0",
 };
 
-const WorkspaceContainer: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
+
+const WorkspaceContainer: React.FC = () => {
   const { id: routeId } = useParams();
+  
+  // Get workspaces and updateWorkspace from Zustand store
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
+  const getWorkspaces = useWorkspaceStore.getState;
+  
+  // Create setWorkspaces-compatible function for hooks
+  // Always gets fresh state from Zustand to avoid stale closures
+  const setWorkspaces = useMemo(
+    () => {
+      return (updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
+        // Always get fresh state from Zustand
+        const currentWorkspaces = getWorkspaces().workspaces;
+        const newWorkspaces = typeof updater === 'function' 
+          ? updater(currentWorkspaces)
+          : updater;
+        
+        // Sync changes back to Zustand store
+        // Compare each workspace and call updateWorkspace for changed ones
+        newWorkspaces.forEach((newWs) => {
+          const oldWs = currentWorkspaces.find(w => w.id === newWs.id);
+          
+          // If workspace doesn't exist in old array, or if it changed, update it
+          if (!oldWs || oldWs !== newWs) {
+            // Use updateWorkspace with the full new workspace as updates
+            // Zustand will merge this with existing workspace
+            updateWorkspace(newWs.id, newWs);
+          }
+        });
+      };
+    },
+    [updateWorkspace, getWorkspaces]
+  );
+  
   const { currentWorkspace: currentWs, currentId } = useWorkspaceState(
     workspaces,
     routeId
@@ -126,20 +170,22 @@ const WorkspaceContainer: React.FC<Props> = ({ workspaces, setWorkspaces }) => {
     }
   );
 
-  // Hydrate workspace data when switching workspaces
-  useEffect(() => {
-    if (!currentId) return;
-    
-    autosave.setHydrated(null);
-    translations.setActiveTab("original");
-    setText(currentWs?.text || "");
-    
-    Promise.resolve().then(() => {
-      autosave.setHydrated(currentId);
-      setEditorInstanceKey(`${currentId}:${currentWs?.updatedAt ?? 0}`);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId]);
+  // Hydrate workspace data when switching workspaces using dedicated hook
+  useWorkspaceHydration({
+    workspaceId: currentId ?? null,
+    workspace: currentWs,
+    onHydrate: ({ text, editorKey }) => {
+      setText(text);
+      setEditorInstanceKey(editorKey);
+    },
+    onHydrationStart: () => {
+      autosave.setHydrated(null);
+      translations.setActiveTab("original");
+    },
+    onHydrationComplete: (id) => {
+      autosave.setHydrated(id);
+    },
+  });
 
   const handleSave = useCallback(() => {
     autosave.saveNow(showNotice);
