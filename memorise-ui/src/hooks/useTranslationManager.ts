@@ -133,13 +133,17 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       const currentApiSpans = getApiSpans();
       const currentDeletedApiKeys = getDeletedApiKeys();
       
+      // Step 2: Compute the updated workspace immediately (before state update)
+      // This ensures we can read the correct new text after saving
+      let updatedWorkspace: Workspace | undefined;
+      
       setWorkspaces((prev) => {
         return prev.map((w) => {
           if (w.id !== currentWorkspaceId) return w;
 
           if (activeTab === "original") {
             // Save original text and spans
-            return { 
+            updatedWorkspace = { 
               ...w, 
               text: currentText, 
               userSpans: currentUserSpans,
@@ -147,9 +151,10 @@ export function useTranslationManager(options: TranslationManagerOptions) {
               deletedApiKeys: Array.from(currentDeletedApiKeys),
               updatedAt: Date.now() 
             };
+            return updatedWorkspace;
           } else {
             // Save translation text and spans
-            return {
+            updatedWorkspace = {
               ...w,
               translations: (w.translations || []).map((t) =>
                 t.language === activeTab
@@ -165,30 +170,38 @@ export function useTranslationManager(options: TranslationManagerOptions) {
               ),
               updatedAt: Date.now(),
             };
+            return updatedWorkspace;
           }
         });
       });
 
-      // Step 2: Load new content from workspace ref (updated by setWorkspaces)
-      // We'll read from the updated workspace in the next render, but for now use ref
+      // Step 3: Update workspace ref immediately with saved data
+      // This ensures the ref has the latest data when we read from it
+      if (updatedWorkspace) {
+        workspaceRef.current = updatedWorkspace;
+      }
+
+      // Step 4: Load new content from the updated workspace
       // Note: Spans will be automatically loaded by useAnnotationManager hook when activeTab changes
       let newText = "";
 
       if (tabId === "original") {
-        // Load original text
-        newText = currentWorkspace.text || "";
+        // Load original text from updated workspace
+        newText = updatedWorkspace?.text || currentWorkspace.text || "";
       } else {
-        // Load translation text
-        const translation = currentWorkspace.translations?.find(
+        // Load translation text from updated workspace
+        const translation = updatedWorkspace?.translations?.find(
+          (t) => t.language === tabId
+        ) || currentWorkspace.translations?.find(
           (t) => t.language === tabId
         );
         newText = translation?.text || "";
       }
       
-      // Update editor with new content
+      // Step 5: Update editor with new content
       setText(newText);
 
-      // Step 3: Update UI state (this triggers hook hydration for spans)
+      // Step 6: Update UI state (this triggers hook hydration for spans)
       setActiveTab(tabId);
       setEditorInstanceKey(`${currentWorkspaceId}:${tabId}:${Date.now()}`);
     },
@@ -369,6 +382,8 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         onNotice("Update failed. Try again.");
       }
     },
+    /* eslint-disable react-hooks/exhaustive-deps */
+    // workspace is intentionally excluded - we only depend on workspace?.id to avoid infinite loops
     [
       workspaceId, 
       workspace?.id, // Use ID only to avoid infinite loops
@@ -379,6 +394,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       setText, 
       setEditorInstanceKey
     ]
+    /* eslint-enable react-hooks/exhaustive-deps */
   );
 
   /**
