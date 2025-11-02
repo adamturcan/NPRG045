@@ -20,7 +20,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { TagItem } from "../types/Tag";
 import type { ThesaurusIndexItem } from "../types/Thesaurus";
-import { classify as apiClassify } from "../lib/api";
 import { loadThesaurusIndex, findInThesaurus } from "../lib/thesaurusHelpers";
 
 type Options = {
@@ -251,6 +250,7 @@ export function useSemanticTags(opts?: Options) {
     if (!text.trim()) return;
     
     // Call the classification API
+    const { classify: apiClassify } = await import("../lib/api");
     const data = await apiClassify(text);
     
     // Transform API response into TagItem array

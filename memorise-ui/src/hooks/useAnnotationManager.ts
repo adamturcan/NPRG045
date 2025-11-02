@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { NerSpan } from "../types/NotationEditor";
 import type { Workspace } from "../types/Workspace";
 
@@ -76,6 +76,21 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
   );
 
   /**
+   * Keep workspace ref to avoid infinite loops when workspace object reference changes
+   * Update ref when workspace actually changes (by ID comparison)
+   */
+  const workspaceRef = useRef<Workspace | undefined>(workspace);
+  
+  useEffect(() => {
+    // Only update ref if workspace ID changed (actual workspace change)
+    // Don't update if just the object reference changed but it's the same workspace
+    if (workspace && workspace.id !== workspaceRef.current?.id) {
+      workspaceRef.current = workspace;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace?.id]); // Only depend on workspace ID, not entire object to avoid infinite loops
+
+  /**
    * Hydration effect: Load spans from workspace when it changes
    * 
    * Runs when hydrateKey or activeTab changes.
@@ -107,7 +122,8 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
     setUserSpans(userSpansToLoad);
     setApiSpans(apiSpansToLoad);
     setDeletedApiKeys(new Set(deletedKeysToLoad));
-  }, [hydrateKey, activeTab, workspace]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrateKey, activeTab, workspace?.id]); // Only depend on workspace ID to avoid infinite loops
 
   /**
    * Filter out API spans that user has soft-deleted

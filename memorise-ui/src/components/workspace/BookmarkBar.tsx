@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  CircularProgress,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -26,6 +27,7 @@ interface Props {
   onSelectLanguage: (lang: string) => void;
   onDeleteTranslation: (lang: string) => void;
   onUpdateTranslation: (lang: string) => void;
+  isUpdating?: boolean;
 }
 
 const BookmarkBar: React.FC<Props> = ({
@@ -38,6 +40,7 @@ const BookmarkBar: React.FC<Props> = ({
   onSelectLanguage,
   onDeleteTranslation,
   onUpdateTranslation,
+  isUpdating = false,
 }) => {
   // State for context menu on active translation tab
   const [contextMenu, setContextMenu] = useState<{
@@ -103,7 +106,8 @@ const BookmarkBar: React.FC<Props> = ({
           size="small"
           component="div"
           onClick={() => onTabClick(lang)}
-          onContextMenu={activeTab === lang ? handleContextMenu : undefined}
+          disabled={isUpdating && activeTab !== lang}
+          onContextMenu={activeTab === lang && !isUpdating ? handleContextMenu : undefined}
           sx={{
             backgroundColor:
               BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length],
@@ -117,27 +121,33 @@ const BookmarkBar: React.FC<Props> = ({
             cursor: "pointer",
           }}
         >
-          {lang}
-          {activeTab === lang && (
-            <IconButton
-              size="small"
-              component="div"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleContextMenu(e);
-              }}
-              sx={{
-                color: "#000",
-                p: 0.25,
-                minWidth: "auto",
-                margin: 0,
-                "&:hover": {
-                  backgroundColor: "rgba(0,0,0,0.1)",
-                },
-              }}
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
+          {isUpdating && activeTab === lang ? (
+            <CircularProgress size={16} sx={{ color: "#000" }} thickness={4} />
+          ) : (
+            <>
+              {lang}
+              {activeTab === lang && (
+                <IconButton
+                  size="small"
+                  component="div"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleContextMenu(e);
+                  }}
+                  sx={{
+                    color: "#000",
+                    p: 0.25,
+                    minWidth: "auto",
+                    margin: 0,
+                    "&:hover": {
+                      backgroundColor: "rgba(0,0,0,0.1)",
+                    },
+                  }}
+                >
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              )}
+            </>
           )}
         </Button>
       ))}

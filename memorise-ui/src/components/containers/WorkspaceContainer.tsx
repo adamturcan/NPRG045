@@ -1,35 +1,35 @@
+import { Box } from "@mui/material";
 import React, {
-  useMemo,
-  useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
 } from "react";
-import {
-  Box,
-  Snackbar,
-  Alert,
-} from "@mui/material";
 import { useParams } from "react-router-dom";
 
-import type { Workspace } from "../../types/Workspace";
 import type { NerSpan } from "../../types/NotationEditor";
 
+import RightPanel, { type TagRow } from "../right/RightPanel";
+import { NotificationSnackbar } from "../shared/NotificationSnackbar";
+import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 import BookmarkBar from "../workspace/BookmarkBar";
 import EditorArea from "../workspace/EditorArea";
-import RightPanel, { type TagRow } from "../right/RightPanel";
-import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 
-import { useSemanticTags } from "../../hooks/useSemanticTags";
-import { useThesaurusWorker } from "../../hooks/useThesaurusWorker";
-import { useWorkspaceState } from "../../hooks/useWorkspaceState";
-import { useAutoSave } from "../../hooks/useAutoSave";
-import { useAnnotationManager } from "../../hooks/useAnnotationManager";
-import { useTranslationManager } from "../../hooks/useTranslationManager";
-import { useWorkspaceHydration } from "../../hooks/useWorkspaceHydration";
+import { useShallow } from "zustand/react/shallow";
+import { COLORS } from "../../constants/ui";
+import {
+  useAnnotationManager,
+  useAutoSave,
+  useSemanticTags,
+  useThesaurusDisplay,
+  useThesaurusWorker,
+  useTranslationManager,
+  useWorkspaceHydration,
+  useWorkspaceState,
+  useWorkspaceSync,
+} from "../../hooks";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
-import { loadThesaurusIndex } from "../../lib/thesaurusHelpers";
-import type { ThesaurusIndexItem } from "../../types/Thesaurus";
 
 /**
  * WorkspaceContainer - Container component that orchestrates workspace editing
@@ -43,97 +43,76 @@ import type { ThesaurusIndexItem } from "../../types/Thesaurus";
  * - Coordinates between hooks
  * - Renders presentational components
  */
-const COLORS = {
-  text: "#0F172A",
-  gold: "#DDD1A0",
-};
 
+// Constants moved outside component to prevent recreation on every render
+const EMPTY_HIGHLIGHTED_CATEGORIES: string[] = [];
 
 const WorkspaceContainer: React.FC = () => {
   const { id: routeId } = useParams();
   
-  // Get workspaces and updateWorkspace from Zustand store
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const updateWorkspace = useWorkspaceStore((state) => state.updateWorkspace);
-  const getWorkspaces = useWorkspaceStore.getState;
-  
-  // Create setWorkspaces-compatible function for hooks
-  // Always gets fresh state from Zustand to avoid stale closures
-  const setWorkspaces = useMemo(
-    () => {
-      return (updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
-        // Always get fresh state from Zustand
-        const currentWorkspaces = getWorkspaces().workspaces;
-        const newWorkspaces = typeof updater === 'function' 
-          ? updater(currentWorkspaces)
-          : updater;
-        
-        // Sync changes back to Zustand store
-        // Compare each workspace and call updateWorkspace for changed ones
-        newWorkspaces.forEach((newWs) => {
-          const oldWs = currentWorkspaces.find(w => w.id === newWs.id);
-          
-          // If workspace doesn't exist in old array, or if it changed, update it
-          if (!oldWs || oldWs !== newWs) {
-            // Use updateWorkspace with the full new workspace as updates
-            // Zustand will merge this with existing workspace
-            updateWorkspace(newWs.id, newWs);
-          }
-        });
-      };
-    },
-    [updateWorkspace, getWorkspaces]
+  // ============================================================================
+  // STEP 1: WORKSPACE STATE & SELECTION
+  // ============================================================================
+  // Get workspaces from Zustand store with shallow comparison to prevent re-renders
+  const { workspaces } = useWorkspaceStore(
+    useShallow((state) => ({ workspaces: state.workspaces }))
   );
   
+  // Create setWorkspaces-compatible function for hooks
+  const setWorkspaces = useWorkspaceSync();
+  
+  // Find current workspace based on route ID (fallback to first workspace)
   const { currentWorkspace: currentWs, currentId } = useWorkspaceState(
     workspaces,
     routeId
   );
 
+  // ============================================================================
+  // STEP 2: LOCAL UI STATE
+  // ============================================================================
   const [editorInstanceKey, setEditorInstanceKey] = useState<string>("");
   const [text, setText] = useState<string>("");
+  const [notice, setNotice] = useState<string | null>(null);
+  
+  // Notification handlers
+  const showNotice = useCallback((msg: string) => setNotice(msg), []);
+  const handleCloseNotice = useCallback(() => setNotice(null), []);
 
+  // ============================================================================
+  // STEP 3: HOOKS FOR BUSINESS LOGIC
+  // ============================================================================
+  
+  // Tags: user-added + API-generated semantic tags
   const tags = useSemanticTags({
     initialTags: currentWs?.tags,
     hydrateKey: currentId,
   });
 
+  // Thesaurus: 750k keyword lookup with Web Worker for performance
   const thesaurusWorker = useThesaurusWorker();
-  const [thesaurusIndexForDisplay, setThesaurusIndexForDisplay] = 
-    useState<ThesaurusIndexItem[] | null>(null);
+  const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
 
-  useEffect(() => {
-    if (thesaurusWorker.ready && !thesaurusIndexForDisplay) {
-      loadThesaurusIndex()
-        .then(setThesaurusIndexForDisplay)
-        .catch(err => {
-          console.error('Failed to load thesaurus for display:', err);
-        });
-    }
-  }, [thesaurusWorker.ready, thesaurusIndexForDisplay]);
-
-  const [notice, setNotice] = useState<string | null>(null);
-  const showNotice = useCallback((msg: string) => setNotice(msg), []);
-
+  // Ref to share annotations with translations hook (avoids stale closures)
   const annotationsRef = useRef<{
     userSpans: NerSpan[];
     apiSpans: NerSpan[];
     deletedApiKeys: Set<string>;
   } | null>(null);
 
+  // Translations: multi-language tab management (original + translations)
+  const getCurrentText = useCallback(() => text, [text]);
   const translations = useTranslationManager({
     workspaceId: currentId ?? null,
     workspace: currentWs,
-    getCurrentText: () => text,
-    getUserSpans: () => annotationsRef.current?.userSpans ?? [],
-    getApiSpans: () => annotationsRef.current?.apiSpans ?? [],
-    getDeletedApiKeys: () => annotationsRef.current?.deletedApiKeys ?? new Set(),
+    getCurrentText,
+    annotationsRef,
     setText,
     setEditorInstanceKey,
     setWorkspaces,
     onNotice: showNotice,
   });
 
+  // Annotations: NER spans (user-created + API-generated)
   const annotations = useAnnotationManager({
     initialUserSpans: currentWs?.userSpans as NerSpan[],
     initialApiSpans: currentWs?.apiSpans as NerSpan[],
@@ -145,6 +124,7 @@ const WorkspaceContainer: React.FC = () => {
     setWorkspaces,
   });
   
+  // Keep annotationsRef in sync with annotations state
   useEffect(() => {
     annotationsRef.current = {
       userSpans: annotations.userSpans,
@@ -153,6 +133,7 @@ const WorkspaceContainer: React.FC = () => {
     };
   }, [annotations.userSpans, annotations.apiSpans, annotations.deletedApiKeys]);
 
+  // Auto-save: debounced saving of workspace changes
   const autosave = useAutoSave(
     currentId ?? null,
     {
@@ -170,23 +151,34 @@ const WorkspaceContainer: React.FC = () => {
     }
   );
 
-  // Hydrate workspace data when switching workspaces using dedicated hook
+  // Hydration: load workspace data when switching workspaces
+  const onHydrate = useCallback(({ text: newText, editorKey }: { text: string; editorKey: string }) => {
+    setText(newText);
+    setEditorInstanceKey(editorKey);
+  }, []);
+
+  const onHydrationStart = useCallback(() => {
+    autosave.setHydrated(null);
+    translations.setActiveTab("original");
+  }, [autosave, translations]);
+
+  const onHydrationComplete = useCallback((id: string) => {
+    autosave.setHydrated(id);
+  }, [autosave]);
+
   useWorkspaceHydration({
     workspaceId: currentId ?? null,
     workspace: currentWs,
-    onHydrate: ({ text, editorKey }) => {
-      setText(text);
-      setEditorInstanceKey(editorKey);
-    },
-    onHydrationStart: () => {
-      autosave.setHydrated(null);
-      translations.setActiveTab("original");
-    },
-    onHydrationComplete: (id) => {
-      autosave.setHydrated(id);
-    },
+    onHydrate,
+    onHydrationStart,
+    onHydrationComplete,
   });
 
+  // ============================================================================
+  // STEP 4: EVENT HANDLERS FOR USER ACTIONS
+  // ============================================================================
+  
+  // Editor actions: save, classify, NER, upload
   const handleSave = useCallback(() => {
     autosave.saveNow(showNotice);
   }, [autosave, showNotice]);
@@ -204,6 +196,14 @@ const WorkspaceContainer: React.FC = () => {
     await annotations.runNer(text, currentId ?? null);
   }, [text, currentId, annotations]);
 
+  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const content = await file.text();
+    setText(content);
+  }, []); // setText is stable, no deps needed
+
+  // Tag actions: add, delete
   const addCustomTag = useCallback(
     (name: string, keywordId?: number, parentId?: number) => {
       tags.addCustomTag(name, keywordId, parentId);
@@ -218,6 +218,11 @@ const WorkspaceContainer: React.FC = () => {
     [tags]
   );
 
+  // ============================================================================
+  // STEP 5: COMPUTED VALUES & DATA TRANSFORMATION
+  // ============================================================================
+  
+  // Thesaurus search handler
   const fetchThesaurus = useCallback(
     async (q: string): Promise<ThesaurusItem[]> => {
       if (!q.trim()) return [];
@@ -241,6 +246,18 @@ const WorkspaceContainer: React.FC = () => {
     [thesaurusWorker]
   );
 
+  // Memoized config objects for child components
+  const thesaurusConfig = useMemo(
+    () => ({
+      onAdd: addCustomTag,
+      fetchSuggestions: fetchThesaurus,
+      defaultRestrictToThesaurus: false,
+      isThesaurusLoading: !thesaurusWorker.ready,
+      resetKey: currentId,
+    }),
+    [addCustomTag, fetchThesaurus, thesaurusWorker.ready, currentId]
+  );
+
   const tagRows: TagRow[] = useMemo(
     () => tags.combinedTags.map((t) => ({ 
       name: t.name, 
@@ -251,6 +268,10 @@ const WorkspaceContainer: React.FC = () => {
     [tags.combinedTags]
   );
 
+  // ============================================================================
+  // STEP 6: RENDER
+  // ============================================================================
+  
   return (
     <Box
       sx={{
@@ -263,6 +284,7 @@ const WorkspaceContainer: React.FC = () => {
         color: COLORS.text,
       }}
     >
+      {/* LEFT PANEL: Editor and bookmark bar */}
       <Box
         sx={{
           flex: 1,
@@ -274,6 +296,7 @@ const WorkspaceContainer: React.FC = () => {
           minHeight: 0,
         }}
       >
+        {/* Translation tabs (original + translations) */}
         <BookmarkBar
           translationLanguages={translations.translationLanguages}
           activeTab={translations.activeTab}
@@ -284,22 +307,19 @@ const WorkspaceContainer: React.FC = () => {
           onSelectLanguage={translations.onAddTranslation}
           onDeleteTranslation={translations.onDeleteTranslation}
           onUpdateTranslation={translations.onUpdateTranslation}
+          isUpdating={translations.isUpdating}
         />
 
+        {/* Main text editor with NER spans */}
         <EditorArea
           editorInstanceKey={editorInstanceKey}
           text={text}
           setText={setText}
-          onUpload={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const content = await file.text();
-            setText(content);
-          }}
+          onUpload={handleUpload}
           onClassify={handleRunClassify}
           onNer={handleRunNer}
           spans={annotations.combinedSpans}
-          highlightedCategories={[]}
+          highlightedCategories={EMPTY_HIGHLIGHTED_CATEGORIES}
           deletableKeys={annotations.deletableKeys}
           onDeleteSpan={annotations.deleteSpan}
           onAddSpan={annotations.addSpan}
@@ -307,6 +327,7 @@ const WorkspaceContainer: React.FC = () => {
         />
       </Box>
 
+      {/* RIGHT PANEL: Tags and thesaurus */}
       <Box
         sx={{
           width: "300px",
@@ -324,32 +345,13 @@ const WorkspaceContainer: React.FC = () => {
         <RightPanel
           tags={tagRows}
           onDeleteTag={deleteTag}
-          thesaurus={{
-            onAdd: (name, keywordId, parentId) => addCustomTag(name, keywordId, parentId),
-            fetchSuggestions: fetchThesaurus,
-            defaultRestrictToThesaurus: false,
-            isThesaurusLoading: !thesaurusWorker.ready,
-            resetKey: currentId,
-          }}
-          thesaurusIndex={thesaurusIndexForDisplay || undefined}
+          thesaurus={thesaurusConfig}
+          thesaurusIndex={thesaurusIndexForDisplay}
         />
       </Box>
 
-      <Snackbar
-        open={!!notice}
-        autoHideDuration={2200}
-        onClose={() => setNotice(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={() => setNotice(null)}
-          severity="info"
-          variant="filled"
-          sx={{ bgcolor: "#21426C" }}
-        >
-          {notice}
-        </Alert>
-      </Snackbar>
+      {/* GLOBAL: Notification snackbar */}
+      <NotificationSnackbar message={notice} onClose={handleCloseNotice} />
     </Box>
   );
 };
