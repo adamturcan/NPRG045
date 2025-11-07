@@ -15,6 +15,7 @@ import { NotificationSnackbar } from "../shared/NotificationSnackbar";
 import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 import BookmarkBar from "../workspace/BookmarkBar";
 import EditorArea from "../workspace/EditorArea";
+import ConflictResolutionDialog from "../editor/ConflictResolutionDialog";
 
 import { useShallow } from "zustand/react/shallow";
 import { COLORS } from "../../constants/ui";
@@ -349,6 +350,15 @@ const WorkspaceContainer: React.FC = () => {
           thesaurusIndex={thesaurusIndexForDisplay}
         />
       </Box>
+
+      {/* GLOBAL: Conflict resolution dialog */}
+      {annotations.conflictPrompt && (
+        <ConflictResolutionDialog
+          prompt={annotations.conflictPrompt}
+          onKeepExisting={() => annotations.resolveConflictPrompt("existing")}
+          onKeepApi={() => annotations.resolveConflictPrompt("api")}
+        />
+      )}
 
       {/* GLOBAL: Notification snackbar */}
       <NotificationSnackbar message={notice} onClose={handleCloseNotice} />

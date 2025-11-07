@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { NerSpan } from "../types/NotationEditor";
 import type { Workspace } from "../types/Workspace";
+import {
+  resolveApiSpanConflicts,
+  type ConflictPrompt,
+} from "../core/services/annotation/resolveApiSpanConflicts";
 
 /**
  * Create a unique key for an NER span (for comparison/deduplication)
@@ -74,6 +78,31 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
   const [deletedApiKeys, setDeletedApiKeys] = useState<Set<string>>(
     new Set(initialDeletedKeys)
   );
+
+  const [conflictPrompt, setConflictPrompt] = useState<ConflictPrompt | null>(
+    null
+  );
+  const conflictResolverRef = useRef<((choice: "api" | "existing") => void) | null>(
+    null
+  );
+
+  const requestConflictResolution = useCallback(
+    (prompt: ConflictPrompt) =>
+      new Promise<"api" | "existing">((resolve) => {
+        conflictResolverRef.current = (choice) => {
+          resolve(choice);
+          conflictResolverRef.current = null;
+        };
+        setConflictPrompt(prompt);
+      }),
+    []
+  );
+
+  const resolveConflictPrompt = useCallback((choice: "api" | "existing") => {
+    conflictResolverRef.current?.(choice);
+    setConflictPrompt(null);
+    conflictResolverRef.current = null;
+  }, []);
 
   /**
    * Keep workspace ref to avoid infinite loops when workspace object reference changes
@@ -227,77 +256,91 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
         onNotice?.("Paste some text before running NER.");
         return;
       }
-      
+
       try {
-        // Call NER API directly
         const { ner: apiNer } = await import("../lib/api");
-        const data = await apiNer(text) as { result?: Array<{ start: number; end: number; type: string }> };
-        
-        // Transform API response into NerSpan array
-        const spans = (data.result ?? []).map((r) => ({
-          start: r.start,
-          end: r.end,
-          entity: r.type, // API returns 'type' field, map to 'entity'
-          score: 1.0, // API doesn't provide score, use default
-        }));
-        
-        setApiSpans(spans);
-        
-        // Clear deletedApiKeys when running new NER to show all new results
+        const data = (await apiNer(text)) as {
+          result?: Array<{ start: number; end: number; type: string }>;
+        };
+
+        const { nextUserSpans, nextApiSpans, conflictsHandled } =
+          await resolveApiSpanConflicts({
+            text,
+            incomingSpans: (data.result ?? []).map<NerSpan>((r) => ({
+              start: r.start,
+              end: r.end,
+              entity: r.type,
+              score: 1,
+            })),
+            userSpans,
+            existingApiSpans: filteredApiSpans,
+            onConflict: requestConflictResolution,
+          });
+
+        setUserSpans(nextUserSpans);
+        setApiSpans(nextApiSpans);
         setDeletedApiKeys(new Set());
-        
-        // Save to workspace (if callbacks provided)
-        // Save to correct location based on activeTab (original or translation)
+
         if (workspaceId && setWorkspaces) {
           setWorkspaces((prev) =>
-            prev.map((w) => {
-              if (w.id !== workspaceId) return w;
-              
+            prev.map((workspaceItem) => {
+              if (workspaceItem.id !== workspaceId) return workspaceItem;
+
               if (activeTab === "original") {
-                // Save to workspace root for original tab
                 return {
-                  ...w,
-                  apiSpans: spans,
+                  ...workspaceItem,
+                  userSpans: nextUserSpans,
+                  apiSpans: nextApiSpans,
                   deletedApiKeys: [],
                   updatedAt: Date.now(),
                 };
-              } else {
-                // Save to translation for translation tab
-                const translations = w.translations || [];
-                const translationIndex = translations.findIndex(
-                  (t) => t.language === activeTab
-                );
-                
-                if (translationIndex >= 0) {
-                  // Update existing translation
-                  const updatedTranslations = [...translations];
-                  updatedTranslations[translationIndex] = {
-                    ...updatedTranslations[translationIndex],
-                    apiSpans: spans,
-                    deletedApiKeys: [],
-                    updatedAt: Date.now(),
-                  };
-                  return {
-                    ...w,
-                    translations: updatedTranslations,
-                    updatedAt: Date.now(),
-                  };
-                } else {
-                  // Translation not found (shouldn't happen, but handle gracefully)
-                  return w;
-                }
               }
+
+              const translations = workspaceItem.translations || [];
+              const translationIndex = translations.findIndex(
+                (translation) => translation.language === activeTab
+              );
+
+              if (translationIndex < 0) {
+                return workspaceItem;
+              }
+
+              const updatedTranslations = [...translations];
+              updatedTranslations[translationIndex] = {
+                ...updatedTranslations[translationIndex],
+                userSpans: nextUserSpans,
+                apiSpans: nextApiSpans,
+                deletedApiKeys: [],
+                updatedAt: Date.now(),
+              };
+
+              return {
+                ...workspaceItem,
+                translations: updatedTranslations,
+                updatedAt: Date.now(),
+              };
             })
           );
         }
-        
-        onNotice?.("NER completed.");
+
+        onNotice?.(
+          conflictsHandled > 0
+            ? "NER completed with conflicts — duplicates were resolved."
+            : "NER completed."
+        );
       } catch (error) {
-        console.error('NER failed:', error);
+        console.error("NER failed:", error);
         onNotice?.("NER failed. Try again.");
       }
     },
-    [onNotice, setWorkspaces, activeTab]
+    [
+      activeTab,
+      filteredApiSpans,
+      onNotice,
+      requestConflictResolution,
+      setWorkspaces,
+      userSpans,
+    ]
   );
 
   return {
@@ -305,6 +348,7 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
     userSpans,
     apiSpans,
     deletedApiKeys,
+    conflictPrompt,
     
     // Derived data
     filteredApiSpans,
@@ -315,6 +359,7 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
     addSpan,
     deleteSpan,
     runNer,
+    resolveConflictPrompt,
     
     // Setters (for external control if needed)
     setUserSpans,

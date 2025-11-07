@@ -1,6 +1,6 @@
 import type { NerSpan } from '../../../types/NotationEditor';
 import type { AnnotationRepository } from '../../interfaces/repositories/AnnotationRepository';
-import { Annotation } from '../../../domain/Annotation';
+import { Annotation } from '../../../domain/Annotation'; 
 
 export interface AddUserAnnotationRequest {
   workspaceId: string;
