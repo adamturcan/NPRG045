@@ -405,17 +405,18 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     const sel = editor.selection;
     // No selection or cursor only (collapsed)
     if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
-      // Only update if we had a selection before
-      if (lastProcessedSelectionRef.current !== null) {
-        // Cancel any pending bubble position update
-        if (bubblePositionUpdateRef.current !== null) {
-          clearTimeout(bubblePositionUpdateRef.current);
-          bubblePositionUpdateRef.current = null;
-        }
-        setSelBox(null);
-        onSelectionChange?.(null);
-        lastProcessedSelectionRef.current = null;
+      if (bubblePositionUpdateRef.current !== null) {
+        clearTimeout(bubblePositionUpdateRef.current);
+        bubblePositionUpdateRef.current = null;
       }
+      setSelBox(null);
+      setSpanBox(null);
+      setSpanMenuAnchor(null);
+      if (activeSpan) {
+        setActiveSpan(null);
+      }
+      onSelectionChange?.(null);
+      lastProcessedSelectionRef.current = null;
       return;
     }
 
@@ -466,6 +467,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     onSelectionChange,
     selectionOverlapsExisting,
     updateBubblePosition,
+    activeSpan,
   ]);
 
   /**
@@ -582,7 +584,12 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
         // Only close bubbles if clicking directly on the editable area (not on bubbles/menus)
         const editable = container.querySelector('[data-slate-editor="true"]');
         if (editable && editable.contains(e.target as Node)) {
-          // Click is on editor text - this is fine, selection will be handled by Slate
+          // Click is on editor text - close any active span UI so clicks on whitespace dismiss it
+          if (spanBox || activeSpan || spanMenuAnchor) {
+            setSpanBox(null);
+            setSpanMenuAnchor(null);
+            setActiveSpan(null);
+          }
           return;
         }
         // Click is in container but not on text - might be on a bubble, let it handle
@@ -609,7 +616,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       document.removeEventListener("mousedown", onGlobalDown, false);
       document.removeEventListener("keydown", onKey, false);
     };
-  }, [closeAllUI]);
+  }, [closeAllUI, activeSpan, spanBox, spanMenuAnchor]);
 
   /**
    * Close bubbles when scrolling the editor
