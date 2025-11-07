@@ -90,26 +90,9 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   
   // Local copy of spans for optimistic UI updates
   const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
-  
-  // Serialize spans for stable dependency comparison to prevent infinite loops
-  // Compare content, not array reference
-  const spansSerialized = useMemo(
-    () => JSON.stringify(spans),
-    [spans]
-  );
-  
-  // Track previous serialized value to prevent unnecessary updates
-  const prevSpansSerializedRef = useRef<string | null>(null);
-  
   useEffect(() => {
-    // Only update if spans content actually changed (not just reference)
-    // Skip on initial mount (prevSpansSerializedRef.current is null)
-    if (prevSpansSerializedRef.current !== null && spansSerialized !== prevSpansSerializedRef.current) {
-      setLocalSpans(spans);
-    }
-    // Always update the ref to track current value
-    prevSpansSerializedRef.current = spansSerialized;
-  }, [spansSerialized, spans]);
+    setLocalSpans(spans);
+  }, [spans]);
 
   // Sync internal state when external value prop changes
   useEffect(() => {
@@ -132,6 +115,20 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
 
   // Flag to prevent bubbles from closing during interaction
   const suppressCloseRef = useRef(false);
+  
+  // Track pending selection overlay update to prevent backlog during rapid selection
+  const pendingSelectionUpdateRef = useRef<number | null>(null);
+  
+  // Track last processed selection to avoid unnecessary updates
+  const lastProcessedSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  
+  // Time-based throttling for selection updates (prevents lag when holding arrow keys)
+  const lastUpdateTimeRef = useRef<number>(0);
+  const THROTTLE_MS = 100; // Update at most once every 100ms for better performance
+  
+  // Separate debounce for bubble position calculation (most expensive operation)
+  const bubblePositionUpdateRef = useRef<number | null>(null);
+  const BUBBLE_DEBOUNCE_MS = 150; // Wait 150ms after selection stops changing before updating bubble position
 
   /**
    * ============================================================================
@@ -358,31 +355,29 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
    * the SelectionBubble based on:
    * - Is there a non-collapsed selection?
    * - Does it overlap with existing annotations?
+   * 
+   * Split into two parts for performance:
+   * 1. Quick selection state update (throttled)
+   * 2. Expensive bubble position calculation (debounced)
    */
-  const updateSelectionOverlay = useCallback(() => {
-    const sel = editor.selection;
-    // No selection or cursor only (collapsed)
-    if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
-      setSelBox(null);
-      onSelectionChange?.(null);
+  const updateBubblePosition = useCallback((start: number, end: number) => {
+    // Verify editor is still focused
+    if (!ReactEditor.isFocused(editor)) {
       return;
     }
 
-    // Convert selection to global offsets
-    const [startPoint, endPoint] = Range.edges(sel);
-    const gStart = pointToGlobal(startPoint.path, startPoint.offset);
-    const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
-    const start = Math.min(gStart, gEnd);
-    const end = Math.max(gStart, gEnd);
+    const sel = editor.selection;
+    if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
+      return;
+    }
 
     // Hide bubble if selection overlaps any existing span
     if (selectionOverlapsExisting(start, end)) {
       setSelBox(null);
-      onSelectionChange?.({ start, end });
       return;
     }
 
-    // Calculate bubble position
+    // Calculate bubble position (expensive DOM operations)
     try {
       const domRange = ReactEditor.toDOMRange(editor, sel);
       const containerRect = containerRef.current?.getBoundingClientRect();
@@ -399,14 +394,78 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     } catch {
       setSelBox(null);
     }
+  }, [editor, posFromDomRange, selectionOverlapsExisting]);
 
+  const updateSelectionOverlay = useCallback(() => {
+    // Verify editor is still focused
+    if (!ReactEditor.isFocused(editor)) {
+      return;
+    }
+
+    const sel = editor.selection;
+    // No selection or cursor only (collapsed)
+    if (!sel || !Range.isRange(sel) || Range.isCollapsed(sel)) {
+      // Only update if we had a selection before
+      if (lastProcessedSelectionRef.current !== null) {
+        // Cancel any pending bubble position update
+        if (bubblePositionUpdateRef.current !== null) {
+          clearTimeout(bubblePositionUpdateRef.current);
+          bubblePositionUpdateRef.current = null;
+        }
+        setSelBox(null);
+        onSelectionChange?.(null);
+        lastProcessedSelectionRef.current = null;
+      }
+      return;
+    }
+
+    // Convert selection to global offsets (cheap operation)
+    const [startPoint, endPoint] = Range.edges(sel);
+    const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+    const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+    const start = Math.min(gStart, gEnd);
+    const end = Math.max(gStart, gEnd);
+    
+    // Skip update if selection hasn't actually changed
+    const last = lastProcessedSelectionRef.current;
+    if (last && last.start === start && last.end === end) {
+      return;
+    }
+    
+    // Update the last processed selection
+    lastProcessedSelectionRef.current = { start, end };
+
+    // Immediately update selection state (cheap)
     onSelectionChange?.({ start, end });
+
+    // Hide bubble immediately if selection overlaps any existing span
+    if (selectionOverlapsExisting(start, end)) {
+      // Cancel any pending bubble position update
+      if (bubblePositionUpdateRef.current !== null) {
+        clearTimeout(bubblePositionUpdateRef.current);
+        bubblePositionUpdateRef.current = null;
+      }
+      setSelBox(null);
+      return;
+    }
+
+    // Debounce expensive bubble position calculation
+    // Cancel any pending update
+    if (bubblePositionUpdateRef.current !== null) {
+      clearTimeout(bubblePositionUpdateRef.current);
+    }
+    
+    // Schedule bubble position update after selection stabilizes
+    bubblePositionUpdateRef.current = window.setTimeout(() => {
+      bubblePositionUpdateRef.current = null;
+      updateBubblePosition(start, end);
+    }, BUBBLE_DEBOUNCE_MS);
   }, [
     editor,
     pointToGlobal,
     onSelectionChange,
-    posFromDomRange,
     selectionOverlapsExisting,
+    updateBubblePosition,
   ]);
 
   /**
@@ -510,16 +569,38 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
    * suppressCloseRef prevents closing during bubble/menu interaction
    */
   useEffect(() => {
-    const onGlobalDown = () => {
+    const onGlobalDown = (e: MouseEvent) => {
       if (suppressCloseRef.current) {
         suppressCloseRef.current = false;
         return;
       }
+      
+      // Don't close/blur if clicking inside the editor container
+      const container = containerRef.current;
+      if (container && container.contains(e.target as Node)) {
+        // Click is inside editor - don't blur, but still close bubbles if clicking on text
+        // Only close bubbles if clicking directly on the editable area (not on bubbles/menus)
+        const editable = container.querySelector('[data-slate-editor="true"]');
+        if (editable && editable.contains(e.target as Node)) {
+          // Click is on editor text - this is fine, selection will be handled by Slate
+          return;
+        }
+        // Click is in container but not on text - might be on a bubble, let it handle
+        return;
+      }
+      
+      // Click is outside editor - close UI and blur
       closeAllUI();
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeAllUI();
+      // Only handle Escape if editor is focused
+      if (e.key === "Escape") {
+        const container = containerRef.current;
+        if (container && container.contains(document.activeElement)) {
+          closeAllUI();
+        }
+      }
     };
 
     document.addEventListener("mousedown", onGlobalDown, false);
@@ -541,6 +622,20 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [closeAllUI]);
+
+  /**
+   * Cleanup: Cancel any pending selection overlay update on unmount
+   */
+  useEffect(() => {
+    return () => {
+      if (pendingSelectionUpdateRef.current !== null) {
+        clearTimeout(pendingSelectionUpdateRef.current);
+      }
+      if (bubblePositionUpdateRef.current !== null) {
+        clearTimeout(bubblePositionUpdateRef.current);
+      }
+    };
+  }, []);
 
   /**
    * Bubble event handlers that prevent accidental closing
@@ -585,7 +680,8 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
         onChange={(val) => {
           setSlateValue(val);
           onChange(toPlainTextWithNewlines(val));
-          updateSelectionOverlay();
+          // Don't update selection overlay here - let onSelect handle it
+          // This prevents interference with Shift+Arrow selection
         }}
       >
         <EditorContainer containerRef={containerRef}>
@@ -610,8 +706,28 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
               // Let the selection change naturally trigger updateSelectionOverlay
             }}
             onSelect={() => {
-              // Update selection overlay when selection changes
-              updateSelectionOverlay();
+              const now = Date.now();
+              const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+              
+              // If we've updated recently, cancel any pending update and schedule a new one
+              // This ensures we always process the latest selection, but throttle the updates
+              if (pendingSelectionUpdateRef.current !== null) {
+                clearTimeout(pendingSelectionUpdateRef.current);
+              }
+              
+              // If enough time has passed, update immediately
+              if (timeSinceLastUpdate >= THROTTLE_MS) {
+                lastUpdateTimeRef.current = now;
+                updateSelectionOverlay();
+              } else {
+                // Otherwise, schedule an update after the remaining throttle time
+                const remainingTime = THROTTLE_MS - timeSinceLastUpdate;
+                pendingSelectionUpdateRef.current = window.setTimeout(() => {
+                  pendingSelectionUpdateRef.current = null;
+                  lastUpdateTimeRef.current = Date.now();
+                  updateSelectionOverlay();
+                }, remainingTime);
+              }
             }}
             style={{
               flex: 1,
