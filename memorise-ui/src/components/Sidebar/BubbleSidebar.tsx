@@ -142,6 +142,9 @@ const BubbleSidebar: React.FC<Props> = ({
     const bg = selected ? accent : "#1F2C24"; // Selected: accent, Normal: dark
     const fg = selected ? "#1F2C24" : accent; // Selected: dark text, Normal: accent text
 
+    const truncatedLabel =
+      label.length > 16 ? `${label.slice(0, 15)}…` : label;
+
     const content = (
       <Fab
         aria-label={ariaLabel || label}
@@ -189,7 +192,7 @@ const BubbleSidebar: React.FC<Props> = ({
               color: "inherit",
             }}
           >
-            {label}
+            {truncatedLabel}
           </Typography>
         )}
         
