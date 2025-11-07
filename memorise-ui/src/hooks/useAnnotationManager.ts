@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { NerSpan } from "../types/NotationEditor";
 import type { Workspace } from "../types/Workspace";
+import type { NoticeOptions } from "../types/Notice";
 import {
   resolveApiSpanConflicts,
   type ConflictPrompt,
@@ -28,7 +29,7 @@ interface AnnotationManagerOptions {
   /** Current workspace data (for hydration) */
   workspace?: Workspace;
   /** Callback to show notifications */
-  onNotice?: (msg: string) => void;
+  onNotice?: (msg: string, options?: NoticeOptions) => void;
   /** Workspace setter (for saving after NER) */
   setWorkspaces?: React.Dispatch<React.SetStateAction<Workspace[]>>;
 }

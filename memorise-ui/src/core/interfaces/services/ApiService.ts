@@ -20,8 +20,8 @@ export interface NerResult {
  */
 export interface TranslationParams {
   text: string;
-  sourceLang: string;
   targetLang: string;
+  sourceLang?: string;
 }
 
 /**
@@ -29,8 +29,8 @@ export interface TranslationParams {
  */
 export interface TranslationResult {
   translatedText: string;
-  sourceLang: string;
   targetLang: string;
+  sourceLang?: string;
 }
 
 /**
@@ -53,9 +53,5 @@ export interface ApiService {
    */
   translate(params: TranslationParams): Promise<TranslationResult>;
 
-  /**
-   * Detect the language of text
-   */
-  detectLanguage(text: string): Promise<string>;
 }
 

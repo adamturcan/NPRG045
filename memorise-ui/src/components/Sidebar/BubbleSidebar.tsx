@@ -172,6 +172,7 @@ const BubbleSidebar: React.FC<Props> = ({
             boxShadow:
               "0 0 0 3px rgba(160,184,221,0.65), 0 4px 10px rgba(12,24,38,0.18)",
           },
+          WebkitTapHighlightColor: "transparent",
         }}
       >
         {/* Label (only shown when expanded) */}
@@ -212,7 +213,7 @@ const BubbleSidebar: React.FC<Props> = ({
       content
     ) : (
       <Tooltip title={label} placement="right">
-        <span>{content}</span>
+        <span style={{ display: "inline-flex", overflow: "visible" }}>{content}</span>
       </Tooltip>
     );
   };
@@ -233,7 +234,8 @@ const BubbleSidebar: React.FC<Props> = ({
       sx={{
         position: "fixed",
         top: 80,                    // Below header
-        left: 16,                   // Slight inset from edge
+        left: 16,    
+        padding: 0.5,              // Slight inset from edge
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between", // Separate top/bottom sections

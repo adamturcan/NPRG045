@@ -24,14 +24,12 @@ const SpanBubble: React.FC<SpanBubbleProps> = ({
       <IconButton
         size="small"
         disableRipple
-        disableFocusRipple
-        disableTouchRipple
         onMouseDown={onMouseDown} // Prevents closing the bubble on mousedown
         onClick={onMenuClick} // Opens the edit menu
         sx={{
           position: "absolute",
-          top: spanBox.top, // Position calculated from the span's DOM range
-          left: spanBox.left,
+          top: spanBox.top - 4, // Position calculated from the span's DOM range
+          left: spanBox.left - 4,
           width: 30,
           height: 30,
           borderRadius: "999px",
@@ -43,6 +41,18 @@ const SpanBubble: React.FC<SpanBubbleProps> = ({
             backgroundColor: "#ffffff",
             borderColor: "rgba(2,6,23,0.45)",
           },
+          outline: "none",
+          "&:focus": {
+            outline: "none",
+            boxShadow:
+              "0 0 0 2px rgba(33, 66, 108, 0.35), 0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+          },
+          "&:focus-visible": {
+            outline: "none",
+            boxShadow:
+              "0 0 0 2px rgba(33, 66, 108, 0.35), 0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+          },
+          WebkitTapHighlightColor: "transparent",
           color: "#0F172A",
           zIndex: 60, // Ensure it appears above editor content
         }}

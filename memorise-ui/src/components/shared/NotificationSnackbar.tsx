@@ -10,13 +10,15 @@
 
 import React from "react";
 import { Snackbar, Alert } from "@mui/material";
+import type { NoticeOptions, NoticeTone } from "../../types/Notice";
 
 // Constants for snackbar configuration
 const ANCHOR_ORIGIN = { vertical: "bottom" as const, horizontal: "center" as const };
 const AUTO_HIDE_DURATION = 2200;
 const ALERT_BG_COLOR = "#21426C";
+const ALERT_BG_COLOR_INFO = "#0E4AA1";
 
-interface NotificationSnackbarProps {
+export interface NotificationSnackbarProps extends NoticeOptions {
   message: string | null;
   onClose: () => void;
 }
@@ -24,19 +26,43 @@ interface NotificationSnackbarProps {
 export const NotificationSnackbar: React.FC<NotificationSnackbarProps> = ({
   message,
   onClose,
+  tone = "default",
+  persistent = false,
 }) => {
+  const resolvedTone: NoticeTone = tone ?? "default";
+  const severity = resolvedTone === "default" ? "info" : resolvedTone;
+  const backgroundColor = resolvedTone === "info" || resolvedTone === "default"
+    ? ALERT_BG_COLOR_INFO
+    : resolvedTone === "success"
+      ? "#2E7D32"
+      : resolvedTone === "warning"
+        ? "#ED6C02"
+        : resolvedTone === "error"
+          ? "#D32F2F"
+          : ALERT_BG_COLOR;
+
+  const handleClose = (
+    _event?: React.SyntheticEvent | Event,
+    reason?: string
+  ) => {
+    if (persistent && reason === "clickaway") {
+      return;
+    }
+    onClose();
+  };
+
   return (
     <Snackbar
       open={!!message}
-      autoHideDuration={AUTO_HIDE_DURATION}
-      onClose={onClose}
+      autoHideDuration={persistent ? undefined : AUTO_HIDE_DURATION}
+      onClose={handleClose}
       anchorOrigin={ANCHOR_ORIGIN}
     >
       <Alert
-        onClose={onClose}
-        severity="info"
+        onClose={handleClose}
+        severity={severity}
         variant="filled"
-        sx={{ bgcolor: ALERT_BG_COLOR }}
+        sx={{ bgcolor: backgroundColor }}
       >
         {message}
       </Alert>

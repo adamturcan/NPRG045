@@ -1,4 +1,3 @@
-export const LANGUAGES = ["en", "cs", "da", "nl"] as const;
 export const BOOKMARK_COLORS = [
   "#FF8A80",
   "#80D8FF",

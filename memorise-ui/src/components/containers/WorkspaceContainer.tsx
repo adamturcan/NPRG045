@@ -9,6 +9,7 @@ import React, {
 import { useParams } from "react-router-dom";
 
 import type { NerSpan } from "../../types/NotationEditor";
+import type { NoticeOptions, NoticeTone } from "../../types/Notice";
 
 import RightPanel, { type TagRow } from "../right/RightPanel";
 import { NotificationSnackbar } from "../shared/NotificationSnackbar";
@@ -73,10 +74,23 @@ const WorkspaceContainer: React.FC = () => {
   // ============================================================================
   const [editorInstanceKey, setEditorInstanceKey] = useState<string>("");
   const [text, setText] = useState<string>("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    message: string;
+    tone?: NoticeTone;
+    persistent?: boolean;
+  } | null>(null);
   
   // Notification handlers
-  const showNotice = useCallback((msg: string) => setNotice(msg), []);
+  const showNotice = useCallback(
+    (msg: string, options?: NoticeOptions) => {
+      setNotice({
+        message: msg,
+        tone: options?.tone,
+        persistent: options?.persistent,
+      });
+    },
+    []
+  );
   const handleCloseNotice = useCallback(() => setNotice(null), []);
 
   // ============================================================================
@@ -279,7 +293,7 @@ const WorkspaceContainer: React.FC = () => {
         display: "flex",
         flexDirection: "row",
         height: "100vh",
-        overflow: "hidden",
+        overflow: "visible",
         position: "relative",
         px: 4,
         color: COLORS.text,
@@ -309,6 +323,8 @@ const WorkspaceContainer: React.FC = () => {
           onDeleteTranslation={translations.onDeleteTranslation}
           onUpdateTranslation={translations.onUpdateTranslation}
           isUpdating={translations.isUpdating}
+          languageOptions={translations.languageOptions}
+          isLanguageListLoading={translations.isLanguageListLoading}
         />
 
         {/* Main text editor with NER spans */}
@@ -361,7 +377,12 @@ const WorkspaceContainer: React.FC = () => {
       )}
 
       {/* GLOBAL: Notification snackbar */}
-      <NotificationSnackbar message={notice} onClose={handleCloseNotice} />
+      <NotificationSnackbar
+        message={notice?.message ?? null}
+        tone={notice?.tone}
+        persistent={notice?.persistent}
+        onClose={handleCloseNotice}
+      />
     </Box>
   );
 };

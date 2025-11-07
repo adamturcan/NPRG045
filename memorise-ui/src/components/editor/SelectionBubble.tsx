@@ -25,14 +25,12 @@ const SelectionBubble: React.FC<SelectionBubbleProps> = ({
       <IconButton
         size="small"
         disableRipple
-        disableFocusRipple
-        disableTouchRipple
         onMouseDown={onMouseDown} // Prevents closing the bubble on mousedown
         onClick={onMenuClick} // Opens the category menu
         sx={{
           position: "absolute",
-          top: selectionBox.top, // Position calculated from DOM selection
-          left: selectionBox.left,
+          top: selectionBox.top - 4,
+          left: selectionBox.left - 4,
           width: 30,
           height: 30,
           borderRadius: "999px",
@@ -44,6 +42,18 @@ const SelectionBubble: React.FC<SelectionBubbleProps> = ({
             backgroundColor: "#ffffff",
             borderColor: "rgba(2,6,23,0.45)",
           },
+          outline: "none",
+          "&:focus": {
+          outline: "none",
+          boxShadow:
+            "0 0 0 2px rgba(33, 66, 108, 0.35), 0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+          },
+          "&:focus-visible": {
+            outline: "none",
+            boxShadow:
+              "0 0 0 2px rgba(33, 66, 108, 0.35), 0 8px 18px rgba(2,6,23,0.22), 0 3px 7px rgba(2,6,23,0.16)",
+          },
+        WebkitTapHighlightColor: "transparent",
           color: "#0F172A",
           zIndex: 60, // Ensure it appears above editor content
         }}

@@ -1,6 +1,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { Workspace } from "../types/Workspace";
 import type { NerSpan } from "../types/NotationEditor";
+import type { LanguageCode } from "../lib/translation";
+import { getSupportedLanguages, getLanguageName } from "../lib/translation";
+import type { NoticeOptions } from "../types/Notice";
 
 /**
  * Options for useTranslationManager hook
@@ -27,7 +30,7 @@ interface TranslationManagerOptions {
   /** Workspace setter */
   setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
   /** Callback to show notifications */
-  onNotice: (msg: string) => void;
+  onNotice: (msg: string, options?: NoticeOptions) => void;
 }
 
 /**
@@ -76,6 +79,12 @@ export function useTranslationManager(options: TranslationManagerOptions) {
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   /**
+   * Supported languages available in the translation service
+   */
+  const [supportedLanguages, setSupportedLanguages] = useState<LanguageCode[]>([]);
+  const [isLanguageListLoading, setIsLanguageListLoading] = useState<boolean>(false);
+
+  /**
    * Keep workspace ref to avoid infinite loops when workspace object reference changes
    * Update ref when workspace actually changes (by ID comparison)
    */
@@ -104,6 +113,58 @@ export function useTranslationManager(options: TranslationManagerOptions) {
   }, [workspace?.translations]); // Only depend on translations array, not entire workspace object
 
   /**
+   * Fetch supported languages on mount
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLanguages = async () => {
+      setIsLanguageListLoading(true);
+      try {
+        const languages = await getSupportedLanguages();
+        if (!cancelled) {
+          setSupportedLanguages(languages);
+        }
+      } catch (error) {
+        console.error("Failed to load supported languages:", error);
+        if (!cancelled) {
+          setSupportedLanguages([]);
+          onNotice("Unable to load supported languages. Try again later.", {
+            tone: "error",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLanguageListLoading(false);
+        }
+      }
+    };
+
+    void loadLanguages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onNotice]);
+
+  /**
+   * Pre-compute language options (exclude already-added translations)
+   */
+  const languageOptions = useMemo(() => {
+    const existingLanguages = new Set(
+      translationLanguages.map((lang) => lang.toLowerCase())
+    );
+
+    return supportedLanguages
+      .filter((code) => !existingLanguages.has(code.toLowerCase()))
+      .map((code) => ({
+        code,
+        label: getLanguageName(code),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  }, [supportedLanguages, translationLanguages]);
+
+  /**
    * Open translation menu
    */
   const openMenu = useCallback((e: React.MouseEvent<HTMLElement>) => {
@@ -123,9 +184,6 @@ export function useTranslationManager(options: TranslationManagerOptions) {
    */
   const handleTabSwitch = useCallback(
     (tabId: string) => {
-      // Prevent tab switching during translation update
-      if (isUpdating) return;
-      
       // Use refs to avoid dependency on changing workspace object
       const currentWorkspaceId = workspaceIdRef.current;
       const currentWorkspace = workspaceRef.current;
@@ -216,7 +274,6 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     },
     [
       activeTab,
-      isUpdating,
       getCurrentText,
       annotationsRef,
       setText,
@@ -235,12 +292,18 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
       if (!workspaceId || !workspace) return;
 
+      if (isUpdating) {
+        return;
+      }
+
       // Check if translation already exists for this language
       const existingTranslation = workspace.translations?.find(
         (t) => t.language === targetLang
       );
       if (existingTranslation) {
-        onNotice(`Translation to ${targetLang} already exists. Use update instead.`);
+        onNotice(`Translation to ${targetLang} already exists. Use update instead.`, {
+          tone: "warning",
+        });
         return;
       }
 
@@ -250,33 +313,33 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       const originalText = workspace.text || "";
       
       if (!originalText.trim()) {
-        onNotice("Add some text before creating translation.");
+        onNotice("Add some text before creating translation.", {
+          tone: "warning",
+        });
         return;
       }
 
       try {
-        // Import translation API and language detection
-        const { translateText, detectLanguage } = await import("../lib/translation");
+        // Import translation API lazily to keep bundle size low
+        const { translateText } = await import("../lib/translation");
 
-        // Auto-detect source language from the captured original text
-        onNotice(`Detecting language...`);
-        const detectedLang = await detectLanguage(originalText);
-        
-        onNotice(`Detected ${detectedLang} → Translating to ${targetLang}...`);
-
-        // Call translation API with the captured original text
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await translateText({
-          text: originalText,
-          sourceLang: detectedLang as any,
-          targetLang: targetLang as any,
+        setIsUpdating(true);
+        onNotice(`Translating to ${targetLang}...`, {
+          tone: "info",
+          persistent: true,
         });
 
-        // Create new translation object (store detected source language)
+        // Call translation API with the captured original text
+        const result = await translateText({
+          text: originalText,
+          targetLang: targetLang as LanguageCode,
+        });
+
+        // Create new translation object (persist auto-detected source if provided)
         const newTranslation = {
           language: targetLang,
           text: result.translatedText,
-          sourceLang: detectedLang,
+          sourceLang: result.sourceLang ?? "auto",
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -307,18 +370,16 @@ export function useTranslationManager(options: TranslationManagerOptions) {
           setEditorInstanceKey(`${capturedWorkspaceId}:${targetLang}:${Date.now()}`);
         }
 
-        // Show completion message with detected language info
-        if (detectedLang && detectedLang !== "en") {
-          onNotice(`Detected ${detectedLang} → Translated to ${targetLang}!`);
-        } else {
-          onNotice(`Translation to ${targetLang} completed!`);
-        }
+        // Show completion message
+        onNotice(`Translation to ${targetLang} completed!`, { tone: "success" });
       } catch (error) {
         console.error("Translation failed:", error);
-        onNotice("Translation failed. Try again.");
+        onNotice("Translation failed. Try again.", { tone: "error" });
+      } finally {
+        setIsUpdating(false);
       }
     },
-    [workspaceId, workspace, closeMenu, setText, setEditorInstanceKey, setWorkspaces, onNotice]
+    [workspaceId, workspace, closeMenu, setText, setEditorInstanceKey, setWorkspaces, onNotice, isUpdating]
   );
 
   /**
@@ -336,28 +397,27 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       const originalText = workspace.text || "";
       
       if (!originalText.trim()) {
-        onNotice("Add some text before updating translation.");
+        onNotice("Add some text before updating translation.", {
+          tone: "warning",
+        });
         return;
       }
 
       setIsUpdating(true);
 
       try {
-        // Import translation API and language detection
-        const { translateText, detectLanguage } = await import("../lib/translation");
+        // Import translation API lazily to keep bundle size low
+        const { translateText } = await import("../lib/translation");
 
-        // Auto-detect source language from the captured original text
-        onNotice(`Detecting language...`);
-        const detectedLang = await detectLanguage(originalText);
-        
-        onNotice(`Detected ${detectedLang} → Updating ${targetLang}...`);
+        onNotice(`Updating ${targetLang} translation...`, {
+          tone: "info",
+          persistent: true,
+        });
 
         // Call translation API with the captured original text
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await translateText({
           text: originalText,
-          sourceLang: detectedLang as any,
-          targetLang: targetLang as any,
+          targetLang: targetLang as LanguageCode,
         });
 
         // Update existing translation in workspace
@@ -368,7 +428,12 @@ export function useTranslationManager(options: TranslationManagerOptions) {
                   ...w,
                   translations: (w.translations || []).map((t) =>
                     t.language === targetLang
-                      ? { ...t, text: result.translatedText, updatedAt: Date.now() }
+                      ? {
+                          ...t,
+                          text: result.translatedText,
+                          sourceLang: result.sourceLang ?? t.sourceLang ?? "auto",
+                          updatedAt: Date.now(),
+                        }
                       : t
                   ),
                   updatedAt: Date.now(),
@@ -387,10 +452,10 @@ export function useTranslationManager(options: TranslationManagerOptions) {
           setEditorInstanceKey(`${capturedWorkspaceId}:${targetLang}:${Date.now()}`);
         }
 
-        onNotice(`Translation "${targetLang}" updated!`);
+        onNotice(`Translation "${targetLang}" updated!`, { tone: "success" });
       } catch (error) {
         console.error("Translation update failed:", error);
-        onNotice("Update failed. Try again.");
+        onNotice("Update failed. Try again.", { tone: "error" });
       } finally {
         setIsUpdating(false);
       }
@@ -457,6 +522,8 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     onUpdateTranslation: handleUpdateTranslation,
     onDeleteTranslation: handleDeleteTranslation,
     isUpdating,
+    languageOptions,
+    isLanguageListLoading,
     // Expose setter for external control if needed
     setActiveTab,
   };

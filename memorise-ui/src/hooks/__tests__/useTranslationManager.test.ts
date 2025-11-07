@@ -5,15 +5,18 @@ import { useTranslationManager } from '../useTranslationManager';
 import type { Workspace } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
 
+const mockTranslateText = vi.fn();
+const mockGetSupportedLanguages = vi.fn();
+const mockGetLanguageName = vi.fn((code: string) => code.toUpperCase());
+
 // Mock translation API
 vi.mock('../../lib/translation', () => ({
-  translateText: vi.fn(),
-  detectLanguage: vi.fn(),
+  translateText: mockTranslateText,
+  getSupportedLanguages: mockGetSupportedLanguages,
+  getLanguageName: mockGetLanguageName,
 }));
 
 describe('useTranslationManager', () => {
-  const mockTranslateText = vi.fn();
-  const mockDetectLanguage = vi.fn();
   const mockGetCurrentText = vi.fn(() => 'Current text');
   const mockSetText = vi.fn();
   const mockSetEditorInstanceKey = vi.fn();
@@ -36,14 +39,20 @@ describe('useTranslationManager', () => {
     tags: [],
     updatedAt: Date.now(),
   };
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    
-    // Setup mocks
-    const translation = vi.mocked(await import('../../lib/translation'));
-    translation.translateText = mockTranslateText;
-    translation.detectLanguage = mockDetectLanguage;
+    mockTranslateText.mockReset();
+    mockGetSupportedLanguages.mockReset();
+    mockGetLanguageName.mockReset();
+
+    mockGetSupportedLanguages.mockResolvedValue(['en', 'cs', 'da']);
+    mockGetLanguageName.mockImplementation((code: string) => code.toUpperCase());
+
+    mockGetCurrentText.mockReturnValue('Current text');
+    mockSetText.mockReset();
+    mockSetEditorInstanceKey.mockReset();
+    mockSetWorkspaces.mockReset();
+    mockOnNotice.mockReset();
   });
 
   const defaultOptions = {
@@ -196,10 +205,8 @@ describe('useTranslationManager', () => {
   });
 
   it('should add new translation', async () => {
-    mockDetectLanguage.mockResolvedValue('en');
     mockTranslateText.mockResolvedValue({
       translatedText: 'Translated text',
-      sourceLang: 'en',
       targetLang: 'cs',
     });
 
@@ -212,7 +219,6 @@ describe('useTranslationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockDetectLanguage).toHaveBeenCalled();
       expect(mockTranslateText).toHaveBeenCalled();
       expect(mockSetWorkspaces).toHaveBeenCalled();
       expect(result.current.activeTab).toBe('cs');
@@ -271,7 +277,6 @@ describe('useTranslationManager', () => {
   });
 
   it('should handle translation error', async () => {
-    mockDetectLanguage.mockResolvedValue('en');
     mockTranslateText.mockRejectedValue(new Error('Translation failed'));
 
     const { result } = renderHook(() =>
@@ -301,10 +306,8 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    mockDetectLanguage.mockResolvedValue('en');
     mockTranslateText.mockResolvedValue({
       translatedText: 'New translation',
-      sourceLang: 'en',
       targetLang: 'cs',
     });
 
@@ -340,10 +343,8 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    mockDetectLanguage.mockResolvedValue('en');
     mockTranslateText.mockResolvedValue({
       translatedText: 'New',
-      sourceLang: 'en',
       targetLang: 'cs',
     });
 
