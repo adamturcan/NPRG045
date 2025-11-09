@@ -29,13 +29,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       loadWorkspaces: async (username: string) => {
         set({ isLoading: true, error: null });
         try {
-          const loaded = WorkspaceService.loadForUser(username);
+          const loaded = await WorkspaceService.loadForUser(username);
           if (loaded && loaded.length) {
             set({ workspaces: loaded, isLoading: false });
           } else {
             const seeded = WorkspaceService.seedForUser(username);
             set({ workspaces: seeded, isLoading: false });
-            WorkspaceService.saveForUser(username, seeded);
+            await WorkspaceService.saveForUser(username, seeded);
           }
         } catch (error) {
           set({

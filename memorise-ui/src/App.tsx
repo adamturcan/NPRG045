@@ -106,7 +106,7 @@ const App: React.FC = () => {
   // Persist whenever workspaces change — but only after boot
   useEffect(() => {
     if (!booted || !username) return;
-    WorkspaceService.saveForUser(username, workspaces);
+    void WorkspaceService.saveForUser(username, workspaces);
   }, [booted, username, workspaces]);
 
   // Login / logout

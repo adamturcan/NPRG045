@@ -1,21 +1,6 @@
-import type { Workspace } from '../types/Workspace';
-
-const BASE_WS_KEY = "memorise.workspaces.v1";
-const keyForUser = (u: string) => `${BASE_WS_KEY}:${u}`;
-
-function normalizeOwner(arr: unknown, owner: string): Workspace[] {
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .filter((x) => x && typeof x === "object")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((w: any) => ({
-      ...w,
-      owner: w?.owner ?? owner,
-      text: typeof w?.text === "string" ? w.text : "",
-      userSpans: Array.isArray(w?.userSpans) ? w.userSpans : [],
-      updatedAt: typeof w?.updatedAt === "number" ? w.updatedAt : Date.now(),
-    })) as Workspace[];
-}
+import type { Workspace } from "../types/Workspace";
+import type { Workspace as DomainWorkspace } from "../domain/Workspace";
+import { getWorkspaceRepository } from "../infrastructure/providers/repositories";
 
 export class WorkspaceService {
   static seedForUser(owner: string): Workspace[] {
@@ -50,29 +35,33 @@ export class WorkspaceService {
     ];
   }
 
-  static loadForUser(username: string): Workspace[] | null {
-    try {
-      const perUser = localStorage.getItem(keyForUser(username));
-      if (perUser) return normalizeOwner(JSON.parse(perUser), username);
+  static async loadForUser(username: string): Promise<Workspace[] | null> {
+    const repository = getWorkspaceRepository();
+    const results = await repository.findByOwner(username);
 
-      // migrate old single-bucket storage if present
-      const legacy = localStorage.getItem(BASE_WS_KEY);
-      if (legacy) {
-        const migrated = normalizeOwner(JSON.parse(legacy), username);
-        localStorage.setItem(keyForUser(username), JSON.stringify(migrated));
-        return migrated;
-      }
-    } catch (error) {
-      console.error(error);
+    if (!results.length) {
+      return null;
     }
-    return null;
+
+    return results.map((workspace) => ({
+      ...workspace,
+      owner: workspace.owner ?? username,
+    }));
   }
 
-  static saveForUser(username: string, workspaces: Workspace[]): void {
-    try {
-      localStorage.setItem(keyForUser(username), JSON.stringify(workspaces));
-    } catch (error) {
-      console.error(error);
+  static async saveForUser(username: string, workspaces: Workspace[]): Promise<void> {
+    const repository = getWorkspaceRepository();
+    const existing = await repository.findByOwner(username);
+    const incomingIds = new Set(workspaces.map((ws) => ws.id));
+
+    await Promise.all(
+      existing
+        .filter((workspace) => !incomingIds.has(workspace.id))
+        .map((workspace) => repository.delete(workspace.id))
+    );
+
+    for (const workspace of workspaces) {
+      await repository.save(this.toDomainWorkspace(workspace, username));
     }
   }
 
@@ -99,5 +88,21 @@ export class WorkspaceService {
 
   static deleteWorkspace(id: string, workspaces: Workspace[]): Workspace[] {
     return workspaces.filter((w) => w.id !== id);
+  }
+
+  private static toDomainWorkspace(workspace: Workspace, owner: string): DomainWorkspace {
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      owner: workspace.owner ?? owner,
+      text: workspace.text ?? "",
+      isTemporary: Boolean(workspace.isTemporary),
+      updatedAt: workspace.updatedAt ?? Date.now(),
+      userSpans: workspace.userSpans ?? [],
+      apiSpans: workspace.apiSpans ?? [],
+      deletedApiKeys: workspace.deletedApiKeys ?? [],
+      tags: workspace.tags ?? [],
+      translations: workspace.translations ?? [],
+    } as unknown as DomainWorkspace;
   }
 }

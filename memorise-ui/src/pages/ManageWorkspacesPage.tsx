@@ -78,7 +78,6 @@ const ManageWorkspacesPage: React.FC<Props> = ({
   const confirmDelete = () => {
     if (!toDelete) return;
     setWorkspaces((prev) => prev.filter((w) => w.id !== toDelete.id));
-    localStorage.removeItem(`workspace-content:${toDelete.id}`);
     closeDeleteDialog();
   };
 
