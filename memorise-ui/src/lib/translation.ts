@@ -1,11 +1,13 @@
 /**
  * Translation API Integration
- * 
+ *
  * This module provides translation services for the workspace editor.
  * Currently backed by the Memorise machine translation service.
  * Adjust `API_BASE_URL` and the request/response mapping below if the
  * endpoint or payload schema changes in the future.
  */
+
+import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
 
 // =============================================================================
 // Configuration
@@ -147,19 +149,46 @@ export interface TranslationResponse {
 // =============================================================================
 
 async function fetchSupportedLanguagesFromApi(): Promise<LanguageCode[]> {
-  const response = await fetch(SUPPORTED_LANGUAGES_ENDPOINT);
+  const context = {
+    operation: "fetch supported languages",
+    endpoint: SUPPORTED_LANGUAGES_ENDPOINT,
+  };
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch supported languages: ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(SUPPORTED_LANGUAGES_ENDPOINT);
+  } catch (error) {
+    throw errorHandlingService.handleApiError(error, context);
   }
 
-  const data = (await response.json()) as { languages?: unknown };
+  if (!response.ok) {
+    throw errorHandlingService.handleApiError(response, context);
+  }
+
+  let data: { languages?: unknown };
+  try {
+    data = (await response.json()) as { languages?: unknown };
+  } catch (error) {
+    throw errorHandlingService.handleApiError(error, {
+      ...context,
+      operation: "parse supported languages response",
+    });
+  }
+
   const languages = Array.isArray(data.languages)
-    ? data.languages.filter((lang): lang is LanguageCode => typeof lang === "string")
+    ? data.languages.filter(
+        (lang): lang is LanguageCode => typeof lang === "string"
+      )
     : null;
 
   if (!languages || languages.length === 0) {
-    throw new Error("Supported languages response malformed");
+    throw errorHandlingService.handleValidationError(
+      "Supported languages response malformed",
+      {
+        ...context,
+        receivedType: typeof data.languages,
+      }
+    );
   }
 
   return languages;
@@ -178,9 +207,18 @@ async function loadSupportedLanguages(): Promise<LanguageCode[]> {
         supportedLanguagesSetCache = new Set(languages);
         return languages;
       } catch (error) {
+        const appError = errorHandlingService.handleApiError(error, {
+          operation: "load supported languages",
+          endpoint: SUPPORTED_LANGUAGES_ENDPOINT,
+        });
+
+        errorHandlingService.logError(appError, {
+          component: "translation.loadSupportedLanguages",
+        });
+
         console.warn(
           "Falling back to bundled supported languages list:",
-          error
+          appError.message
         );
         supportedLanguagesCache = [...FALLBACK_LANGUAGES];
         supportedLanguagesSetCache = new Set(FALLBACK_LANGUAGES);
@@ -209,23 +247,49 @@ async function memoriseTranslate(
 ): Promise<TranslationResponse> {
   const endpoint = `${API_BASE_URL.replace(/\/$/, "")}/translate`;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tgt_lang: request.targetLang,
-      text: request.text,
-    }),
-  });
+  const context = {
+    operation: "translate text",
+    endpoint,
+    targetLang: request.targetLang,
+    payloadLength: request.text.length,
+  };
 
-  if (!response.ok) {
-    throw new Error(`Translation failed: ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tgt_lang: request.targetLang,
+        text: request.text,
+      }),
+    });
+  } catch (error) {
+    throw errorHandlingService.handleApiError(error, context);
   }
 
-  const data = (await response.json()) as { text?: string };
+  if (!response.ok) {
+    throw errorHandlingService.handleApiError(response, context);
+  }
+
+  let data: { text?: string };
+  try {
+    data = (await response.json()) as { text?: string };
+  } catch (error) {
+    throw errorHandlingService.handleApiError(error, {
+      ...context,
+      operation: "parse translation response",
+    });
+  }
 
   if (!data || typeof data.text !== "string") {
-    throw new Error("Translation API returned an invalid response");
+    throw errorHandlingService.handleValidationError(
+      "Translation API returned an invalid response",
+      {
+        ...context,
+        responseSnapshot: data,
+      }
+    );
   }
 
   return {
@@ -251,11 +315,24 @@ export async function translateText(
 ): Promise<TranslationResponse> {
   // Input validation
   if (!request.text || !request.text.trim()) {
-    throw new Error("Translation text cannot be empty");
+    throw errorHandlingService.handleValidationError(
+      "Translation text cannot be empty",
+      {
+        operation: "validate translation request",
+        field: "text",
+      }
+    );
   }
 
   if (request.text.length > 50000) {
-    throw new Error("Translation text too long (max 50,000 characters)");
+    throw errorHandlingService.handleValidationError(
+      "Translation text too long (max 50,000 characters)",
+      {
+        operation: "validate translation request",
+        field: "text",
+        length: request.text.length,
+      }
+    );
   }
 
   // Normalize language codes (handle old 3-letter codes)
@@ -269,7 +346,14 @@ export async function translateText(
   const supportedLanguages = await memoizedSupportedLanguagesSet();
 
   if (!supportedLanguages.has(targetLang)) {
-    throw new Error(`Unsupported target language: ${targetLang}`);
+    throw errorHandlingService.handleValidationError(
+      `Unsupported target language: ${targetLang}`,
+      {
+        operation: "validate translation request",
+        field: "targetLang",
+        value: targetLang,
+      }
+    );
   }
 
   if (sourceLang && LANGUAGE_CODE_MAP[sourceLang]) {
@@ -277,27 +361,33 @@ export async function translateText(
   }
 
   if (sourceLang && !supportedLanguages.has(sourceLang)) {
-    throw new Error(`Unsupported source language: ${sourceLang}`);
+    throw errorHandlingService.handleValidationError(
+      `Unsupported source language: ${sourceLang}`,
+      {
+        operation: "validate translation request",
+        field: "sourceLang",
+        value: sourceLang,
+      }
+    );
   }
 
-  try {
-    const normalizedRequest = {
-      ...request,
-      sourceLang: sourceLang as LanguageCode | undefined,
-      targetLang: targetLang as LanguageCode,
-    } satisfies TranslationRequest;
+  const normalizedRequest = {
+    ...request,
+    sourceLang: sourceLang as LanguageCode | undefined,
+    targetLang: targetLang as LanguageCode,
+  } satisfies TranslationRequest;
 
+  try {
     // Memorise MT API automatically detects the source language, so we only
     // provide the target language in the request payload. The detected source
     // language reported to callers comes from the input when provided.
     return await memoriseTranslate(normalizedRequest);
   } catch (error) {
-    console.error("Translation error:", error);
-    throw new Error(
-      error instanceof Error
-        ? error.message
-        : "Translation service unavailable"
-    );
+    throw errorHandlingService.handleApiError(error, {
+      operation: "translate text",
+      targetLang: normalizedRequest.targetLang,
+      sourceLang: normalizedRequest.sourceLang,
+    });
   }
 }
 

@@ -330,7 +330,7 @@ describe('useAnnotationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnNotice).toHaveBeenCalledWith('NER failed. Try again.');
+      expect(mockOnNotice).toHaveBeenCalledWith('Unable to run NER. Please try again.', { tone: 'error' });
     });
   });
 

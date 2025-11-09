@@ -1,22 +1,55 @@
-import { classify, ner } from '../lib/api';
-import { translateText as translationService } from '../lib/translation';
-import type { TranslationRequest, TranslationResponse } from '../lib/translation';
+import { classify as classifyRequest, ner as nerRequest } from "../lib/api";
+import {
+  translateText as translationService,
+  type TranslationRequest,
+  type TranslationResponse,
+} from "../lib/translation";
+import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
 
 export class ApiService {
   static async classify(text: string): Promise<{ name?: string; tag?: string; label?: number; keywordId?: number; parentId?: number }[]> {
-    return await classify(text);
+    try {
+      return await classifyRequest(text);
+    } catch (error) {
+      throw errorHandlingService.handleApiError(error, {
+        operation: "classify text",
+        layer: "ApiService",
+      });
+    }
   }
 
   static async ner(text: string): Promise<{ start: number; end: number; entity: string }[]> {
-    return await ner(text);
+    try {
+      return await nerRequest(text);
+    } catch (error) {
+      throw errorHandlingService.handleApiError(error, {
+        operation: "run NER",
+        layer: "ApiService",
+      });
+    }
   }
 
   static async translate(params: TranslationRequest): Promise<TranslationResponse> {
-    return await translationService(params);
+    try {
+      return await translationService(params);
+    } catch (error) {
+      throw errorHandlingService.handleApiError(error, {
+        operation: "translate text",
+        layer: "ApiService",
+      });
+    }
   }
 }
 
 // Re-export for backward compatibility
 export async function translateText(params: TranslationRequest): Promise<TranslationResponse> {
-  return translationService(params);
+  try {
+    return await translationService(params);
+  } catch (error) {
+    throw errorHandlingService.handleApiError(error, {
+      operation: "translate text",
+      layer: "ApiService",
+      entrypoint: "function-export",
+    });
+  }
 }

@@ -5,16 +5,20 @@ import { useTranslationManager } from '../useTranslationManager';
 import type { Workspace } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
 
-const mockTranslateText = vi.fn();
-const mockGetSupportedLanguages = vi.fn();
-const mockGetLanguageName = vi.fn((code: string) => code.toUpperCase());
+const translationMocks = vi.hoisted(() => ({
+  translateText: vi.fn(),
+  getSupportedLanguages: vi.fn(),
+  getLanguageName: vi.fn((code: string) => code.toUpperCase()),
+}));
 
 // Mock translation API
-vi.mock('../../lib/translation', () => ({
+vi.mock('../../lib/translation', () => translationMocks);
+
+const {
   translateText: mockTranslateText,
   getSupportedLanguages: mockGetSupportedLanguages,
   getLanguageName: mockGetLanguageName,
-}));
+} = translationMocks;
 
 describe('useTranslationManager', () => {
   const mockGetCurrentText = vi.fn(() => 'Current text');
@@ -244,7 +248,7 @@ describe('useTranslationManager', () => {
     });
 
     expect(mockTranslateText).not.toHaveBeenCalled();
-    expect(mockOnNotice).toHaveBeenCalledWith('Add some text before creating translation.');
+    expect(mockOnNotice).toHaveBeenCalledWith('Add some text before creating translation.', { tone: 'warning' });
   });
 
   it('should not add duplicate translation', async () => {
@@ -273,7 +277,7 @@ describe('useTranslationManager', () => {
     });
 
     expect(mockTranslateText).not.toHaveBeenCalled();
-    expect(mockOnNotice).toHaveBeenCalledWith('Translation to cs already exists. Use update instead.');
+    expect(mockOnNotice).toHaveBeenCalledWith('Translation to cs already exists. Use update instead.', { tone: 'warning' });
   });
 
   it('should handle translation error', async () => {
@@ -288,7 +292,7 @@ describe('useTranslationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnNotice).toHaveBeenCalledWith('Translation failed. Try again.');
+      expect(mockOnNotice).toHaveBeenCalledWith('Unable to translate text to cs. Please try again.', { tone: 'error' });
     });
   });
 
@@ -325,7 +329,7 @@ describe('useTranslationManager', () => {
     await waitFor(() => {
       expect(mockTranslateText).toHaveBeenCalled();
       expect(mockSetWorkspaces).toHaveBeenCalled();
-      expect(mockOnNotice).toHaveBeenCalledWith('Translation "cs" updated!');
+      expect(mockOnNotice).toHaveBeenCalledWith('Translation "cs" updated!', { tone: 'success' });
     });
   });
 

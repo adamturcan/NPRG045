@@ -32,6 +32,7 @@ import {
   useWorkspaceSync,
 } from "../../hooks";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
+import { errorHandlingService } from "../../infrastructure/services/ErrorHandlingService";
 
 /**
  * WorkspaceContainer - Container component that orchestrates workspace editing
@@ -203,8 +204,20 @@ const WorkspaceContainer: React.FC = () => {
       showNotice("Paste some text before running classify.");
       return;
     }
-    await tags.runClassify(text);
-    showNotice("Classification completed.");
+    try {
+      await tags.runClassify(text);
+      showNotice("Classification completed.");
+    } catch (error) {
+      const appError = errorHandlingService.handleApiError(error, {
+        operation: "classify text",
+        component: "WorkspaceContainer",
+      });
+      errorHandlingService.logError(appError, {
+        component: "WorkspaceContainer",
+        action: "handleRunClassify",
+      });
+      showNotice(appError.message, { tone: "error" });
+    }
   }, [text, tags, showNotice]);
 
   const handleRunNer = useCallback(async () => {

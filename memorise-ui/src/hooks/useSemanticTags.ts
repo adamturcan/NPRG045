@@ -21,6 +21,7 @@ import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { TagItem } from "../types/Tag";
 import type { ThesaurusIndexItem } from "../types/Thesaurus";
 import { loadThesaurusIndex, findInThesaurus } from "../lib/thesaurusHelpers";
+import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
 
 type Options = {
   initialTags?: TagItem[];
@@ -248,15 +249,30 @@ export function useSemanticTags(opts?: Options) {
    */
   const runClassify = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    
-    // Call the classification API
-    const { classify: apiClassify } = await import("../lib/api");
-    const data = await apiClassify(text);
+
+    let data: { results?: unknown };
+    try {
+      const { classify: apiClassify } = await import("../lib/api");
+      data = await apiClassify(text);
+    } catch (error) {
+      const appError = errorHandlingService.handleApiError(error, {
+        operation: "classify text",
+        hook: "useSemanticTags",
+        payloadLength: text.length,
+      });
+      errorHandlingService.logError(appError, {
+        hook: "useSemanticTags",
+        action: "runClassify",
+      });
+      throw appError;
+    }
     
     // Transform API response into TagItem array
     // API returns 'label' field which is the KeywordID from thesaurus
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiResults: any[] = data.results || [];
+    const apiResults: any[] = Array.isArray(data?.results)
+      ? (data?.results as any[])
+      : [];
     
     // Expand duplicate KeywordIDs into multiple tags
     const newTags: TagItem[] = [];

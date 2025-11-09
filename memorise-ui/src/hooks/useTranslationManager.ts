@@ -4,6 +4,7 @@ import type { NerSpan } from "../types/NotationEditor";
 import type { LanguageCode } from "../lib/translation";
 import { getSupportedLanguages, getLanguageName } from "../lib/translation";
 import type { NoticeOptions } from "../types/Notice";
+import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
 
 /**
  * Options for useTranslationManager hook
@@ -126,10 +127,17 @@ export function useTranslationManager(options: TranslationManagerOptions) {
           setSupportedLanguages(languages);
         }
       } catch (error) {
-        console.error("Failed to load supported languages:", error);
+        const appError = errorHandlingService.handleApiError(error, {
+          operation: "load supported languages",
+          hook: "useTranslationManager",
+        });
+        errorHandlingService.logError(appError, {
+          hook: "useTranslationManager",
+          action: "loadSupportedLanguages",
+        });
         if (!cancelled) {
           setSupportedLanguages([]);
-          onNotice("Unable to load supported languages. Try again later.", {
+          onNotice(appError.message, {
             tone: "error",
           });
         }
@@ -373,8 +381,16 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         // Show completion message
         onNotice(`Translation to ${targetLang} completed!`, { tone: "success" });
       } catch (error) {
-        console.error("Translation failed:", error);
-        onNotice("Translation failed. Try again.", { tone: "error" });
+        const appError = errorHandlingService.handleApiError(error, {
+          operation: `translate text to ${targetLang}`,
+          hook: "useTranslationManager",
+          workspaceId: capturedWorkspaceId,
+        });
+        errorHandlingService.logError(appError, {
+          hook: "useTranslationManager",
+          action: "handleAddTranslation",
+        });
+        onNotice(appError.message, { tone: "error" });
       } finally {
         setIsUpdating(false);
       }
@@ -454,8 +470,16 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
         onNotice(`Translation "${targetLang}" updated!`, { tone: "success" });
       } catch (error) {
-        console.error("Translation update failed:", error);
-        onNotice("Update failed. Try again.", { tone: "error" });
+        const appError = errorHandlingService.handleApiError(error, {
+          operation: `update translation ${targetLang}`,
+          hook: "useTranslationManager",
+          workspaceId: capturedWorkspaceId,
+        });
+        errorHandlingService.logError(appError, {
+          hook: "useTranslationManager",
+          action: "handleUpdateTranslation",
+        });
+        onNotice(appError.message, { tone: "error" });
       } finally {
         setIsUpdating(false);
       }

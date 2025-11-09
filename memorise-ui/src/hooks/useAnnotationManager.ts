@@ -6,6 +6,7 @@ import {
   resolveApiSpanConflicts,
   type ConflictPrompt,
 } from "../core/services/annotation/resolveApiSpanConflicts";
+import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
 
 /**
  * Create a unique key for an NER span (for comparison/deduplication)
@@ -330,8 +331,17 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
             : "NER completed."
         );
       } catch (error) {
-        console.error("NER failed:", error);
-        onNotice?.("NER failed. Try again.");
+        const appError = errorHandlingService.handleApiError(error, {
+          operation: "run NER",
+          hook: "useAnnotationManager",
+          workspaceId,
+          activeTab,
+        });
+        errorHandlingService.logError(appError, {
+          hook: "useAnnotationManager",
+          action: "runNer",
+        });
+        onNotice?.(appError.message, { tone: "error" });
       }
     },
     [
