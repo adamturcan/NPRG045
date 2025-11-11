@@ -17,7 +17,7 @@ describe('useNotification', () => {
       result.current.showNotice('Test message');
     });
     
-    expect(result.current.notice).toBe('Test message');
+    expect(result.current.notice).toMatchObject({ message: 'Test message' });
   });
 
   it('should clear notification when clearNotice is called', () => {
@@ -27,7 +27,7 @@ describe('useNotification', () => {
     act(() => {
       result.current.showNotice('Test message');
     });
-    expect(result.current.notice).toBe('Test message');
+    expect(result.current.notice).toMatchObject({ message: 'Test message' });
     
     // Then clear it
     act(() => {
@@ -42,12 +42,12 @@ describe('useNotification', () => {
     act(() => {
       result.current.showNotice('First message');
     });
-    expect(result.current.notice).toBe('First message');
+    expect(result.current.notice).toMatchObject({ message: 'First message' });
     
     act(() => {
       result.current.showNotice('Second message');
     });
-    expect(result.current.notice).toBe('Second message');
+    expect(result.current.notice).toMatchObject({ message: 'Second message' });
   });
 
   it('should handle empty strings', () => {
@@ -57,7 +57,7 @@ describe('useNotification', () => {
       result.current.showNotice('');
     });
     
-    expect(result.current.notice).toBe('');
+    expect(result.current.notice).toMatchObject({ message: '' });
   });
 
   it('should maintain function references across renders', () => {

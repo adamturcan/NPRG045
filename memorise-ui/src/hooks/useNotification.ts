@@ -27,19 +27,24 @@
  * ```
  */
 import { useState, useCallback } from "react";
+import type { Notice, NoticeOptions } from "../types/Notice";
 
 /**
  * Hook for managing notification state
  */
 export function useNotification() {
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   
   /**
    * Show a notification message
    * @param msg - The message to display
    */
-  const showNotice = useCallback((msg: string) => {
-    setNotice(msg);
+  const showNotice = useCallback((msg: string, options?: NoticeOptions) => {
+    setNotice({
+      message: msg,
+      tone: options?.tone,
+      persistent: options?.persistent,
+    });
   }, []);
   
   /**

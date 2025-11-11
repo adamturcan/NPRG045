@@ -48,11 +48,11 @@ describe('useTranslationManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiServiceStub = createApiServiceStub();
-    apiServiceStub.getSupportedLanguages.mockResolvedValue(['en', 'cs', 'da']);
-    apiServiceStub.translate.mockResolvedValue({
+    apiServiceStub.getSupportedLanguages.mockImplementation(async () => ['en', 'cs', 'da']);
+    apiServiceStub.translate.mockImplementation(async () => ({
       translatedText: 'Translated text',
       targetLang: 'cs',
-    });
+    }));
 
     setApiProviderOverrides({ apiService: apiServiceStub });
 
@@ -221,8 +221,8 @@ describe('useTranslationManager', () => {
       useTranslationManager(defaultOptions)
     );
 
-    await act(async () => {
-      await result.current.onAddTranslation('cs');
+    act(() => {
+      void result.current.onAddTranslation('cs');
     });
 
     await waitFor(() => {
@@ -246,8 +246,8 @@ describe('useTranslationManager', () => {
       })
     );
 
-    await act(async () => {
-      await result.current.onAddTranslation('cs');
+    act(() => {
+      void result.current.onAddTranslation('cs');
     });
 
     expect(apiServiceStub.translate).not.toHaveBeenCalled();
@@ -275,8 +275,8 @@ describe('useTranslationManager', () => {
       })
     );
 
-    await act(async () => {
-      await result.current.onAddTranslation('cs');
+    act(() => {
+      void result.current.onAddTranslation('cs');
     });
 
     expect(apiServiceStub.translate).not.toHaveBeenCalled();
@@ -290,8 +290,8 @@ describe('useTranslationManager', () => {
       useTranslationManager(defaultOptions)
     );
 
-    await act(async () => {
-      await result.current.onAddTranslation('cs');
+    act(() => {
+      void result.current.onAddTranslation('cs');
     });
 
     await waitFor(() => {
@@ -317,10 +317,10 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    apiServiceStub.translate.mockResolvedValue({
+    apiServiceStub.translate.mockImplementation(async () => ({
       translatedText: 'New translation',
       targetLang: 'cs',
-    });
+    }));
 
     const { result } = renderHook(() =>
       useTranslationManager({
@@ -329,8 +329,8 @@ describe('useTranslationManager', () => {
       })
     );
 
-    await act(async () => {
-      await result.current.onUpdateTranslation('cs');
+    act(() => {
+      void result.current.onUpdateTranslation('cs');
     });
 
     await waitFor(() => {
@@ -354,10 +354,10 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    apiServiceStub.translate.mockResolvedValue({
+    apiServiceStub.translate.mockImplementation(async () => ({
       translatedText: 'New',
       targetLang: 'cs',
-    });
+    }));
 
     // First switch to cs tab
     const { result } = renderHook(() =>
@@ -376,8 +376,8 @@ describe('useTranslationManager', () => {
     });
 
     // Now update the translation
-    await act(async () => {
-      await result.current.onUpdateTranslation('cs');
+    act(() => {
+      void result.current.onUpdateTranslation('cs');
     });
 
     await waitFor(() => {

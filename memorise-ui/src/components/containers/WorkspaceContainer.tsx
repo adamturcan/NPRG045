@@ -9,7 +9,7 @@ import React, {
 import { useParams } from "react-router-dom";
 
 import type { NerSpan } from "../../types/NotationEditor";
-import type { NoticeOptions, NoticeTone } from "../../types/Notice";
+import type { Notice, NoticeOptions } from "../../types/Notice";
 
 import RightPanel, { type TagRow } from "../right/RightPanel";
 import { NotificationSnackbar } from "../shared/NotificationSnackbar";
@@ -32,7 +32,8 @@ import {
   useWorkspaceSync,
 } from "../../hooks";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
-import { errorHandlingService } from "../../infrastructure/services/ErrorHandlingService";
+import { presentError } from "../../application/errors/errorPresenter";
+import { useErrorLogger } from "../../hooks/useErrorLogger";
 
 /**
  * WorkspaceContainer - Container component that orchestrates workspace editing
@@ -51,6 +52,7 @@ import { errorHandlingService } from "../../infrastructure/services/ErrorHandlin
 const EMPTY_HIGHLIGHTED_CATEGORIES: string[] = [];
 
 const WorkspaceContainer: React.FC = () => {
+  const logError = useErrorLogger({ component: "WorkspaceContainer" });
   const { id: routeId } = useParams();
   
   // ============================================================================
@@ -75,11 +77,7 @@ const WorkspaceContainer: React.FC = () => {
   // ============================================================================
   const [editorInstanceKey, setEditorInstanceKey] = useState<string>("");
   const [text, setText] = useState<string>("");
-  const [notice, setNotice] = useState<{
-    message: string;
-    tone?: NoticeTone;
-    persistent?: boolean;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   
   // Notification handlers
   const showNotice = useCallback(
@@ -208,17 +206,16 @@ const WorkspaceContainer: React.FC = () => {
       await tags.runClassify(text);
       showNotice("Classification completed.");
     } catch (error) {
-      const appError = errorHandlingService.handleApiError(error, {
+      const appError = logError(error, {
         operation: "classify text",
-        component: "WorkspaceContainer",
       });
-      errorHandlingService.logError(appError, {
-        component: "WorkspaceContainer",
-        action: "handleRunClassify",
+      const notice = presentError(appError);
+      showNotice(notice.message, {
+        tone: notice.tone,
+        persistent: notice.persistent,
       });
-      showNotice(appError.message, { tone: "error" });
     }
-  }, [text, tags, showNotice]);
+  }, [logError, showNotice, tags, text]);
 
   const handleRunNer = useCallback(async () => {
     await annotations.runNer(text, currentId ?? null);

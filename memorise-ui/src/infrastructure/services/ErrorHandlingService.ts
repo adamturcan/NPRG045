@@ -109,6 +109,44 @@ export class ErrorHandlingService {
     });
   }
 
+  async withRepositoryError<T>(
+    context: ErrorContext | undefined,
+    fn: () => Promise<T> | T
+  ): Promise<T> {
+    try {
+      return await Promise.resolve(fn());
+    } catch (error) {
+      const appError = this.wrapRepositoryError(error, context);
+      throw appError;
+    }
+  }
+
+  wrapRepositoryError(error: unknown, context?: ErrorContext): AppError {
+    const repositoryContext = this.mergeContexts(context, { layer: 'repository' });
+
+    if (this.isAppError(error)) {
+      return this.mergeContext(
+        {
+          ...error,
+          code: error.code ?? 'REPOSITORY_ERROR',
+          severity: error.severity ?? 'error',
+        },
+        repositoryContext
+      );
+    }
+
+    return this.normalise(error, {
+      defaultSeverity: 'error',
+      defaultCode: 'REPOSITORY_ERROR',
+      defaultMessage: this.operationMessage(
+        repositoryContext,
+        'Unable to complete repository operation.'
+      ),
+      context: repositoryContext,
+      cause: error,
+    });
+  }
+
   logError(error: unknown, context?: ErrorContext): void {
     const appError = this.isAppError(error)
       ? this.mergeContext(error, context)

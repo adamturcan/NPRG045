@@ -6,7 +6,8 @@ import {
   resolveApiSpanConflicts,
   type ConflictPrompt,
 } from "../core/services/annotation/resolveApiSpanConflicts";
-import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
+import { presentError } from "../application/errors/errorPresenter";
+import { useErrorLogger } from "./useErrorLogger";
 import { getApiService } from "../infrastructure/providers/apiProvider";
 
 /**
@@ -53,6 +54,8 @@ interface AnnotationManagerOptions {
  * @returns Object with span state, handlers, and derived data
  */
 export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
+  const logError = useErrorLogger({ hook: "useAnnotationManager" });
+
   const apiService = useMemo(() => getApiService(), []);
 
   const {
@@ -324,23 +327,23 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
             : "NER completed."
         );
       } catch (error) {
-        const appError = errorHandlingService.handleApiError(error, {
+        const appError = logError(error, {
           operation: "run NER",
-          hook: "useAnnotationManager",
           workspaceId,
           activeTab,
         });
-        errorHandlingService.logError(appError, {
-          hook: "useAnnotationManager",
-          action: "runNer",
+        const notice = presentError(appError);
+        onNotice?.(notice.message, {
+          tone: notice.tone,
+          persistent: notice.persistent,
         });
-        onNotice?.(appError.message, { tone: "error" });
       }
     },
     [
       activeTab,
       apiService,
       filteredApiSpans,
+      logError,
       onNotice,
       requestConflictResolution,
       setWorkspaces,

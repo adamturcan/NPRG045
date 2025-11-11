@@ -4,7 +4,8 @@ import type { NerSpan } from "../types/NotationEditor";
 import type { LanguageCode } from "../lib/translation";
 import { getLanguageName } from "../lib/translation";
 import type { NoticeOptions } from "../types/Notice";
-import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
+import { presentError } from "../application/errors/errorPresenter";
+import { useErrorLogger } from "./useErrorLogger";
 import { getApiService } from "../infrastructure/providers/apiProvider";
 
 /**
@@ -53,6 +54,7 @@ interface TranslationManagerOptions {
  */
 export function useTranslationManager(options: TranslationManagerOptions) {
   const apiService = useMemo(() => getApiService(), []);
+  const logError = useErrorLogger({ hook: "useTranslationManager" });
 
   const {
     workspaceId,
@@ -130,18 +132,15 @@ export function useTranslationManager(options: TranslationManagerOptions) {
           setSupportedLanguages(languages);
         }
       } catch (error) {
-        const appError = errorHandlingService.handleApiError(error, {
+        const appError = logError(error, {
           operation: "load supported languages",
-          hook: "useTranslationManager",
-        });
-        errorHandlingService.logError(appError, {
-          hook: "useTranslationManager",
-          action: "loadSupportedLanguages",
         });
         if (!cancelled) {
           setSupportedLanguages([]);
-          onNotice(appError.message, {
-            tone: "error",
+          const notice = presentError(appError);
+          onNotice(notice.message, {
+            tone: notice.tone,
+            persistent: notice.persistent,
           });
         }
       } finally {
@@ -156,7 +155,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     return () => {
       cancelled = true;
     };
-  }, [apiService, onNotice]);
+  }, [apiService, logError, onNotice]);
 
   /**
    * Pre-compute language options (exclude already-added translations)
@@ -382,16 +381,15 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         // Show completion message
         onNotice(`Translation to ${targetLang} completed!`, { tone: "success" });
       } catch (error) {
-        const appError = errorHandlingService.handleApiError(error, {
+        const appError = logError(error, {
           operation: `translate text to ${targetLang}`,
-          hook: "useTranslationManager",
           workspaceId: capturedWorkspaceId,
         });
-        errorHandlingService.logError(appError, {
-          hook: "useTranslationManager",
-          action: "handleAddTranslation",
+        const notice = presentError(appError);
+        onNotice(notice.message, {
+          tone: notice.tone,
+          persistent: notice.persistent,
         });
-        onNotice(appError.message, { tone: "error" });
       } finally {
         setIsUpdating(false);
       }
@@ -406,6 +404,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       setWorkspaces,
       onNotice,
       isUpdating,
+      logError,
     ]
   );
 
@@ -479,16 +478,15 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
         onNotice(`Translation "${targetLang}" updated!`, { tone: "success" });
       } catch (error) {
-        const appError = errorHandlingService.handleApiError(error, {
+        const appError = logError(error, {
           operation: `update translation ${targetLang}`,
-          hook: "useTranslationManager",
           workspaceId: capturedWorkspaceId,
         });
-        errorHandlingService.logError(appError, {
-          hook: "useTranslationManager",
-          action: "handleUpdateTranslation",
+        const notice = presentError(appError);
+        onNotice(notice.message, {
+          tone: notice.tone,
+          persistent: notice.persistent,
         });
-        onNotice(appError.message, { tone: "error" });
       } finally {
         setIsUpdating(false);
       }
@@ -503,6 +501,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       setWorkspaces,
       onNotice,
       handleTabSwitch,
+      logError,
       setText,
       setEditorInstanceKey
     ]

@@ -7,60 +7,113 @@ import {
   type WorkspacePersistence,
 } from "../../core/entities/mappers";
 import type { Workspace as WorkspaceDTO, Translation } from "../../types/Workspace";
+import { errorHandlingService } from "../services/ErrorHandlingService";
 
 const STORAGE_KEY = "memorise.workspaces";
 const LEGACY_BASE_KEY = "memorise.workspaces.v1";
 const LEGACY_USER_PREFIX = `${LEGACY_BASE_KEY}:`;
 
 const EMPTY_LIST: WorkspacePersistence[] = [];
+const REPOSITORY_NAME = "LocalStorageWorkspaceRepository";
 
 export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
   async findById(id: string): Promise<Workspace | null> {
-    const workspaces = this.readAll();
-    const match = workspaces.find((ws) => ws.id === id);
-    return match ? this.toDomain(match) : null;
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "load workspace",
+        repository: REPOSITORY_NAME,
+        workspaceId: id,
+      },
+      () => {
+        const workspaces = this.readAll();
+        const match = workspaces.find((ws) => ws.id === id);
+        return match ? this.toDomain(match) : null;
+      }
+    );
   }
 
   async findByOwner(ownerId: string): Promise<Workspace[]> {
-    let workspaces = this.readAll().filter((ws) => ws.owner === ownerId);
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "load workspaces",
+        repository: REPOSITORY_NAME,
+        ownerId,
+      },
+      () => {
+        let workspaces = this.readAll().filter((ws) => ws.owner === ownerId);
 
-    if (workspaces.length === 0) {
-      const migrated = this.migrateLegacyBuckets(ownerId);
-      if (migrated.length > 0) {
-        workspaces = migrated;
+        if (workspaces.length === 0) {
+          const migrated = this.migrateLegacyBuckets(ownerId);
+          if (migrated.length > 0) {
+            workspaces = migrated;
+          }
+        }
+
+        return workspaces.map((ws) => this.toDomain(ws));
       }
-    }
-
-    return workspaces.map((ws) => this.toDomain(ws));
+    );
   }
 
   async findAll(): Promise<Workspace[]> {
-    return this.readAll().map((ws) => this.toDomain(ws));
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "load workspaces",
+        repository: REPOSITORY_NAME,
+      },
+      () => this.readAll().map((ws) => this.toDomain(ws))
+    );
   }
 
   async save(workspace: Workspace): Promise<void> {
-    const stored = this.normalize(workspace);
-    const workspaces = this.readAll();
-    const index = workspaces.findIndex((ws) => ws.id === stored.id);
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "save workspace",
+        repository: REPOSITORY_NAME,
+        workspaceId: workspace.id,
+      },
+      () => {
+        const stored = this.normalize(workspace);
+        const workspaces = this.readAll();
+        const index = workspaces.findIndex((ws) => ws.id === stored.id);
 
-    if (index >= 0) {
-      workspaces[index] = stored;
-    } else {
-      workspaces.push(stored);
-    }
+        if (index >= 0) {
+          workspaces[index] = stored;
+        } else {
+          workspaces.push(stored);
+        }
 
-    this.writeAll(workspaces);
+        this.writeAll(workspaces);
+      }
+    );
   }
 
   async delete(id: string): Promise<void> {
-    const workspaces = this.readAll();
-    const next = workspaces.filter((ws) => ws.id !== id);
-    this.writeAll(next);
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "delete workspace",
+        repository: REPOSITORY_NAME,
+        workspaceId: id,
+      },
+      () => {
+        const workspaces = this.readAll();
+        const next = workspaces.filter((ws) => ws.id !== id);
+        this.writeAll(next);
+      }
+    );
   }
 
   async exists(id: string): Promise<boolean> {
-    const workspaces = this.readAll();
-    return workspaces.some((ws) => ws.id === id);
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "check workspace",
+        repository: REPOSITORY_NAME,
+        workspaceId: id,
+      },
+      () => {
+        const workspaces = this.readAll();
+        return workspaces.some((ws) => ws.id === id);
+      }
+    );
   }
 
   private readAll(): WorkspacePersistence[] {

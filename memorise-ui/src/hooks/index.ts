@@ -7,6 +7,7 @@
 
 export { useAnnotationManager } from './useAnnotationManager';
 export { useAutoSave } from './useAutoSave';
+export { useErrorLogger } from './useErrorLogger';
 export { useNotification } from './useNotification';
 export { useSemanticTags } from './useSemanticTags';
 export { useThesaurusDisplay } from './useThesaurusDisplay';

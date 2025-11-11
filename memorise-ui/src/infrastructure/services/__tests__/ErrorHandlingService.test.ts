@@ -126,5 +126,49 @@ describe("ErrorHandlingService", () => {
       context: { source: "test" },
     });
   });
+
+  it("wraps repository errors with default metadata", () => {
+    const appError = errorHandlingService.wrapRepositoryError(new Error("storage failed"), {
+      operation: "save workspace",
+      repository: "TestRepository",
+    });
+
+    expect(appError).toMatchObject({
+      code: "REPOSITORY_ERROR",
+      severity: "error",
+      context: {
+        operation: "save workspace",
+        repository: "TestRepository",
+        layer: "repository",
+      },
+    });
+    expect(appError.message).toBe(
+      "Unable to save workspace. Please try again."
+    );
+  });
+
+  it("reuses repository AppErrors without losing context", async () => {
+    const existing = errorHandlingService.createAppError({
+      message: "Custom storage failure",
+      code: "CUSTOM_REPO_ERROR",
+      severity: "warn",
+    });
+
+    await expect(
+      errorHandlingService.withRepositoryError(
+        { operation: "persist data" },
+        () => {
+          throw existing;
+        }
+      )
+    ).rejects.toMatchObject({
+      code: "CUSTOM_REPO_ERROR",
+      severity: "warn",
+      context: {
+        operation: "persist data",
+        layer: "repository",
+      },
+    });
+  });
 });
 

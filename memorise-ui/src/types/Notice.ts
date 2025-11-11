@@ -5,3 +5,7 @@ export interface NoticeOptions {
   persistent?: boolean;
 }
 
+export interface Notice extends NoticeOptions {
+  message: string;
+}
+
