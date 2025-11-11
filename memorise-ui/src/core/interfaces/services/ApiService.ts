@@ -1,57 +1,37 @@
 import type { NerSpan } from '../../../types/NotationEditor';
+import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../lib/translation';
 
 /**
- * Classification result from API
+ * Classification result from the semantic tagging API.
+ *
+ * The service currently mirrors the raw API response (array of objects).
+ * We keep the shape loose for forward compatibility.
  */
-export interface ClassificationResult {
-  labels: number[];
-  scores: number[];
-}
+export type ClassificationResult = unknown;
 
 /**
- * NER result from API
- */
-export interface NerResult {
-  spans: NerSpan[];
-}
-
-/**
- * Translation parameters
- */
-export interface TranslationParams {
-  text: string;
-  targetLang: string;
-  sourceLang?: string;
-}
-
-/**
- * Translation result from API
- */
-export interface TranslationResult {
-  translatedText: string;
-  targetLang: string;
-  sourceLang?: string;
-}
-
-/**
- * API Service interface
- * Defines the contract for external API interactions
+ * Contract for browser/API integrations that presentation can rely on.
  */
 export interface ApiService {
   /**
-   * Classify text (semantic classification)
+   * Classify text (semantic tagging / categorisation).
    */
   classify(text: string): Promise<ClassificationResult>;
 
   /**
-   * Named Entity Recognition on text
+   * Run Named Entity Recognition and return normalised spans.
    */
-  ner(text: string): Promise<NerResult>;
+  ner(text: string): Promise<NerSpan[]>;
 
   /**
-   * Translate text between languages
+   * Translate text between languages.
    */
-  translate(params: TranslationParams): Promise<TranslationResult>;
+  translate(params: TranslationRequest): Promise<TranslationResponse>;
 
+  /**
+   * Retrieve supported translation languages.
+   */
+  getSupportedLanguages(): Promise<LanguageCode[]>;
 }
+
 

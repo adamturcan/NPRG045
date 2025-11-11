@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { Workspace } from '../types/Workspace';
-import { WorkspaceService } from '../services/workspaceService';
+import { getWorkspaceApplicationService } from '../infrastructure/providers/workspaceProvider';
 
 interface WorkspaceStore {
   workspaces: Workspace[];
@@ -11,7 +11,7 @@ interface WorkspaceStore {
 
   // Actions
   loadWorkspaces: (username: string) => Promise<void>;
-  createWorkspace: (workspace: Omit<Workspace, 'id'>) => void;
+  createWorkspace: (workspace: Workspace) => void;
   updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
   deleteWorkspace: (id: string) => void;
   setCurrentWorkspace: (id: string) => void;
@@ -29,13 +29,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       loadWorkspaces: async (username: string) => {
         set({ isLoading: true, error: null });
         try {
-          const loaded = await WorkspaceService.loadForUser(username);
+          const service = getWorkspaceApplicationService();
+          const loaded = await service.loadForOwner(username);
           if (loaded && loaded.length) {
             set({ workspaces: loaded, isLoading: false });
           } else {
-            const seeded = WorkspaceService.seedForUser(username);
+            const seeded = service.seedForOwner(username);
             set({ workspaces: seeded, isLoading: false });
-            await WorkspaceService.saveForUser(username, seeded);
+            await service.replaceAllForOwner(username, seeded);
           }
         } catch (error) {
           set({
@@ -45,15 +46,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         }
       },
 
-      createWorkspace: (workspaceData) => {
-        const newWorkspace: Workspace = {
-          id: crypto.randomUUID(),
-          ...workspaceData,
-          userSpans: workspaceData.userSpans || [],
-          tags: workspaceData.tags || [], // Initialize empty tags array for new workspaces
-          updatedAt: Date.now(),
+      createWorkspace: (workspace) => {
+        const normalisedWorkspace: Workspace = {
+          userSpans: [],
+          apiSpans: [],
+          deletedApiKeys: [],
+          translations: [],
+          tags: [],
+          ...workspace,
         };
-        set((state) => ({ workspaces: [newWorkspace, ...state.workspaces] }));
+        set((state) => ({
+          workspaces: [normalisedWorkspace, ...state.workspaces],
+        }));
       },
 
       updateWorkspace: (id, updates) => {

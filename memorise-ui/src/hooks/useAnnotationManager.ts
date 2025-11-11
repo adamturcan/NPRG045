@@ -7,6 +7,7 @@ import {
   type ConflictPrompt,
 } from "../core/services/annotation/resolveApiSpanConflicts";
 import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
+import { getApiService } from "../infrastructure/providers/apiProvider";
 
 /**
  * Create a unique key for an NER span (for comparison/deduplication)
@@ -52,6 +53,8 @@ interface AnnotationManagerOptions {
  * @returns Object with span state, handlers, and derived data
  */
 export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
+  const apiService = useMemo(() => getApiService(), []);
+
   const {
     initialUserSpans = [],
     initialApiSpans = [],
@@ -260,20 +263,10 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
       }
 
       try {
-        const { ner: apiNer } = await import("../lib/api");
-        const data = (await apiNer(text)) as {
-          result?: Array<{ start: number; end: number; type: string }>;
-        };
-
         const { nextUserSpans, nextApiSpans, conflictsHandled } =
           await resolveApiSpanConflicts({
             text,
-            incomingSpans: (data.result ?? []).map<NerSpan>((r) => ({
-              start: r.start,
-              end: r.end,
-              entity: r.type,
-              score: 1,
-            })),
+            incomingSpans: await apiService.ner(text),
             userSpans,
             existingApiSpans: filteredApiSpans,
             onConflict: requestConflictResolution,
@@ -346,6 +339,7 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
     },
     [
       activeTab,
+      apiService,
       filteredApiSpans,
       onNotice,
       requestConflictResolution,

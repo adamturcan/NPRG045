@@ -1,34 +1,30 @@
 import type { Workspace as WorkspaceDTO } from "../types/Workspace";
-import { getWorkspaceRepository } from "../infrastructure/providers/repositories";
-import { WorkspaceApplicationService } from "../application/services/WorkspaceApplicationService";
+import {
+  getWorkspaceApplicationService,
+  resetWorkspaceProvider,
+  setWorkspaceProviderOverrides,
+} from "../infrastructure/providers/repositories";
 
+/**
+ * @deprecated Prefer using the workspace provider (`getWorkspaceApplicationService`)
+ * directly. This class remains a thin shim while the presentation layer migrates.
+ */
 export class WorkspaceService {
-  private static applicationService: WorkspaceApplicationService | null = null;
-
-  private static getService(): WorkspaceApplicationService {
-    if (!WorkspaceService.applicationService) {
-      WorkspaceService.applicationService = new WorkspaceApplicationService({
-        workspaceRepository: getWorkspaceRepository(),
-      });
-    }
-    return WorkspaceService.applicationService;
-  }
-
   static seedForUser(owner: string): WorkspaceDTO[] {
-    return WorkspaceService.getService().seedForOwner(owner);
+    return getWorkspaceApplicationService().seedForOwner(owner);
   }
 
   static async loadForUser(username: string): Promise<WorkspaceDTO[] | null> {
-    const results = await WorkspaceService.getService().loadForOwner(username);
+    const results = await getWorkspaceApplicationService().loadForOwner(username);
     return results.length ? results : null;
   }
 
   static async saveForUser(username: string, workspaces: WorkspaceDTO[]): Promise<void> {
-    await WorkspaceService.getService().replaceAllForOwner(username, workspaces);
+    await getWorkspaceApplicationService().replaceAllForOwner(username, workspaces);
   }
 
   static createWorkspace(owner: string, name: string): WorkspaceDTO {
-    return WorkspaceService.getService().createWorkspaceDraft(owner, name);
+    return getWorkspaceApplicationService().createWorkspaceDraft(owner, name);
   }
 
   static updateWorkspace(
@@ -42,4 +38,11 @@ export class WorkspaceService {
   static deleteWorkspace(id: string, workspaces: WorkspaceDTO[]): WorkspaceDTO[] {
     return workspaces.filter((w) => w.id !== id);
   }
+
+  /**
+   * Legacy test helpers for overriding provider dependencies.
+   */
+  static __unsafe_setOverrides = setWorkspaceProviderOverrides;
+
+  static __unsafe_reset = resetWorkspaceProvider;
 }

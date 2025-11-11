@@ -1,33 +1,27 @@
-import type { WorkspaceRepository } from "../../core/interfaces/repositories/WorkspaceRepository";
-import type { AnnotationRepository } from "../../core/interfaces/repositories/AnnotationRepository";
-import type { TagRepository } from "../../core/interfaces/repositories/TagRepository";
-import { LocalStorageWorkspaceRepository } from "../repositories/LocalStorageWorkspaceRepository";
-import { LocalStorageAnnotationRepository } from "../repositories/LocalStorageAnnotationRepository";
-import { LocalStorageTagRepository } from "../repositories/LocalStorageTagRepository";
+/**
+ * @deprecated Use dedicated provider modules (`workspaceProvider`, `annotationProvider`,
+ * `tagProvider`) instead. This file remains as a compatibility shim until all imports
+ * are migrated.
+ */
+export {
+  getWorkspaceRepository,
+  getWorkspaceUseCases,
+  getWorkspaceApplicationService,
+  setWorkspaceProviderOverrides,
+  resetWorkspaceProvider,
+} from './workspaceProvider';
 
-let workspaceRepositoryInstance: WorkspaceRepository | null = null;
-let annotationRepositoryInstance: AnnotationRepository | null = null;
-let tagRepositoryInstance: TagRepository | null = null;
+export {
+  getAnnotationRepository,
+  getAnnotationUseCases,
+  setAnnotationProviderOverrides,
+  resetAnnotationProvider,
+} from './annotationProvider';
 
-export function getWorkspaceRepository(): WorkspaceRepository {
-  if (!workspaceRepositoryInstance) {
-    workspaceRepositoryInstance = new LocalStorageWorkspaceRepository();
-  }
-  return workspaceRepositoryInstance;
-}
-
-export function getAnnotationRepository(): AnnotationRepository {
-  if (!annotationRepositoryInstance) {
-    annotationRepositoryInstance = new LocalStorageAnnotationRepository();
-  }
-  return annotationRepositoryInstance;
-}
-
-export function getTagRepository(): TagRepository {
-  if (!tagRepositoryInstance) {
-    tagRepositoryInstance = new LocalStorageTagRepository();
-  }
-  return tagRepositoryInstance;
-}
-
+export {
+  getTagRepository,
+  getTagUseCases,
+  setTagProviderOverrides,
+  resetTagProvider,
+} from './tagProvider';
 

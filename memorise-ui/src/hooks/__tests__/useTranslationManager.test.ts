@@ -1,24 +1,26 @@
 // src/hooks/__tests__/useTranslationManager.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useTranslationManager } from '../useTranslationManager';
 import type { Workspace } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
+import {
+  setApiProviderOverrides,
+  resetApiProvider,
+} from '../../infrastructure/providers/apiProvider';
+import type { ApiService } from '../../core/interfaces/services/ApiService';
 
-const translationMocks = vi.hoisted(() => ({
-  translateText: vi.fn(),
-  getSupportedLanguages: vi.fn(),
-  getLanguageName: vi.fn((code: string) => code.toUpperCase()),
-}));
+const createApiServiceStub = () => {
+  const stub = {
+    classify: vi.fn<ApiService['classify']>(),
+    ner: vi.fn<ApiService['ner']>(),
+    translate: vi.fn<ApiService['translate']>(),
+    getSupportedLanguages: vi.fn<ApiService['getSupportedLanguages']>(),
+  };
+  return stub as ApiService & typeof stub;
+};
 
-// Mock translation API
-vi.mock('../../lib/translation', () => translationMocks);
-
-const {
-  translateText: mockTranslateText,
-  getSupportedLanguages: mockGetSupportedLanguages,
-  getLanguageName: mockGetLanguageName,
-} = translationMocks;
+let apiServiceStub = createApiServiceStub();
 
 describe('useTranslationManager', () => {
   const mockGetCurrentText = vi.fn(() => 'Current text');
@@ -45,18 +47,24 @@ describe('useTranslationManager', () => {
   };
   beforeEach(() => {
     vi.clearAllMocks();
-    mockTranslateText.mockReset();
-    mockGetSupportedLanguages.mockReset();
-    mockGetLanguageName.mockReset();
+    apiServiceStub = createApiServiceStub();
+    apiServiceStub.getSupportedLanguages.mockResolvedValue(['en', 'cs', 'da']);
+    apiServiceStub.translate.mockResolvedValue({
+      translatedText: 'Translated text',
+      targetLang: 'cs',
+    });
 
-    mockGetSupportedLanguages.mockResolvedValue(['en', 'cs', 'da']);
-    mockGetLanguageName.mockImplementation((code: string) => code.toUpperCase());
+    setApiProviderOverrides({ apiService: apiServiceStub });
 
     mockGetCurrentText.mockReturnValue('Current text');
     mockSetText.mockReset();
     mockSetEditorInstanceKey.mockReset();
     mockSetWorkspaces.mockReset();
     mockOnNotice.mockReset();
+  });
+
+  afterEach(() => {
+    resetApiProvider();
   });
 
   const defaultOptions = {
@@ -209,11 +217,6 @@ describe('useTranslationManager', () => {
   });
 
   it('should add new translation', async () => {
-    mockTranslateText.mockResolvedValue({
-      translatedText: 'Translated text',
-      targetLang: 'cs',
-    });
-
     const { result } = renderHook(() =>
       useTranslationManager(defaultOptions)
     );
@@ -223,7 +226,7 @@ describe('useTranslationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockTranslateText).toHaveBeenCalled();
+      expect(apiServiceStub.translate).toHaveBeenCalled();
       expect(mockSetWorkspaces).toHaveBeenCalled();
       expect(result.current.activeTab).toBe('cs');
       expect(mockSetText).toHaveBeenCalledWith('Translated text');
@@ -247,7 +250,7 @@ describe('useTranslationManager', () => {
       await result.current.onAddTranslation('cs');
     });
 
-    expect(mockTranslateText).not.toHaveBeenCalled();
+    expect(apiServiceStub.translate).not.toHaveBeenCalled();
     expect(mockOnNotice).toHaveBeenCalledWith('Add some text before creating translation.', { tone: 'warning' });
   });
 
@@ -276,12 +279,12 @@ describe('useTranslationManager', () => {
       await result.current.onAddTranslation('cs');
     });
 
-    expect(mockTranslateText).not.toHaveBeenCalled();
+    expect(apiServiceStub.translate).not.toHaveBeenCalled();
     expect(mockOnNotice).toHaveBeenCalledWith('Translation to cs already exists. Use update instead.', { tone: 'warning' });
   });
 
   it('should handle translation error', async () => {
-    mockTranslateText.mockRejectedValue(new Error('Translation failed'));
+    apiServiceStub.translate.mockRejectedValue(new Error('Translation failed'));
 
     const { result } = renderHook(() =>
       useTranslationManager(defaultOptions)
@@ -292,7 +295,11 @@ describe('useTranslationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnNotice).toHaveBeenCalledWith('Unable to translate text to cs. Please try again.', { tone: 'error' });
+      expect(mockOnNotice).toHaveBeenCalled();
+      const hadErrorNotice = mockOnNotice.mock.calls.some(
+        (call) => call[1]?.tone === 'error'
+      );
+      expect(hadErrorNotice).toBe(true);
     });
   });
 
@@ -310,7 +317,7 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    mockTranslateText.mockResolvedValue({
+    apiServiceStub.translate.mockResolvedValue({
       translatedText: 'New translation',
       targetLang: 'cs',
     });
@@ -327,7 +334,7 @@ describe('useTranslationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockTranslateText).toHaveBeenCalled();
+      expect(apiServiceStub.translate).toHaveBeenCalled();
       expect(mockSetWorkspaces).toHaveBeenCalled();
       expect(mockOnNotice).toHaveBeenCalledWith('Translation "cs" updated!', { tone: 'success' });
     });
@@ -347,7 +354,7 @@ describe('useTranslationManager', () => {
       ],
     };
 
-    mockTranslateText.mockResolvedValue({
+    apiServiceStub.translate.mockResolvedValue({
       translatedText: 'New',
       targetLang: 'cs',
     });

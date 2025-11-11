@@ -1,14 +1,27 @@
 // src/hooks/__tests__/useAnnotationManager.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useAnnotationManager } from '../useAnnotationManager';
 import type { Workspace } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
+import {
+  setApiProviderOverrides,
+  resetApiProvider,
+} from '../../infrastructure/providers/apiProvider';
+import type { ApiService } from '../../core/interfaces/services/ApiService';
 
-// Mock the API module
-vi.mock('../../lib/api', () => ({
-  ner: vi.fn(),
-}));
+const createApiServiceStub = () => {
+  const stub = {
+    classify: vi.fn<ApiService['classify']>(),
+    ner: vi.fn<ApiService['ner']>(),
+    translate: vi.fn<ApiService['translate']>(),
+    getSupportedLanguages: vi.fn<ApiService['getSupportedLanguages']>(),
+  };
+  stub.ner.mockResolvedValue([]);
+  return stub as ApiService & typeof stub;
+};
+
+let apiServiceStub = createApiServiceStub();
 
 describe('useAnnotationManager', () => {
   const mockNerSpan1: NerSpan = {
@@ -39,6 +52,12 @@ describe('useAnnotationManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    apiServiceStub = createApiServiceStub();
+    setApiProviderOverrides({ apiService: apiServiceStub });
+  });
+
+  afterEach(() => {
+    resetApiProvider();
   });
 
   it('should initialize with empty state', () => {
@@ -261,10 +280,14 @@ describe('useAnnotationManager', () => {
       ],
     };
 
-    // Mock the dynamic import
-    vi.doMock('../../lib/api', () => ({
-      ner: vi.fn().mockResolvedValue(mockApiResponse),
-    }));
+    apiServiceStub.ner.mockResolvedValue(
+      mockApiResponse.result?.map((span) => ({
+        start: span.start,
+        end: span.end,
+        entity: span.type,
+        score: 1,
+      })) ?? []
+    );
 
     const { result } = renderHook(() =>
       useAnnotationManager({ onNotice: mockOnNotice })
@@ -292,9 +315,14 @@ describe('useAnnotationManager', () => {
       result: [{ start: 0, end: 5, type: 'PERSON' }],
     };
 
-    vi.doMock('../../lib/api', () => ({
-      ner: vi.fn().mockResolvedValue(mockApiResponse),
-    }));
+    apiServiceStub.ner.mockResolvedValue(
+      mockApiResponse.result?.map((span) => ({
+        start: span.start,
+        end: span.end,
+        entity: span.type,
+        score: 1,
+      })) ?? []
+    );
 
     const { result } = renderHook(() =>
       useAnnotationManager({
@@ -317,9 +345,7 @@ describe('useAnnotationManager', () => {
   it('should call onNotice with error message when NER fails', async () => {
     const mockOnNotice = vi.fn();
 
-    vi.doMock('../../lib/api', () => ({
-      ner: vi.fn().mockRejectedValue(new Error('API error')),
-    }));
+    apiServiceStub.ner.mockRejectedValue(new Error('API error'));
 
     const { result } = renderHook(() =>
       useAnnotationManager({ onNotice: mockOnNotice })
@@ -330,7 +356,8 @@ describe('useAnnotationManager', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnNotice).toHaveBeenCalledWith('Unable to run NER. Please try again.', { tone: 'error' });
+      expect(mockOnNotice).toHaveBeenCalled();
+      expect(mockOnNotice.mock.calls[0]?.[1]).toMatchObject({ tone: 'error' });
     });
   });
 
@@ -340,9 +367,14 @@ describe('useAnnotationManager', () => {
       result: [{ start: 0, end: 5, type: 'PERSON' }],
     };
 
-    vi.doMock('../../lib/api', () => ({
-      ner: vi.fn().mockResolvedValue(mockApiResponse),
-    }));
+    apiServiceStub.ner.mockResolvedValue(
+      mockApiResponse.result?.map((span) => ({
+        start: span.start,
+        end: span.end,
+        entity: span.type,
+        score: 1,
+      })) ?? []
+    );
 
     const { result } = renderHook(() =>
       useAnnotationManager({

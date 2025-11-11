@@ -2,9 +2,10 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { Workspace } from "../types/Workspace";
 import type { NerSpan } from "../types/NotationEditor";
 import type { LanguageCode } from "../lib/translation";
-import { getSupportedLanguages, getLanguageName } from "../lib/translation";
+import { getLanguageName } from "../lib/translation";
 import type { NoticeOptions } from "../types/Notice";
 import { errorHandlingService } from "../infrastructure/services/ErrorHandlingService";
+import { getApiService } from "../infrastructure/providers/apiProvider";
 
 /**
  * Options for useTranslationManager hook
@@ -51,6 +52,8 @@ interface TranslationManagerOptions {
  * @returns Object with translation state and handlers
  */
 export function useTranslationManager(options: TranslationManagerOptions) {
+  const apiService = useMemo(() => getApiService(), []);
+
   const {
     workspaceId,
     workspace,
@@ -122,7 +125,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     const loadLanguages = async () => {
       setIsLanguageListLoading(true);
       try {
-        const languages = await getSupportedLanguages();
+        const languages = await apiService.getSupportedLanguages();
         if (!cancelled) {
           setSupportedLanguages(languages);
         }
@@ -153,7 +156,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     return () => {
       cancelled = true;
     };
-  }, [onNotice]);
+  }, [apiService, onNotice]);
 
   /**
    * Pre-compute language options (exclude already-added translations)
@@ -329,8 +332,6 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
       try {
         // Import translation API lazily to keep bundle size low
-        const { translateText } = await import("../lib/translation");
-
         setIsUpdating(true);
         onNotice(`Translating to ${targetLang}...`, {
           tone: "info",
@@ -338,7 +339,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         });
 
         // Call translation API with the captured original text
-        const result = await translateText({
+        const result = await apiService.translate({
           text: originalText,
           targetLang: targetLang as LanguageCode,
         });
@@ -395,7 +396,17 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         setIsUpdating(false);
       }
     },
-    [workspaceId, workspace, closeMenu, setText, setEditorInstanceKey, setWorkspaces, onNotice, isUpdating]
+    [
+      apiService,
+      workspaceId,
+      workspace,
+      closeMenu,
+      setText,
+      setEditorInstanceKey,
+      setWorkspaces,
+      onNotice,
+      isUpdating,
+    ]
   );
 
   /**
@@ -423,15 +434,13 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
       try {
         // Import translation API lazily to keep bundle size low
-        const { translateText } = await import("../lib/translation");
-
         onNotice(`Updating ${targetLang} translation...`, {
           tone: "info",
           persistent: true,
         });
 
         // Call translation API with the captured original text
-        const result = await translateText({
+        const result = await apiService.translate({
           text: originalText,
           targetLang: targetLang as LanguageCode,
         });
@@ -487,13 +496,14 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     /* eslint-disable react-hooks/exhaustive-deps */
     // workspace is intentionally excluded - we only depend on workspace?.id to avoid infinite loops
     [
-      workspaceId, 
+      apiService,
+      workspaceId,
       workspace?.id, // Use ID only to avoid infinite loops
-      activeTab, 
-      setWorkspaces, 
-      onNotice, 
-      handleTabSwitch, 
-      setText, 
+      activeTab,
+      setWorkspaces,
+      onNotice,
+      handleTabSwitch,
+      setText,
       setEditorInstanceKey
     ]
     /* eslint-enable react-hooks/exhaustive-deps */

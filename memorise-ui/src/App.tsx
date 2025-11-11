@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import {
   CssBaseline,
   ThemeProvider,
@@ -15,7 +15,7 @@ import {
 } from "react-router-dom";
 import BubbleSidebar from "./components/sidebar/BubbleSidebar";
 import { useWorkspaceStore } from "./stores/workspaceStore";
-import { WorkspaceService } from "./services/workspaceService";
+import { getWorkspaceApplicationService } from "./infrastructure/providers/workspaceProvider";
 import type { Workspace } from "./types/Workspace";
 
 // Lazy load pages for code splitting
@@ -80,6 +80,11 @@ const App: React.FC = () => {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
+  const workspaceApplicationService = useMemo(
+    () => getWorkspaceApplicationService(),
+    []
+  );
+
 
   // Wrapper function to update workspaces array (for compatibility with old setWorkspaces API)
   // Memoize to prevent infinite loops in child components
@@ -106,8 +111,8 @@ const App: React.FC = () => {
   // Persist whenever workspaces change — but only after boot
   useEffect(() => {
     if (!booted || !username) return;
-    void WorkspaceService.saveForUser(username, workspaces);
-  }, [booted, username, workspaces]);
+    void workspaceApplicationService.replaceAllForOwner(username, workspaces);
+  }, [booted, username, workspaces, workspaceApplicationService]);
 
   // Login / logout
   const handleLogin = (name: string) => {
@@ -131,18 +136,11 @@ const App: React.FC = () => {
     const newCount = workspaces.filter((w) =>
       w.name.startsWith("New Workspace")
     ).length;
-    const ws = WorkspaceService.createWorkspace(
+    const ws = workspaceApplicationService.createWorkspaceDraft(
       username,
       `New Workspace #${newCount + 1}`
     );
-    createWorkspaceAction({
-      name: ws.name,
-      isTemporary: ws.isTemporary,
-      text: ws.text,
-      userSpans: ws.userSpans,
-      owner: ws.owner,
-      updatedAt: ws.updatedAt,
-    });
+    createWorkspaceAction(ws);
     return ws;
   };
 
