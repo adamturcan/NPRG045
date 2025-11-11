@@ -23,6 +23,22 @@ const NETWORK_ERROR_PHRASES = ["Failed to fetch", "NetworkError"];
 const APP_ERROR_FLAG = Symbol("AppError");
 
 export class ErrorHandlingService {
+  createAppError(options: {
+    message: string;
+    code: string;
+    severity?: AppError["severity"];
+    context?: ErrorContext;
+    cause?: unknown;
+  }): AppError {
+    return this.markAppError({
+      message: options.message,
+      code: options.code,
+      severity: options.severity,
+      context: this.mergeContexts(options.context),
+      cause: options.cause,
+    });
+  }
+
   handleApiError(error: unknown, context?: ErrorContext): AppError {
     if (this.isAppError(error)) {
       return this.mergeContext(error, context);

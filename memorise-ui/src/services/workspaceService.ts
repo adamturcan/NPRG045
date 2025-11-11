@@ -1,108 +1,45 @@
-import type { Workspace } from "../types/Workspace";
-import type { Workspace as DomainWorkspace } from "../domain/Workspace";
+import type { Workspace as WorkspaceDTO } from "../types/Workspace";
 import { getWorkspaceRepository } from "../infrastructure/providers/repositories";
+import { WorkspaceApplicationService } from "../application/services/WorkspaceApplicationService";
 
 export class WorkspaceService {
-  static seedForUser(owner: string): Workspace[] {
-    return [
-      {
-        id: crypto.randomUUID(),
-        name: "Workspace A",
-        isTemporary: false,
-        text: "",
-        userSpans: [],
-        updatedAt: Date.now(),
-        owner,
-      },
-      {
-        id: crypto.randomUUID(),
-        name: "Workspace B",
-        isTemporary: false,
-        text: "",
-        userSpans: [],
-        updatedAt: Date.now(),
-        owner,
-      },
-      {
-        id: crypto.randomUUID(),
-        name: "Workspace C",
-        isTemporary: false,
-        text: "",
-        userSpans: [],
-        updatedAt: Date.now(),
-        owner,
-      },
-    ];
-  }
+  private static applicationService: WorkspaceApplicationService | null = null;
 
-  static async loadForUser(username: string): Promise<Workspace[] | null> {
-    const repository = getWorkspaceRepository();
-    const results = await repository.findByOwner(username);
-
-    if (!results.length) {
-      return null;
+  private static getService(): WorkspaceApplicationService {
+    if (!WorkspaceService.applicationService) {
+      WorkspaceService.applicationService = new WorkspaceApplicationService({
+        workspaceRepository: getWorkspaceRepository(),
+      });
     }
-
-    return results.map((workspace) => ({
-      ...workspace,
-      owner: workspace.owner ?? username,
-    }));
+    return WorkspaceService.applicationService;
   }
 
-  static async saveForUser(username: string, workspaces: Workspace[]): Promise<void> {
-    const repository = getWorkspaceRepository();
-    const existing = await repository.findByOwner(username);
-    const incomingIds = new Set(workspaces.map((ws) => ws.id));
-
-    await Promise.all(
-      existing
-        .filter((workspace) => !incomingIds.has(workspace.id))
-        .map((workspace) => repository.delete(workspace.id))
-    );
-
-    for (const workspace of workspaces) {
-      await repository.save(this.toDomainWorkspace(workspace, username));
-    }
+  static seedForUser(owner: string): WorkspaceDTO[] {
+    return WorkspaceService.getService().seedForOwner(owner);
   }
 
-  static createWorkspace(owner: string, name: string): Workspace {
-    return {
-      id: crypto.randomUUID(),
-      name,
-      isTemporary: true,
-      text: "",
-      userSpans: [],
-      tags: [], // Initialize empty tags array for new workspaces
-      updatedAt: Date.now(),
-      owner,
-    };
+  static async loadForUser(username: string): Promise<WorkspaceDTO[] | null> {
+    const results = await WorkspaceService.getService().loadForOwner(username);
+    return results.length ? results : null;
+  }
+
+  static async saveForUser(username: string, workspaces: WorkspaceDTO[]): Promise<void> {
+    await WorkspaceService.getService().replaceAllForOwner(username, workspaces);
+  }
+
+  static createWorkspace(owner: string, name: string): WorkspaceDTO {
+    return WorkspaceService.getService().createWorkspaceDraft(owner, name);
   }
 
   static updateWorkspace(
     id: string,
-    updates: Partial<Workspace>,
-    workspaces: Workspace[]
-  ): Workspace[] {
+    updates: Partial<WorkspaceDTO>,
+    workspaces: WorkspaceDTO[]
+  ): WorkspaceDTO[] {
     return workspaces.map((w) => (w.id === id ? { ...w, ...updates } : w));
   }
 
-  static deleteWorkspace(id: string, workspaces: Workspace[]): Workspace[] {
+  static deleteWorkspace(id: string, workspaces: WorkspaceDTO[]): WorkspaceDTO[] {
     return workspaces.filter((w) => w.id !== id);
-  }
-
-  private static toDomainWorkspace(workspace: Workspace, owner: string): DomainWorkspace {
-    return {
-      id: workspace.id,
-      name: workspace.name,
-      owner: workspace.owner ?? owner,
-      text: workspace.text ?? "",
-      isTemporary: Boolean(workspace.isTemporary),
-      updatedAt: workspace.updatedAt ?? Date.now(),
-      userSpans: workspace.userSpans ?? [],
-      apiSpans: workspace.apiSpans ?? [],
-      deletedApiKeys: workspace.deletedApiKeys ?? [],
-      tags: workspace.tags ?? [],
-      translations: workspace.translations ?? [],
-    } as unknown as DomainWorkspace;
   }
 }

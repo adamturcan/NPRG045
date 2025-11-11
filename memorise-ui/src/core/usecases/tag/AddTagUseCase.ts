@@ -1,6 +1,8 @@
 import type { TagItem } from '../../../types/Tag';
 import type { TagRepository } from '../../interfaces/repositories/TagRepository';
-import { Tag } from '../../../domain/Tag';
+import { Tag } from '../../entities/Tag';
+import { errorHandlingService } from '../../../infrastructure/services/ErrorHandlingService';
+import { requireWorkspaceId } from '../shared/validators';
 
 export interface AddTagRequest {
   workspaceId: string;
@@ -18,25 +20,57 @@ export class AddTagUseCase {
   }
 
   async execute(request: AddTagRequest): Promise<void> {
-    if (!request.workspaceId) {
-      throw new Error('Workspace ID is required');
+    const workspaceId = requireWorkspaceId(
+      request.workspaceId,
+      'AddTagUseCase'
+    );
+
+    if (!request.tag) {
+      throw errorHandlingService.createAppError({
+        message: 'Tag is required.',
+        code: 'TAG_REQUIRED',
+        severity: 'warn',
+        context: {
+          operation: 'AddTagUseCase',
+          workspaceId,
+        },
+      });
     }
 
-    if (!request.tag || !request.tag.name || request.tag.name.trim().length === 0) {
-      throw new Error('Tag name is required');
+    let tag: Tag;
+    try {
+      tag = Tag.fromTagItem(request.tag);
+    } catch (error) {
+      throw errorHandlingService.createAppError({
+        message:
+          error instanceof Error ? error.message : 'Tag validation failed.',
+        code: 'TAG_VALIDATION_FAILED',
+        severity: 'warn',
+        context: {
+          operation: 'AddTagUseCase',
+          workspaceId,
+        },
+        cause: error,
+      });
     }
-
-    // Create domain object for validation
-    const tag = Tag.fromTagItem(request.tag);
 
     // Check for duplicates
-    const exists = await this.tagRepository.hasTag(request.workspaceId, tag.name);
+    const exists = await this.tagRepository.hasTag(workspaceId, tag.name);
     if (exists) {
-      throw new Error(`Tag "${tag.name}" already exists`);
+      throw errorHandlingService.createAppError({
+        message: `Tag "${tag.name}" already exists.`,
+        code: 'TAG_ALREADY_EXISTS',
+        severity: 'warn',
+        context: {
+          operation: 'AddTagUseCase',
+          workspaceId,
+          tagName: tag.name,
+        },
+      });
     }
 
     // Add the tag
-    await this.tagRepository.addTag(request.workspaceId, request.tag);
+    await this.tagRepository.addTag(workspaceId, request.tag);
   }
 }
 

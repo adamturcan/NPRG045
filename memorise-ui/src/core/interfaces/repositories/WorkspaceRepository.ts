@@ -1,4 +1,4 @@
-import { Workspace } from '../../../domain/Workspace';
+import { Workspace } from '../../entities/Workspace';
 
 /**
  * Repository interface for Workspace persistence

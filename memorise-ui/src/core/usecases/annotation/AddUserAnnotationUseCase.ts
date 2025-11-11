@@ -1,6 +1,8 @@
 import type { NerSpan } from '../../../types/NotationEditor';
 import type { AnnotationRepository } from '../../interfaces/repositories/AnnotationRepository';
-import { Annotation } from '../../../domain/Annotation'; 
+import { Annotation } from '../../entities/Annotation';
+import { errorHandlingService } from '../../../infrastructure/services/ErrorHandlingService';
+import { requireWorkspaceId } from '../shared/validators';
 
 export interface AddUserAnnotationRequest {
   workspaceId: string;
@@ -18,17 +20,60 @@ export class AddUserAnnotationUseCase {
   }
 
   async execute(request: AddUserAnnotationRequest): Promise<void> {
-    // Validate input
-    if (!request.workspaceId) {
-      throw new Error('Workspace ID is required');
+    const workspaceId = requireWorkspaceId(
+      request.workspaceId,
+      'AddUserAnnotationUseCase'
+    );
+
+    if (!request.span) {
+      throw errorHandlingService.createAppError({
+        message: 'Annotation span is required.',
+        code: 'ANNOTATION_SPAN_REQUIRED',
+        severity: 'warn',
+        context: {
+          operation: 'AddUserAnnotationUseCase',
+          workspaceId,
+        },
+      });
     }
 
-    if (!request.span || request.span.start < 0 || request.span.end <= request.span.start) {
-      throw new Error('Invalid annotation span');
+    if (
+      typeof request.span.start !== 'number' ||
+      typeof request.span.end !== 'number' ||
+      request.span.start < 0 ||
+      request.span.end <= request.span.start
+    ) {
+      throw errorHandlingService.createAppError({
+        message: 'Annotation span coordinates are invalid.',
+        code: 'ANNOTATION_SPAN_INVALID',
+        severity: 'warn',
+        context: {
+          operation: 'AddUserAnnotationUseCase',
+          workspaceId,
+          spanStart: request.span.start,
+          spanEnd: request.span.end,
+        },
+      });
     }
 
     // Validate span using domain model
-    Annotation.fromSpan(request.span);
+    try {
+      Annotation.fromSpan(request.span);
+    } catch (error) {
+      throw errorHandlingService.createAppError({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Annotation span failed validation.',
+        code: 'ANNOTATION_VALIDATION_FAILED',
+        severity: 'warn',
+        context: {
+          operation: 'AddUserAnnotationUseCase',
+          workspaceId,
+        },
+        cause: error,
+      });
+    }
 
     // Note: We allow overlaps in the current implementation
     // Overlap validation is available via domain model if needed in the future:
@@ -39,7 +84,7 @@ export class AddUserAnnotationUseCase {
     // );
 
     // Add the annotation
-    await this.annotationRepository.addUserSpan(request.workspaceId, request.span);
+    await this.annotationRepository.addUserSpan(workspaceId, request.span);
   }
 }
 

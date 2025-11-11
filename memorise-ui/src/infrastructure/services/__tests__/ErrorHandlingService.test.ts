@@ -109,5 +109,22 @@ describe("ErrorHandlingService", () => {
     });
     expect(typeof payload.message).toBe("string");
   });
+
+  it("creates custom AppError instances with explicit codes", () => {
+    const appError = errorHandlingService.createAppError({
+      message: "Custom failure",
+      code: "CUSTOM_ERROR",
+      severity: "warn",
+      context: { source: "test" },
+    });
+
+    expect(errorHandlingService.isAppError(appError)).toBe(true);
+    expect(appError).toMatchObject({
+      message: "Custom failure",
+      code: "CUSTOM_ERROR",
+      severity: "warn",
+      context: { source: "test" },
+    });
+  });
 });
 

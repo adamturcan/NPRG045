@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { LocalStorageWorkspaceRepository } from "../LocalStorageWorkspaceRepository";
-import type { Workspace as DomainWorkspace } from "../../../domain/Workspace";
+import { Workspace, type WorkspaceInput } from "../../../core/entities/Workspace";
 
-const baseWorkspace = (overrides: Partial<DomainWorkspace> = {}): DomainWorkspace =>
-  ({
+const baseWorkspace = (overrides: Partial<WorkspaceInput> = {}): Workspace =>
+  Workspace.create({
     id: "ws-1",
     name: "Workspace 1",
     owner: "user-1",
@@ -16,7 +16,7 @@ const baseWorkspace = (overrides: Partial<DomainWorkspace> = {}): DomainWorkspac
     tags: [],
     translations: [],
     ...overrides,
-  } as unknown as DomainWorkspace);
+  });
 
 describe("LocalStorageWorkspaceRepository", () => {
   beforeEach(() => {

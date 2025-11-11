@@ -1,29 +1,27 @@
 import { readJSON, writeJSON, removeItem } from "../storage/localStorageHelpers";
 import type { WorkspaceRepository } from "../../core/interfaces/repositories/WorkspaceRepository";
-import type { Workspace as DomainWorkspace } from "../../domain/Workspace";
+import { Workspace } from "../../core/entities/Workspace";
+import {
+  workspaceFromDto,
+  workspaceToPersistence,
+  type WorkspacePersistence,
+} from "../../core/entities/mappers";
 import type { Workspace as WorkspaceDTO, Translation } from "../../types/Workspace";
-
-type StoredWorkspace = WorkspaceDTO & {
-  owner: string;
-  text: string;
-  isTemporary: boolean;
-  updatedAt: number;
-};
 
 const STORAGE_KEY = "memorise.workspaces";
 const LEGACY_BASE_KEY = "memorise.workspaces.v1";
 const LEGACY_USER_PREFIX = `${LEGACY_BASE_KEY}:`;
 
-const EMPTY_LIST: StoredWorkspace[] = [];
+const EMPTY_LIST: WorkspacePersistence[] = [];
 
 export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
-  async findById(id: string): Promise<DomainWorkspace | null> {
+  async findById(id: string): Promise<Workspace | null> {
     const workspaces = this.readAll();
     const match = workspaces.find((ws) => ws.id === id);
     return match ? this.toDomain(match) : null;
   }
 
-  async findByOwner(ownerId: string): Promise<DomainWorkspace[]> {
+  async findByOwner(ownerId: string): Promise<Workspace[]> {
     let workspaces = this.readAll().filter((ws) => ws.owner === ownerId);
 
     if (workspaces.length === 0) {
@@ -36,11 +34,11 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
     return workspaces.map((ws) => this.toDomain(ws));
   }
 
-  async findAll(): Promise<DomainWorkspace[]> {
+  async findAll(): Promise<Workspace[]> {
     return this.readAll().map((ws) => this.toDomain(ws));
   }
 
-  async save(workspace: DomainWorkspace): Promise<void> {
+  async save(workspace: Workspace): Promise<void> {
     const stored = this.normalize(workspace);
     const workspaces = this.readAll();
     const index = workspaces.findIndex((ws) => ws.id === stored.id);
@@ -65,20 +63,20 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
     return workspaces.some((ws) => ws.id === id);
   }
 
-  private readAll(): StoredWorkspace[] {
-    const workspaces = readJSON<StoredWorkspace[]>(STORAGE_KEY, EMPTY_LIST);
+  private readAll(): WorkspacePersistence[] {
+    const workspaces = readJSON<WorkspacePersistence[]>(STORAGE_KEY, EMPTY_LIST);
     return Array.isArray(workspaces) ? workspaces.map((ws) => this.sanitize(ws)) : EMPTY_LIST;
   }
 
-  private writeAll(workspaces: StoredWorkspace[]): void {
-    writeJSON<StoredWorkspace[]>(STORAGE_KEY, workspaces);
+  private writeAll(workspaces: WorkspacePersistence[]): void {
+    writeJSON<WorkspacePersistence[]>(STORAGE_KEY, workspaces);
   }
 
-  private migrateLegacyBuckets(ownerId: string): StoredWorkspace[] {
+  private migrateLegacyBuckets(ownerId: string): WorkspacePersistence[] {
     const legacyPerUser = readJSON<WorkspaceDTO[] | null>(`${LEGACY_USER_PREFIX}${ownerId}`, null);
     const legacyGlobal = readJSON<WorkspaceDTO[] | null>(LEGACY_BASE_KEY, null);
 
-    const migrated: StoredWorkspace[] = [];
+    const migrated: WorkspacePersistence[] = [];
 
     if (Array.isArray(legacyPerUser)) {
       migrated.push(
@@ -112,7 +110,7 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
     return migrated;
   }
 
-  private sanitize(workspace: Partial<StoredWorkspace>): StoredWorkspace {
+  private sanitize(workspace: Partial<WorkspacePersistence>): WorkspacePersistence {
     const owner = workspace.owner ?? "unknown";
     const id = workspace.id ?? crypto.randomUUID();
     const name = workspace.name ?? "Untitled Workspace";
@@ -152,13 +150,13 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
     };
   }
 
-  private normalize(workspace: DomainWorkspace): StoredWorkspace {
-    return this.sanitize(workspace as unknown as StoredWorkspace);
+  private normalize(workspace: Workspace): WorkspacePersistence {
+    return this.sanitize(workspaceToPersistence(workspace));
   }
 
   // eslint-disable-next-line class-methods-use-this
-  private toDomain(workspace: StoredWorkspace): DomainWorkspace {
-    return workspace as unknown as DomainWorkspace;
+  private toDomain(workspace: WorkspacePersistence): Workspace {
+    return workspaceFromDto(workspace);
   }
 }
 
