@@ -31,7 +31,7 @@ import {
   useWorkspaceState,
   useWorkspaceSync,
 } from "../../hooks";
-import { useWorkspaceStore, type WorkspaceStore } from "../../../stores/workspaceStore";
+import { useWorkspaceStore, type WorkspaceStore } from "../../stores/workspaceStore";
 import { presentError } from "../../../application/errors/errorPresenter";
 import { useErrorLogger } from "../../hooks/useErrorLogger";
 

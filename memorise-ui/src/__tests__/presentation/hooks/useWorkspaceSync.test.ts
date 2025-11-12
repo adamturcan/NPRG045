@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useWorkspaceSync } from '@/presentation/hooks/useWorkspaceSync';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaceStore } from '@/presentation/stores/workspaceStore';
 import type { Workspace } from '@/types/Workspace';
 
 // Mock the workspace store
@@ -12,7 +12,7 @@ const mockStore = {
   getState: vi.fn(),
 };
 
-vi.mock('../../../stores/workspaceStore', () => ({
+vi.mock('@/presentation/stores/workspaceStore', () => ({
   useWorkspaceStore: vi.fn((selector) => {
     const state = {
       workspaces: mockStore.workspaces,

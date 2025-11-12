@@ -15,7 +15,7 @@
 
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import type { Workspace } from '../../types/Workspace';
 
 export function useWorkspaceSync() {

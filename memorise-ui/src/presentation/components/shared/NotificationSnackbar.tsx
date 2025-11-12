@@ -21,6 +21,7 @@ const ALERT_BG_COLOR_INFO = "#0E4AA1";
 export interface NotificationSnackbarProps extends NoticeOptions {
   message: string | null;
   onClose: () => void;
+  action?: React.ReactNode;
 }
 
 export const NotificationSnackbar: React.FC<NotificationSnackbarProps> = ({
@@ -28,6 +29,7 @@ export const NotificationSnackbar: React.FC<NotificationSnackbarProps> = ({
   onClose,
   tone = "default",
   persistent = false,
+  action,
 }) => {
   const resolvedTone: NoticeTone = tone ?? "default";
   const severity = resolvedTone === "default" ? "info" : resolvedTone;
@@ -63,6 +65,7 @@ export const NotificationSnackbar: React.FC<NotificationSnackbarProps> = ({
         severity={severity}
         variant="filled"
         sx={{ bgcolor: backgroundColor }}
+        action={action}
       >
         {message}
       </Alert>

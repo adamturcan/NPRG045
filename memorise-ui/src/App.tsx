@@ -14,9 +14,16 @@ import {
   Navigate,
 } from "react-router-dom";
 import BubbleSidebar from "./presentation/components/sidebar/BubbleSidebar";
-import { useWorkspaceStore } from "./stores/workspaceStore";
+import { useWorkspaceStore } from "./presentation/stores/workspaceStore";
 import { getWorkspaceApplicationService } from "./infrastructure/providers/workspaceProvider";
 import type { Workspace } from "./types/Workspace";
+import { debounceAsync } from "./shared/utils/debounce";
+import { useNotification } from "./presentation/hooks/useNotification";
+import { NotificationSnackbar } from "./presentation/components/shared/NotificationSnackbar";
+import { Button } from "@mui/material";
+import { errorHandlingService } from "./infrastructure/services/ErrorHandlingService";
+import { presentError } from "./application/errors/errorPresenter";
+import { useErrorLogger } from "./presentation/hooks/useErrorLogger";
 
 // Lazy load pages for code splitting
 const AccountPage = lazy(() => import("./presentation/pages/AccoutPage"));
@@ -78,12 +85,22 @@ const App: React.FC = () => {
   
   // Zustand store
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const saveError = useWorkspaceStore((state) => state.saveError);
   const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
+  const markSaveSuccess = useWorkspaceStore.getState().markSaveSuccess;
+  const markSaveFailed = useWorkspaceStore.getState().markSaveFailed;
+  const rollbackToLastSaved = useWorkspaceStore.getState().rollbackToLastSaved;
   const workspaceApplicationService = useMemo(
     () => getWorkspaceApplicationService(),
     []
   );
+  
+  // Notification system
+  const { notice, showNotice, clearNotice } = useNotification();
+  
+  // Error logging
+  const logError = useErrorLogger({ hook: "App", operation: "save workspaces" });
 
 
   // Wrapper function to update workspaces array (for compatibility with old setWorkspaces API)
@@ -108,11 +125,71 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
-  // Persist whenever workspaces change — but only after boot
+  // Save function with error handling
+  const saveWorkspaces = useCallback(async (saveUsername: string, saveWorkspaces: Workspace[]) => {
+    useWorkspaceStore.setState({ isSaving: true, saveError: null });
+    const hadPreviousError = useWorkspaceStore.getState().saveError !== null;
+    try {
+      await workspaceApplicationService.replaceAllForOwner(saveUsername, saveWorkspaces);
+      markSaveSuccess();
+      // Only show success notification if we had a previous error (to avoid spam)
+      if (hadPreviousError) {
+        showNotice("Workspace saved successfully", { tone: "success" });
+      }
+    } catch (error) {
+      // Use errorHandlingService to normalize the error
+      const appError = errorHandlingService.isAppError(error)
+        ? error
+        : errorHandlingService.wrapRepositoryError(error, {
+            operation: "save workspaces",
+            ownerId: saveUsername,
+          });
+      
+      // Log the error
+      logError(appError, { ownerId: saveUsername });
+      
+      // Store the AppError
+      markSaveFailed(appError);
+      
+      // Present user-friendly error message
+      const presented = presentError(appError, {
+        persistent: true,
+      });
+      // Append rollback info to the message
+      const messageWithRollback = `${presented.message} Auto-rollback in 5 seconds.`;
+      showNotice(messageWithRollback, {
+        tone: presented.tone,
+        persistent: presented.persistent,
+      });
+      
+      // Auto-rollback after 5 seconds
+      setTimeout(() => {
+        const currentSaveError = useWorkspaceStore.getState().saveError;
+        if (currentSaveError) {
+          rollbackToLastSaved();
+          showNotice("Changes rolled back to last saved state", { tone: "warning" });
+        }
+      }, 5000);
+    }
+  }, [workspaceApplicationService, markSaveSuccess, markSaveFailed, rollbackToLastSaved, showNotice, logError]);
+
+  // Create debounced save function
+  const debouncedSave = useMemo(() => {
+    return debounceAsync(saveWorkspaces, 1000); // 1 second delay
+  }, [saveWorkspaces]);
+
+  // Persist whenever workspaces change — but only after boot (debounced)
   useEffect(() => {
     if (!booted || !username) return;
-    void workspaceApplicationService.replaceAllForOwner(username, workspaces);
-  }, [booted, username, workspaces, workspaceApplicationService]);
+    void debouncedSave(username, workspaces);
+  }, [booted, username, workspaces, debouncedSave]);
+
+  // Retry save handler
+  const handleRetrySave = useCallback(() => {
+    if (!username) return;
+    clearNotice();
+    void saveWorkspaces(username, workspaces);
+  }, [username, workspaces, saveWorkspaces, clearNotice]);
 
   // Login / logout
   const handleLogin = (name: string) => {
@@ -316,6 +393,27 @@ const App: React.FC = () => {
             </Routes>
           </Suspense>
         </Box>
+        {/* Notifications */}
+        {notice && (
+          <NotificationSnackbar
+            message={notice.message}
+            onClose={clearNotice}
+            tone={notice.tone}
+            persistent={notice.persistent}
+            action={
+              saveError ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={handleRetrySave}
+                  sx={{ textTransform: "none" }}
+                >
+                  Retry
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
       </Box>
     </ThemeProvider>
   );

@@ -43,7 +43,7 @@ export default defineConfig({
         // Exclude interface definitions (no executable code)
         'src/core/interfaces/**',
         // Exclude stores (Zustand - tested through hooks)
-        'src/stores/**',
+        'src/presentation/stores/**',
         // Exclude lib utilities (tested indirectly)
         'src/shared/utils/**',
         // Exclude legacy services (to be refactored in Phase 3)
