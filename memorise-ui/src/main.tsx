@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ErrorBoundary } from "./presentation/components/shared/ErrorBoundary";
 import { errorHandlingService } from "./infrastructure/services/ErrorHandlingService";
+import { reportWebVitals } from "./shared/perf/webVitals";
 import "./index.css";
 
 const handleBoundaryError = (error: Error, errorInfo: React.ErrorInfo) => {
@@ -27,3 +28,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// Report Web Vitals in development mode
+if (import.meta.env.DEV) {
+  reportWebVitals();
+}
