@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware';
 import type { Workspace } from '../types/Workspace';
 import { getWorkspaceApplicationService } from '../infrastructure/providers/workspaceProvider';
 
-interface WorkspaceStore {
+export interface WorkspaceStore {
   workspaces: Workspace[];
   currentWorkspaceId: string | null;
   isLoading: boolean;

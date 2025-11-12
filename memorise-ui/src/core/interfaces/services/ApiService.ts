@@ -1,5 +1,5 @@
 import type { NerSpan } from '../../../types/NotationEditor';
-import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../lib/translation';
+import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../shared/utils/translation';
 
 /**
  * Classification result from the semantic tagging API.

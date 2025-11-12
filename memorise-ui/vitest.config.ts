@@ -23,32 +23,33 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/**/*.test.tsx',
+        'src/__tests__/**',
         'src/test/**',
         'src/vite-env.d.ts',
         'src/main.tsx',
         // Exclude UI components - these should be tested with E2E tools (Playwright)
         'src/App.tsx',
-        'src/pages/**',
-        'src/components/**',
+        'src/presentation/pages/**',
+        'src/presentation/components/**',
         // Exclude types and constants (no logic to test)
         'src/types/**',
-        'src/constants/**',
+        'src/shared/constants/**',
         // Exclude data mocks
         'src/data/**',
         // Exclude workers (tested indirectly through hooks)
         'src/workers/**',
         // Exclude React contexts (tested through integration)
-        'src/contexts/**',
+        'src/presentation/contexts/**',
         // Exclude interface definitions (no executable code)
         'src/core/interfaces/**',
         // Exclude stores (Zustand - tested through hooks)
         'src/stores/**',
         // Exclude lib utilities (tested indirectly)
-        'src/lib/**',
+        'src/shared/utils/**',
         // Exclude legacy services (to be refactored in Phase 3)
         'src/services/**',
         // Exclude barrel files (no logic)
-        'src/hooks/index.ts',
+        'src/presentation/hooks/index.ts',
         'src/domain/index.ts',
       ],
       thresholds: {

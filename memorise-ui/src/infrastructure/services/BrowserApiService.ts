@@ -1,11 +1,11 @@
-import { classify as classifyRequest, ner as nerRequest } from '../../lib/api';
+import { classify as classifyRequest, ner as nerRequest } from '../../shared/utils/api';
 import {
   translateText,
   getSupportedLanguages as fetchSupportedLanguages,
   type LanguageCode,
   type TranslationRequest,
   type TranslationResponse,
-} from '../../lib/translation';
+} from '../../shared/utils/translation';
 import type { NerSpan } from '../../types/NotationEditor';
 import type {
   ApiService as ApiServiceContract,

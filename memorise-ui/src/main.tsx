@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import { ErrorBoundary } from "./components/shared/ErrorBoundary";
+import { ErrorBoundary } from "./presentation/components/shared/ErrorBoundary";
 import { errorHandlingService } from "./infrastructure/services/ErrorHandlingService";
 import "./index.css";
 

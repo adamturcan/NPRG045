@@ -13,16 +13,16 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
-import BubbleSidebar from "./components/sidebar/BubbleSidebar";
+import BubbleSidebar from "./presentation/components/sidebar/BubbleSidebar";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import { getWorkspaceApplicationService } from "./infrastructure/providers/workspaceProvider";
 import type { Workspace } from "./types/Workspace";
 
 // Lazy load pages for code splitting
-const AccountPage = lazy(() => import("./pages/AccoutPage"));
-const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
-const ManageWorkspacesPage = lazy(() => import("./pages/ManageWorkspacesPage"));
-const LoginPage = lazy(() => import("./pages/LoginPage"));
+const AccountPage = lazy(() => import("./presentation/pages/AccoutPage"));
+const WorkspacePage = lazy(() => import("./presentation/pages/WorkspacePage"));
+const ManageWorkspacesPage = lazy(() => import("./presentation/pages/ManageWorkspacesPage"));
+const LoginPage = lazy(() => import("./presentation/pages/LoginPage"));
 
 let theme = createTheme({
   palette: {
