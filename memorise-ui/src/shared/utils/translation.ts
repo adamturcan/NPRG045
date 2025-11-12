@@ -421,3 +421,25 @@ export function getLanguageName(code: LanguageCode): string {
   );
 }
 
+/**
+ * Translate a single segment of text
+ * This is a convenience wrapper around translateText for segment-based translation
+ * 
+ * @param segmentText - The text of the segment to translate
+ * @param targetLang - Target language code
+ * @param sourceLang - Optional source language hint
+ * @returns Translation result with translated text
+ * @throws Error if translation fails
+ */
+export async function translateSegment(
+  segmentText: string,
+  targetLang: LanguageCode,
+  sourceLang?: LanguageCode
+): Promise<TranslationResponse> {
+  return translateText({
+    text: segmentText,
+    targetLang,
+    sourceLang,
+  });
+}
+

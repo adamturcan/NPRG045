@@ -184,6 +184,8 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
       translations: Array.isArray(workspace.translations)
         ? workspace.translations.map((t) => this.sanitizeTranslation(t))
         : [],
+      // Preserve segments (optional metadata)
+      segments: Array.isArray(workspace.segments) ? workspace.segments : undefined,
     };
   }
 
@@ -200,16 +202,75 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
       deletedApiKeys: Array.isArray(translation?.deletedApiKeys)
         ? translation.deletedApiKeys
         : [],
+      // Preserve segmentTranslations (optional metadata)
+      segmentTranslations:
+        translation?.segmentTranslations &&
+        typeof translation.segmentTranslations === "object"
+          ? translation.segmentTranslations
+          : undefined,
     };
   }
 
   private normalize(workspace: Workspace): WorkspacePersistence {
-    return this.sanitize(workspaceToPersistence(workspace));
+    // Read existing workspace to preserve segments and segmentTranslations
+    const existing = this.readAll().find((ws) => ws.id === workspace.id);
+    return this.sanitize(workspaceToPersistence(workspace, existing));
   }
 
-  // eslint-disable-next-line class-methods-use-this
+   
   private toDomain(workspace: WorkspacePersistence): Workspace {
     return workspaceFromDto(workspace);
+  }
+
+  async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>> {
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "get raw persistence",
+        repository: REPOSITORY_NAME,
+        ownerId,
+      },
+      () => {
+        let workspaces = this.readAll().filter((ws) => ws.owner === ownerId);
+
+        if (workspaces.length === 0) {
+          const migrated = this.migrateLegacyBuckets(ownerId);
+          if (migrated.length > 0) {
+            workspaces = migrated;
+          }
+        }
+
+        return workspaces.map((ws) => ({
+          id: ws.id,
+          segments: ws.segments,
+        }));
+      }
+    );
+  }
+
+  /**
+   * Update segments for a workspace directly in persistence
+   * This is needed because segments are metadata not in the domain entity
+   */
+  async updateSegments(workspaceId: string, segments: unknown): Promise<void> {
+    return errorHandlingService.withRepositoryError(
+      {
+        operation: "update segments",
+        repository: REPOSITORY_NAME,
+        workspaceId,
+      },
+      () => {
+        const workspaces = this.readAll();
+        const index = workspaces.findIndex((ws) => ws.id === workspaceId);
+        
+        if (index >= 0) {
+          workspaces[index] = {
+            ...workspaces[index],
+            segments,
+          };
+          this.writeAll(workspaces);
+        }
+      }
+    );
   }
 }
 

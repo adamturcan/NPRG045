@@ -54,6 +54,12 @@ export interface NotationEditorProps {
   deletableKeys?: Set<string>;
   /** adding a span via selection "…" menu or change-category */
   onAddSpan?: (span: NerSpan) => void;
+  /** segments for visual markers */
+  segments?: Array<{ id: string; start: number; end: number; order: number }>;
+  /** active segment ID for highlighting */
+  activeSegmentId?: string;
+  /** selected segment ID in segment view mode - used to adjust annotation offsets */
+  selectedSegmentId?: string;
 }
 
 export interface EntityLeafProps {
@@ -61,11 +67,17 @@ export interface EntityLeafProps {
   attributes: any;
   children: React.ReactNode;
   leaf: {
-    underline: boolean;
-    entity: string;
-    spanStart: number;
-    spanEnd: number;
-    active: boolean;
+    underline?: boolean;
+    entity?: string;
+    spanStart?: number;
+    spanEnd?: number;
+    active?: boolean;
+    segment?: boolean;
+    segmentId?: string;
+    segmentOrder?: number;
+    segmentActive?: boolean;
+    segmentStart?: boolean;
+    segmentEnd?: boolean;
   };
   onSpanClick: (span: NerSpan) => void;
   activeSpan: NerSpan | null;

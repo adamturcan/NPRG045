@@ -1,5 +1,6 @@
 import type { NerSpan } from "../types/NotationEditor";
 import type { TagItem } from "./Tag";
+import type { Segment } from "./Segment";
 
 /**
  * Translation page within a workspace
@@ -15,6 +16,9 @@ export type Translation = {
   userSpans?: NerSpan[];   // User-annotated NER spans for this translation
   apiSpans?: NerSpan[];    // API-generated NER spans for this translation
   deletedApiKeys?: string[]; // Soft-deleted API span keys for this translation
+  segmentTranslations?: {
+    [segmentId: string]: string;  // segmentId → translated text (for per-segment translation)
+  };
 };
 
 export type Workspace = {
@@ -29,4 +33,5 @@ export type Workspace = {
   owner?: string;
   tags?: TagItem[];
   translations?: Translation[]; // ← NEW: Store translation pages
+  segments?: Segment[]; // Optional segments from segmentation API
 };

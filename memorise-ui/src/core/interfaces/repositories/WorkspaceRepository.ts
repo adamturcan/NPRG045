@@ -34,5 +34,11 @@ export interface WorkspaceRepository {
    * Check if a workspace exists
    */
   exists(id: string): Promise<boolean>;
+
+  /**
+   * Get raw persistence data for an owner (includes metadata like segments)
+   * This is needed to preserve metadata that's not part of the domain entity
+   */
+  getRawPersistenceForOwner?(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>>;
 }
 

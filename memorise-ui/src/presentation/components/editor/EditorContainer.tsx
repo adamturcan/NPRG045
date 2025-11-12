@@ -40,6 +40,12 @@ const EditorContainer: React.FC<EditorContainerProps> = ({
         fontFamily: "DM Mono, monospace",
         overflow: "hidden",
         position: "relative", // Required for absolute positioning of bubbles
+        "& .slate-placeholder": {
+          "& *": {
+            display: "inline !important",
+            whiteSpace: "nowrap !important",
+          },
+        },
       }}
     >
       {children}

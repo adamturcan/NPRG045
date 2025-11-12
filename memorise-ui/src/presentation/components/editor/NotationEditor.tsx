@@ -74,6 +74,9 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   highlightedCategories = [],
   onSelectionChange,
   onAddSpan,
+  segments = [],
+  activeSegmentId,
+  selectedSegmentId,
 }) => {
   // Initialize Slate editor with React and History plugins
   const editor = useMemo(() => {
@@ -230,12 +233,13 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
 
   /**
    * ============================================================================
-   * DECORATIONS: Apply visual styling to annotated spans
+   * DECORATIONS: Apply visual styling to annotated spans and segments
    * ============================================================================
    * 
    * Slate's decorate function is called for each text node to determine what
-   * visual properties (decorations) should be applied. We use this to add
-   * underline/entity properties to text that falls within annotation spans.
+   * visual properties (decorations) should be applied. We use this to add:
+   * - Underline/entity properties to text that falls within annotation spans
+   * - Segment markers to show segment boundaries
    */
   const decorate = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -249,35 +253,144 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       const info = indexByPath.get(keyFromPath(path));
       if (!info) return ranges;
 
-      // Check each span to see if it overlaps this text node
-      for (const s of localSpans) {
-        const start = Math.max(s.start, info.gStart);
-        const end = Math.min(s.end, info.gEnd);
-        if (end <= start) continue; // No overlap
+      // Find selected segment if in segment view mode
+      const selectedSegment = selectedSegmentId && segments
+        ? segments.find((seg) => seg.id === selectedSegmentId)
+        : null;
+      const segmentOffset = selectedSegment ? selectedSegment.start : 0;
 
-        // Determine if this span should be highlighted
-        const isActive =
-          (!!activeSpan &&
-            activeSpan.start === s.start &&
-            activeSpan.end === s.end &&
-            activeSpan.entity === s.entity) ||
-          (highlightedCategories.length > 0 &&
-            highlightedCategories.includes(s.entity));
+      // Show annotations (NER spans)
+      // When activeSegmentId is set (document mode), hide all NER spans to focus on the segment
+      // When selectedSegmentId is set (segment mode), show spans with adjusted offsets
+      if (!activeSegmentId) {
+        for (const s of localSpans) {
+          // In segment mode, filter spans to only those that overlap with the selected segment
+          if (selectedSegment) {
+            // Check if span overlaps with segment (must have some overlap)
+            if (s.end <= selectedSegment.start || s.start >= selectedSegment.end) {
+              continue; // Span doesn't overlap with segment - skip it completely
+            }
+            
+            // Convert span from global coordinates to segment-relative coordinates
+            // The segment text in the editor starts at position 0, so we subtract segment.start
+            const spanStartInSegment = s.start - segmentOffset;
+            const spanEndInSegment = s.end - segmentOffset;
+            
+            // Clip span to segment boundaries (0 to segment length)
+            // The segment length is: selectedSegment.end - selectedSegment.start
+            const segmentLength = selectedSegment.end - selectedSegment.start;
+            const clippedStart = Math.max(0, spanStartInSegment);
+            const clippedEnd = Math.min(segmentLength, spanEndInSegment);
+            
+            // If after clipping the span is invalid, skip it
+            if (clippedEnd <= clippedStart) {
+              continue;
+            }
+            
+            // Check overlap with current text node
+            // In segment mode, info.gStart and info.gEnd are already segment-relative (start at 0)
+            // since the editor value is just the segment text
+            const start = Math.max(clippedStart, info.gStart);
+            const end = Math.min(clippedEnd, info.gEnd);
+            if (end <= start) continue; // No overlap with this text node
 
-        // Add decoration range for this span
-        ranges.push({
-          anchor: { path, offset: start - info.gStart },
-          focus: { path, offset: end - info.gStart },
-          underline: true,
-          entity: s.entity,
-          spanStart: s.start,
-          spanEnd: s.end,
-          active: isActive,
-        });
+            // Determine if this span should be highlighted
+            const isActive =
+              (!!activeSpan &&
+                activeSpan.start === s.start &&
+                activeSpan.end === s.end &&
+                activeSpan.entity === s.entity) ||
+              (highlightedCategories.length > 0 &&
+                highlightedCategories.includes(s.entity));
+
+            // Add decoration range for this span
+            // Offsets are relative to the text node start (info.gStart), which is segment-relative
+            ranges.push({
+              anchor: { path, offset: start - info.gStart },
+              focus: { path, offset: end - info.gStart },
+              underline: true,
+              entity: s.entity,
+              spanStart: s.start,
+              spanEnd: s.end,
+              active: isActive,
+            });
+          } else {
+            // Document mode: use original global offsets
+            const start = Math.max(s.start, info.gStart);
+            const end = Math.min(s.end, info.gEnd);
+            if (end <= start) continue; // No overlap
+
+            // Determine if this span should be highlighted
+            const isActive =
+              (!!activeSpan &&
+                activeSpan.start === s.start &&
+                activeSpan.end === s.end &&
+                activeSpan.entity === s.entity) ||
+              (highlightedCategories.length > 0 &&
+                highlightedCategories.includes(s.entity));
+
+            // Add decoration range for this span
+            ranges.push({
+              anchor: { path, offset: start - info.gStart },
+              focus: { path, offset: end - info.gStart },
+              underline: true,
+              entity: s.entity,
+              spanStart: s.start,
+              spanEnd: s.end,
+              active: isActive,
+            });
+          }
+        }
       }
+
+      // Show segments - full highlight for active, only end marker for inactive
+      // Only show segment markers in document mode (not in segment mode)
+      if (!selectedSegmentId && segments) {
+        for (const segment of segments) {
+          const segmentStart = segment.start;
+          const segmentEnd = segment.end;
+          const nodeStart = info.gStart;
+          const nodeEnd = info.gEnd;
+          
+          // Determine if this segment is active (highlighted)
+          const isActive = segment.id === activeSegmentId;
+
+          if (isActive) {
+            // Active segment: highlight the entire segment range (no start marker)
+            const start = Math.max(segmentStart, nodeStart);
+            const end = Math.min(segmentEnd, nodeEnd);
+            if (end > start) {
+              ranges.push({
+                anchor: { path, offset: start - nodeStart },
+                focus: { path, offset: end - nodeStart },
+                segment: true,
+                segmentId: segment.id,
+                segmentOrder: segment.order,
+                segmentActive: true,
+              });
+            }
+          } else {
+            // Inactive segment: only show end boundary marker (no start marker)
+            // Check if segment end is in this node
+            if (segmentEnd > nodeStart && segmentEnd <= nodeEnd) {
+              const offset = segmentEnd - nodeStart;
+              ranges.push({
+                anchor: { path, offset },
+                focus: { path, offset },
+                segment: true,
+                segmentEnd: true,
+                segmentId: segment.id,
+                segmentOrder: segment.order,
+                segmentActive: false,
+              });
+            }
+          }
+        }
+      }
+
       return ranges;
     },
-    [indexByPath, localSpans, activeSpan, highlightedCategories]
+    [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId]
   );
 
   /**
@@ -299,10 +412,23 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
           setSelBox(null); // Hide selection bubble if visible
 
           try {
+            // In segment mode, convert global coordinates to segment-relative coordinates
+            const selectedSegment = selectedSegmentId && segments
+              ? segments.find((seg) => seg.id === selectedSegmentId)
+              : null;
+            let spanStart = clicked.start;
+            let spanEnd = clicked.end;
+            
+            if (selectedSegment) {
+              // Convert to segment-relative coordinates
+              spanStart = clicked.start - selectedSegment.start;
+              spanEnd = clicked.end - selectedSegment.start;
+            }
+            
             // Calculate bubble position
             const range: Range = {
-              anchor: globalToPoint(clicked.start),
-              focus: globalToPoint(clicked.end),
+              anchor: globalToPoint(spanStart),
+              focus: globalToPoint(spanEnd),
             };
             const domRange = ReactEditor.toDOMRange(editor, range);
             const containerRect = containerRef.current?.getBoundingClientRect();
@@ -334,7 +460,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
         />
       );
     },
-    [activeSpan, editor, globalToPoint, posFromDomRange]
+    [activeSpan, editor, globalToPoint, posFromDomRange, selectedSegmentId, segments]
   );
 
   /**
@@ -378,6 +504,12 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       return;
     }
 
+    // Hide bubble if a segment is active (disable adding spans when segment is highlighted)
+    if (activeSegmentId) {
+      setSelBox(null);
+      return;
+    }
+
     // Hide bubble if selection overlaps any existing span
     if (selectionOverlapsExisting(start, end)) {
       setSelBox(null);
@@ -401,7 +533,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     } catch {
       setSelBox(null);
     }
-  }, [editor, posFromDomRange, selectionOverlapsExisting]);
+  }, [editor, posFromDomRange, selectionOverlapsExisting, activeSegmentId]);
 
   const updateSelectionOverlay = useCallback(() => {
     // Verify editor is still focused
@@ -429,8 +561,18 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
 
     // Convert selection to global offsets (cheap operation)
     const [startPoint, endPoint] = Range.edges(sel);
-    const gStart = pointToGlobal(startPoint.path, startPoint.offset);
-    const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+    let gStart = pointToGlobal(startPoint.path, startPoint.offset);
+    let gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+    
+    // In segment mode, convert relative offsets back to global offsets
+    const selectedSegment = selectedSegmentId 
+      ? segments.find((seg) => seg.id === selectedSegmentId)
+      : null;
+    if (selectedSegment) {
+      gStart += selectedSegment.start;
+      gEnd += selectedSegment.start;
+    }
+    
     const start = Math.min(gStart, gEnd);
     const end = Math.max(gStart, gEnd);
     
@@ -445,6 +587,17 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
 
     // Immediately update selection state (cheap)
     onSelectionChange?.({ start, end });
+
+    // Hide bubble immediately if a segment is active (disable adding spans when segment is highlighted)
+    if (activeSegmentId) {
+      // Cancel any pending bubble position update
+      if (bubblePositionUpdateRef.current !== null) {
+        clearTimeout(bubblePositionUpdateRef.current);
+        bubblePositionUpdateRef.current = null;
+      }
+      setSelBox(null);
+      return;
+    }
 
     // Hide bubble immediately if selection overlaps any existing span
     if (selectionOverlapsExisting(start, end)) {
@@ -475,6 +628,9 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     selectionOverlapsExisting,
     updateBubblePosition,
     activeSpan,
+    activeSegmentId,
+    selectedSegmentId,
+    segments,
   ]);
 
   /**
@@ -491,6 +647,12 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     (start: number, end: number, currentEntity?: string) =>
     (entity: string) => {
       if (!onAddSpan) return;
+
+      // Block adding new spans if a segment is active (only allow editing existing spans)
+      if (!currentEntity && activeSegmentId) {
+        closeAllUI();
+        return;
+      }
 
       // Block adding if selection overlaps an existing span
       // but allow when we're editing an existing span (currentEntity defined)
@@ -761,7 +923,13 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
                   opacity: 0.55,
                   color: "#5A6A7A",
                   fontFamily: "DM Mono, monospace",
+                  whiteSpace: "nowrap",
+                  display: "inline",
+                  top: "18px",
+                  left: "18px",
                 }}
+                contentEditable={false}
+                className="slate-placeholder"
               >
                 {props.children}
               </span>

@@ -67,6 +67,7 @@ export class WorkspaceTranslation {
       userSpans: dto.userSpans,
       apiSpans: dto.apiSpans,
       deletedApiKeys: dto.deletedApiKeys,
+      // segmentTranslations are metadata, not part of entity
     });
   }
 
@@ -134,7 +135,7 @@ export class WorkspaceTranslation {
     return this.clone({ updatedAt });
   }
 
-  toDto(): TranslationDTO {
+  toDto(existingDto?: Partial<TranslationDTO>): TranslationDTO {
     return {
       language: this.language,
       text: this.text,
@@ -144,6 +145,8 @@ export class WorkspaceTranslation {
       userSpans: [...this.userSpans],
       apiSpans: [...this.apiSpans],
       deletedApiKeys: [...this.deletedApiKeys],
+      // Preserve segmentTranslations from existing DTO if provided (metadata not in entity)
+      segmentTranslations: existingDto?.segmentTranslations,
     };
   }
 

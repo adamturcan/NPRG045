@@ -41,7 +41,48 @@ export class WorkspaceApplicationService {
   async loadForOwner(ownerId: string): Promise<WorkspaceDTO[]> {
     const workspaces = await this.loadUseCase.execute({ ownerId });
     workspaces.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-    return workspaces.map((workspace) => workspaceToDto(workspace));
+    
+    // Preserve segments from stored data when converting entity to DTO
+    // Segments are metadata not in domain entity, so we need to read them from persistence
+    const rawPersistence = await this.getRawPersistenceForOwner(ownerId);
+    const segmentsMap = new Map(rawPersistence.map(ws => [ws.id, ws.segments]));
+    
+    return workspaces.map((workspace) => {
+      const existingDto = segmentsMap.has(workspace.id) 
+        ? { segments: segmentsMap.get(workspace.id) }
+        : undefined;
+      return workspaceToDto(workspace, existingDto);
+    });
+  }
+
+  /**
+   * Helper method to get raw persistence data for an owner
+   * This is needed to preserve metadata (like segments) that's not in the domain entity
+   */
+  private async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>> {
+    if (this.deps.workspaceRepository.getRawPersistenceForOwner) {
+      return await this.deps.workspaceRepository.getRawPersistenceForOwner(ownerId);
+    }
+    // Fallback: return empty array if repository doesn't support this method
+    return [];
+  }
+
+  /**
+   * Helper method to get raw persistence data for a specific workspace
+   * This is needed to preserve metadata (like segments) that's not in the domain entity
+   */
+  private async getRawPersistenceForWorkspace(workspaceId: string): Promise<{ segments?: unknown } | null> {
+    // Get the workspace entity to find its owner
+    const workspace = await this.deps.workspaceRepository.findById(workspaceId);
+    if (!workspace) return null;
+    
+    // Get all raw persistence data for the owner and find the matching workspace
+    if (this.deps.workspaceRepository.getRawPersistenceForOwner) {
+      const all = await this.deps.workspaceRepository.getRawPersistenceForOwner(workspace.owner);
+      const match = all.find(ws => ws.id === workspaceId);
+      return match ? { segments: match.segments } : null;
+    }
+    return null;
   }
 
   async createWorkspace(params: {
@@ -66,7 +107,12 @@ export class WorkspaceApplicationService {
     patch: UpdateWorkspacePatch;
   }): Promise<WorkspaceDTO | null> {
     const workspace = await this.updateUseCase.execute(params);
-    return workspace ? workspaceToDto(workspace) : null;
+    if (!workspace) return null;
+    
+    // Preserve segments from stored data
+    const rawPersistence = await this.getRawPersistenceForWorkspace(workspace.id);
+    const existingDto = rawPersistence ? { segments: rawPersistence.segments } : undefined;
+    return workspaceToDto(workspace, existingDto);
   }
 
   async deleteWorkspace(workspaceId: string): Promise<void> {
@@ -85,9 +131,14 @@ export class WorkspaceApplicationService {
       }
     }
 
+    // Track which workspaces need segment updates
+    const workspacesWithSegments = new Map<string, WorkspaceDTO['segments']>();
+    
     for (const dto of workspaces) {
       if (!dto.id) continue;
+      
       if (existingIds.has(dto.id)) {
+        // Update existing workspace
         await this.updateUseCase.execute({
           workspaceId: dto.id,
           patch: this.dtoToPatch(dto),
@@ -107,6 +158,23 @@ export class WorkspaceApplicationService {
           updatedAt: dto.updatedAt,
         });
       }
+      
+      // Track segments if present in DTO
+      if (dto.segments !== undefined) {
+        workspacesWithSegments.set(dto.id, dto.segments);
+      }
+    }
+    
+    // Update segments in persistence for workspaces that have them
+    // This is needed because segments are metadata not in the domain entity
+    if (workspacesWithSegments.size > 0) {
+      // Use the repository's updateSegments method if available, otherwise update directly
+      for (const [workspaceId, segments] of workspacesWithSegments) {
+        if ('updateSegments' in this.deps.workspaceRepository && 
+            typeof (this.deps.workspaceRepository as any).updateSegments === 'function') {
+          await (this.deps.workspaceRepository as any).updateSegments(workspaceId, segments);
+        }
+      }
     }
   }
 
@@ -115,7 +183,12 @@ export class WorkspaceApplicationService {
     translations: Translation[];
   }): Promise<WorkspaceDTO | null> {
     const workspace = await this.syncTranslationsUseCase.execute(params);
-    return workspace ? workspaceToDto(workspace) : null;
+    if (!workspace) return null;
+    
+    // Preserve segments from stored data
+    const rawPersistence = await this.getRawPersistenceForWorkspace(workspace.id);
+    const existingDto = rawPersistence ? { segments: rawPersistence.segments } : undefined;
+    return workspaceToDto(workspace, existingDto);
   }
 
   createWorkspaceDraft(ownerId: string, name: string): WorkspaceDTO {

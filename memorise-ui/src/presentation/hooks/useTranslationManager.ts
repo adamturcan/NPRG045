@@ -544,6 +544,142 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     [workspaceId, workspace, activeTab, setText, setEditorInstanceKey, setWorkspaces, onNotice]
   );
 
+  /**
+   * Translate a single segment
+   * Stores the translation in the current translation's segmentTranslations field
+   * If translation doesn't exist for the target language, creates it automatically
+   */
+  const handleTranslateSegment = useCallback(
+    async (segment: { id: string; text: string }, targetLang: string) => {
+      if (!workspaceId || !workspace) return;
+
+      const capturedWorkspaceId = workspaceId;
+      const segmentId = segment.id;
+      const segmentText = segment.text;
+
+      if (!segmentText.trim()) {
+        onNotice("Segment text is empty.", { tone: "warning" });
+        return;
+      }
+
+      // Check if translation exists for this language, create if it doesn't
+      let translation = workspace.translations?.find(
+        (t) => t.language === targetLang
+      );
+      
+      // If translation doesn't exist, create it with empty text (segment-only translation)
+      if (!translation) {
+        const newTranslation = {
+          language: targetLang,
+          text: "", // Empty text - this is a segment-only translation
+          sourceLang: "auto",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          segmentTranslations: {},
+        };
+        
+        // Add translation to workspace
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === capturedWorkspaceId
+              ? {
+                  ...w,
+                  translations: [...(w.translations || []), newTranslation],
+                  updatedAt: Date.now(),
+                }
+              : w
+          )
+        );
+        
+        translation = newTranslation;
+        onNotice(`Created translation tab for ${targetLang}.`, {
+          tone: "info",
+        });
+        
+        // If we're on original tab, switch to the new translation tab
+        if (activeTab === "original") {
+          // Use setTimeout to ensure workspace state is updated first
+          setTimeout(() => {
+            setActiveTab(targetLang);
+          }, 100);
+        }
+      }
+
+      try {
+        setIsUpdating(true);
+        onNotice(`Translating segment ${segmentId}...`, {
+          tone: "info",
+          persistent: false,
+        });
+
+        // Call translation API for this segment
+        const result = await apiService.translate({
+          text: segmentText,
+          targetLang: targetLang as LanguageCode,
+        });
+
+        // Update segment's translations field (new structure: segment.translations[languageCode])
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === capturedWorkspaceId
+              ? {
+                  ...w,
+                  segments: (w.segments || []).map((seg) =>
+                    seg.id === segmentId
+                      ? {
+                          ...seg,
+                          translations: {
+                            ...(seg.translations || {}),
+                            [targetLang]: result.translatedText,
+                          },
+                        }
+                      : seg
+                  ),
+                  // Also update translation tab's segmentTranslations for backward compatibility
+                  translations: (w.translations || []).map((t) =>
+                    t.language === targetLang
+                      ? {
+                          ...t,
+                          segmentTranslations: {
+                            ...(t.segmentTranslations || {}),
+                            [segmentId]: result.translatedText,
+                          },
+                          updatedAt: Date.now(),
+                        }
+                      : t
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : w
+          )
+        );
+
+        onNotice(`Segment ${segmentId} translated!`, { tone: "success" });
+      } catch (error) {
+        const appError = logError(error, {
+          operation: `translate segment ${segmentId} to ${targetLang}`,
+          workspaceId: capturedWorkspaceId,
+        });
+        const notice = presentError(appError);
+        onNotice(notice.message, {
+          tone: notice.tone,
+          persistent: notice.persistent,
+        });
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [
+      apiService,
+      workspaceId,
+      workspace,
+      activeTab,
+      setWorkspaces,
+      onNotice,
+      logError,
+    ]
+  );
+
   return {
     activeTab,
     translationLanguages,
@@ -554,6 +690,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     onAddTranslation: handleAddTranslation,
     onUpdateTranslation: handleUpdateTranslation,
     onDeleteTranslation: handleDeleteTranslation,
+    onTranslateSegment: handleTranslateSegment,
     isUpdating,
     languageOptions,
     isLanguageListLoading,

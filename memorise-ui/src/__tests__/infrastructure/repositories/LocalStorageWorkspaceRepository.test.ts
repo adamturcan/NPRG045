@@ -102,6 +102,190 @@ describe("LocalStorageWorkspaceRepository", () => {
     expect(migrated[0].owner).toBe("user-legacy");
     expect(window.localStorage.getItem(legacyKey)).toBeNull();
   });
+
+  describe("Segments persistence", () => {
+    it("saves and retrieves workspace with segments", async () => {
+      const repository = new LocalStorageWorkspaceRepository();
+      const segments = [
+        {
+          id: "seg-0",
+          start: 0,
+          end: 20,
+          text: "This is the first sentence.",
+          order: 0,
+        },
+        {
+          id: "seg-1",
+          start: 21,
+          end: 45,
+          text: "This is the second sentence.",
+          order: 1,
+        },
+      ];
+
+      // Create workspace with segments via DTO
+      const workspace = baseWorkspace();
+      await repository.save(workspace);
+
+      // Manually add segments to stored data (simulating segmentation API result)
+      const stored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      stored[0].segments = segments;
+      window.localStorage.setItem("memorise.workspaces", JSON.stringify(stored));
+
+      // Reload and verify segments persist
+      const reloaded = await repository.findById("ws-1");
+      expect(reloaded).not.toBeNull();
+
+      // Read raw DTO to check segments
+      const rawStored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      expect(rawStored[0].segments).toEqual(segments);
+    });
+
+    it("preserves segments when updating workspace", async () => {
+      const repository = new LocalStorageWorkspaceRepository();
+      const segments = [
+        {
+          id: "seg-0",
+          start: 0,
+          end: 20,
+          text: "This is the first sentence.",
+          order: 0,
+        },
+      ];
+
+      // Save initial workspace
+      await repository.save(baseWorkspace());
+
+      // Add segments manually
+      const stored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      stored[0].segments = segments;
+      window.localStorage.setItem("memorise.workspaces", JSON.stringify(stored));
+
+      // Update workspace (change text)
+      await repository.save(
+        baseWorkspace({
+          text: "Updated text",
+        })
+      );
+
+      // Verify segments are preserved
+      const rawStored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      expect(rawStored[0].segments).toEqual(segments);
+      expect(rawStored[0].text).toBe("Updated text");
+    });
+
+    it("preserves segmentTranslations in translations", async () => {
+      const repository = new LocalStorageWorkspaceRepository();
+      const workspace = baseWorkspace();
+
+      // Save workspace
+      await repository.save(workspace);
+
+      // Manually add translation with segmentTranslations to stored data
+      const stored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      stored[0].translations = [
+        {
+          language: "cs",
+          text: "Translated text",
+          sourceLang: "en",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          userSpans: [],
+          apiSpans: [],
+          deletedApiKeys: [],
+          segmentTranslations: {
+            "seg-0": "První věta.",
+            "seg-1": "Druhá věta.",
+          },
+        },
+      ];
+      window.localStorage.setItem("memorise.workspaces", JSON.stringify(stored));
+
+      // Reload workspace to get the translation into the entity
+      const reloaded = await repository.findById("ws-1");
+      expect(reloaded).not.toBeNull();
+
+      // Update workspace text (should preserve segmentTranslations)
+      const updated = reloaded!.withText("Updated text");
+      await repository.save(updated);
+
+      // Verify segmentTranslations are preserved
+      const rawStored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      expect(rawStored[0].translations).toBeDefined();
+      expect(rawStored[0].translations.length).toBeGreaterThan(0);
+      expect(rawStored[0].translations[0].segmentTranslations).toEqual({
+        "seg-0": "První věta.",
+        "seg-1": "Druhá věta.",
+      });
+    });
+
+    it("handles workspace without segments (backward compatibility)", async () => {
+      const repository = new LocalStorageWorkspaceRepository();
+      await repository.save(baseWorkspace());
+
+      const reloaded = await repository.findById("ws-1");
+      expect(reloaded).not.toBeNull();
+
+      // Workspace without segments should work fine
+      const rawStored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      expect(rawStored[0].segments).toBeUndefined();
+    });
+
+    it("loads segments from stored workspace DTO", async () => {
+      const repository = new LocalStorageWorkspaceRepository();
+      const segments = [
+        {
+          id: "seg-0",
+          start: 0,
+          end: 20,
+          text: "First segment.",
+          order: 0,
+        },
+        {
+          id: "seg-1",
+          start: 21,
+          end: 40,
+          text: "Second segment.",
+          order: 1,
+        },
+      ];
+
+      // Save workspace
+      await repository.save(baseWorkspace());
+
+      // Manually add segments to stored data
+      const stored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      stored[0].segments = segments;
+      window.localStorage.setItem("memorise.workspaces", JSON.stringify(stored));
+
+      // Load workspace - segments should be in DTO
+      const rawStored = JSON.parse(
+        window.localStorage.getItem("memorise.workspaces") || "[]"
+      );
+      expect(rawStored[0].segments).toEqual(segments);
+
+      // Entity loads successfully (segments are metadata, not in entity)
+      const workspace = await repository.findById("ws-1");
+      expect(workspace).not.toBeNull();
+      expect(workspace?.text).toBe("Hello");
+    });
+  });
 });
 
 

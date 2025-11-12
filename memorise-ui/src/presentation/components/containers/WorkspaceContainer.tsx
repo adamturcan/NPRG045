@@ -10,6 +10,7 @@ import { useParams } from "react-router-dom";
 
 import type { NerSpan } from "../../../types/NotationEditor";
 import type { Notice, NoticeOptions } from "../../../types/Notice";
+import type { Segment } from "../../../types/Segment";
 
 import RightPanel, { type TagRow } from "../right/RightPanel";
 import { NotificationSnackbar } from "../shared/NotificationSnackbar";
@@ -34,6 +35,7 @@ import {
 import { useWorkspaceStore, type WorkspaceStore } from "../../stores/workspaceStore";
 import { presentError } from "../../../application/errors/errorPresenter";
 import { useErrorLogger } from "../../hooks/useErrorLogger";
+import { SegmentationApiService } from "../../../infrastructure/services/SegmentationApiService";
 
 /**
  * WorkspaceContainer - Container component that orchestrates workspace editing
@@ -54,6 +56,9 @@ const EMPTY_HIGHLIGHTED_CATEGORIES: string[] = [];
 const WorkspaceContainer: React.FC = () => {
   const logError = useErrorLogger({ component: "WorkspaceContainer" });
   const { id: routeId } = useParams();
+  
+  // Segmentation service instance
+  const segmentationService = useMemo(() => new SegmentationApiService(), []);
   
   // ============================================================================
   // STEP 1: WORKSPACE STATE & SELECTION
@@ -78,6 +83,9 @@ const WorkspaceContainer: React.FC = () => {
   const [editorInstanceKey, setEditorInstanceKey] = useState<string>("");
   const [text, setText] = useState<string>("");
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [activeSegmentId, setActiveSegmentId] = useState<string | undefined>(undefined);
+  const [translationViewMode, setTranslationViewMode] = useState<"document" | "segments">("document");
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   
   // Notification handlers
   const showNotice = useCallback(
@@ -148,6 +156,7 @@ const WorkspaceContainer: React.FC = () => {
   }, [annotations.userSpans, annotations.apiSpans, annotations.deletedApiKeys]);
 
   // Auto-save: debounced saving of workspace changes
+  // Disable auto-save in segment mode to prevent segment text from overwriting document text
   const autosave = useAutoSave(
     currentId ?? null,
     {
@@ -160,16 +169,20 @@ const WorkspaceContainer: React.FC = () => {
     setWorkspaces,
     {
       delay: 350,
-      enabled: true,
+      enabled: translationViewMode === "document", // Only enable in document mode
       activeTab: translations.activeTab,
     }
   );
 
   // Hydration: load workspace data when switching workspaces
+  // Don't hydrate text if we're in segment mode (we'll load segments individually)
   const onHydrate = useCallback(({ text: newText, editorKey }: { text: string; editorKey: string }) => {
-    setText(newText);
-    setEditorInstanceKey(editorKey);
-  }, []);
+    // Only hydrate text if we're in document mode
+    if (translationViewMode === "document") {
+      setText(newText);
+      setEditorInstanceKey(editorKey);
+    }
+  }, [translationViewMode]);
 
   const onHydrationStart = useCallback(() => {
     autosave.setHydrated(null);
@@ -187,6 +200,20 @@ const WorkspaceContainer: React.FC = () => {
     onHydrationStart,
     onHydrationComplete,
   });
+
+  // Prevent text restoration when in segment mode
+  useEffect(() => {
+    if (translationViewMode === "segments" && text && !selectedSegmentId) {
+      // If we're in segment mode and have text but no selected segment, clear it
+      setText("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationViewMode, selectedSegmentId]);
+
+  // Reset active segment when workspace changes
+  useEffect(() => {
+    setActiveSegmentId(undefined);
+  }, [currentId]);
 
   // ============================================================================
   // STEP 4: EVENT HANDLERS FOR USER ACTIONS
@@ -221,12 +248,201 @@ const WorkspaceContainer: React.FC = () => {
     await annotations.runNer(text, currentId ?? null);
   }, [text, currentId, annotations]);
 
+  const handleRunSegment = useCallback(async () => {
+    if (!text.trim()) {
+      showNotice("Paste some text before running segmentation.");
+      return;
+    }
+    if (!currentId) {
+      showNotice("No workspace selected.");
+      return;
+    }
+    
+    try {
+      showNotice("Segmenting text...", { tone: "info" });
+      const segments = await segmentationService.segmentText(text);
+      
+      if (segments.length === 0) {
+        showNotice("No segments found in text.");
+        return;
+      }
+      
+      // Update workspace with segments
+      const updatedWorkspaces = workspaces.map((ws) =>
+        ws.id === currentId
+          ? { ...ws, segments, updatedAt: Date.now() }
+          : ws
+      );
+      setWorkspaces(updatedWorkspaces);
+      
+      showNotice(`Text segmented into ${segments.length} segment${segments.length !== 1 ? 's' : ''}.`, { tone: "success" });
+    } catch (error) {
+      const appError = logError(error, {
+        operation: "segment text",
+      });
+      const notice = presentError(appError);
+      showNotice(notice.message, {
+        tone: notice.tone,
+        persistent: notice.persistent,
+      });
+    }
+  }, [text, currentId, segmentationService, workspaces, setWorkspaces, showNotice, logError]);
+
+  // Handle segment button click: only run segmentation
+  const handleSegmentButtonClick = useCallback(async () => {
+    await handleRunSegment();
+  }, [handleRunSegment]);
+
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const content = await file.text();
     setText(content);
   }, []); // setText is stable, no deps needed
+
+  // Store text before switching to segment mode (for immediate restore)
+  const documentTextRef = useRef<string>("");
+  
+  // Handle view mode change - save text before switching to segment mode, restore when switching back
+  useEffect(() => {
+    if (translationViewMode === "document") {
+      // Restore text when switching back to document mode
+      setSelectedSegmentId(null);
+      
+      // First try to restore from ref (most recent) - only if it's not empty
+      let textToLoad = documentTextRef.current;
+      
+      // If ref is empty (e.g., on page reload), always load from workspace
+      // This ensures we get the original document text, not any segment text
+      if (!textToLoad) {
+        if (translations.activeTab === "original") {
+          textToLoad = currentWs?.text || "";
+        } else {
+          const translation = currentWs?.translations?.find(
+            (t) => t.language === translations.activeTab
+          );
+          textToLoad = translation?.text || "";
+        }
+      }
+      
+      // Restore text
+      if (textToLoad) {
+        setText(textToLoad);
+        // Force editor remount to show restored content
+        setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+      }
+      
+      // Clear ref after restore
+      documentTextRef.current = "";
+    } else if (translationViewMode === "segments") {
+      // Save current text before switching to segment mode
+      if (text && text.trim()) {
+        documentTextRef.current = text;
+        
+        // Also save to workspace immediately (don't wait for auto-save)
+        if (currentId && currentWs) {
+          if (translations.activeTab === "original") {
+            setWorkspaces((prev) =>
+              prev.map((w) =>
+                w.id === currentId
+                  ? { ...w, text, updatedAt: Date.now() }
+                  : w
+              )
+            );
+          } else {
+            setWorkspaces((prev) =>
+              prev.map((w) =>
+                w.id === currentId
+                  ? {
+                      ...w,
+                      translations: (w.translations || []).map((t) =>
+                        t.language === translations.activeTab
+                          ? { ...t, text, updatedAt: Date.now() }
+                          : t
+                      ),
+                      updatedAt: Date.now(),
+                    }
+                  : w
+              )
+            );
+          }
+        }
+      }
+      
+      // Always clear editor when switching to segment mode (will be populated when segment is clicked)
+      setSelectedSegmentId(null);
+      // Use setTimeout to ensure this happens after any other effects
+      setTimeout(() => {
+        setText("");
+        setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationViewMode]);
+
+  // Segment navigation: load segment into editor (segment mode) or highlight/scroll (document mode)
+  const handleSegmentClick = useCallback((segment: Segment) => {
+    // If in segment mode, load segment text into editor (no highlighting in editor)
+    if (translationViewMode === "segments") {
+      // Set selectedSegmentId for list highlighting
+      setSelectedSegmentId(segment.id);
+      // Don't set activeSegmentId in segment mode - we don't want editor highlighting
+      // Load the segment text into editor
+      setText(segment.text);
+      // Force editor remount to show new content
+      setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+      return;
+    }
+    
+    // Document mode: only highlight segment and scroll to it (don't load text)
+    // Clear selectedSegmentId in document mode
+    setSelectedSegmentId(null);
+    // Toggle activeSegmentId for highlighting
+    setActiveSegmentId((prev) => prev === segment.id ? undefined : segment.id);
+    
+    // Scroll to segment by finding the DOM element at the segment's start offset
+    const editorContainer = document.querySelector('[data-slate-editor]');
+    if (!editorContainer) return;
+
+    // Find the text node at the segment start offset
+    const walker = document.createTreeWalker(
+      editorContainer,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let currentOffset = 0;
+    let targetNode: Node | null = null;
+    let targetOffset = 0;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const nodeLength = node.textContent?.length ?? 0;
+      
+      if (currentOffset + nodeLength >= segment.start) {
+        targetNode = node;
+        targetOffset = segment.start - currentOffset;
+        break;
+      }
+      
+      currentOffset += nodeLength;
+    }
+
+    if (targetNode && targetNode.parentElement) {
+      // Create a range and scroll it into view
+      const range = document.createRange();
+      range.setStart(targetNode, Math.max(0, targetOffset));
+      range.setEnd(targetNode, Math.min(targetNode.textContent?.length ?? 0, targetOffset + 1));
+      
+      // Scroll the range into view with smooth behavior
+      range.getBoundingClientRect(); // Force layout calculation
+      targetNode.parentElement.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+    }
+  }, [translationViewMode, currentId, translations.activeTab]);
 
   // Tag actions: add, delete
   const addCustomTag = useCallback(
@@ -337,7 +553,7 @@ const WorkspaceContainer: React.FC = () => {
           isLanguageListLoading={translations.isLanguageListLoading}
         />
 
-        {/* Main text editor with NER spans */}
+        {/* Main text editor - shows segment when in segment mode */}
         <EditorArea
           editorInstanceKey={editorInstanceKey}
           text={text}
@@ -345,12 +561,22 @@ const WorkspaceContainer: React.FC = () => {
           onUpload={handleUpload}
           onClassify={handleRunClassify}
           onNer={handleRunNer}
+          onSegment={handleSegmentButtonClick}
           spans={annotations.combinedSpans}
+          segments={currentWs?.segments}
+          activeSegmentId={activeSegmentId}
+          selectedSegmentId={selectedSegmentId}
+          viewMode={translationViewMode}
           highlightedCategories={EMPTY_HIGHLIGHTED_CATEGORIES}
           deletableKeys={annotations.deletableKeys}
           onDeleteSpan={annotations.deleteSpan}
           onAddSpan={annotations.addSpan}
           onSave={handleSave}
+          placeholder={
+            translationViewMode === "segments" && !selectedSegmentId
+              ? "Select a segment from the right panel"
+              : undefined
+          }
         />
       </Box>
 
@@ -374,6 +600,12 @@ const WorkspaceContainer: React.FC = () => {
           onDeleteTag={deleteTag}
           thesaurus={thesaurusConfig}
           thesaurusIndex={thesaurusIndexForDisplay}
+          segments={currentWs?.segments}
+          activeSegmentId={activeSegmentId}
+          selectedSegmentId={selectedSegmentId}
+          onSegmentClick={handleSegmentClick}
+          viewMode={translationViewMode}
+          onViewModeChange={setTranslationViewMode}
         />
       </Box>
 

@@ -1,39 +1,54 @@
 /**
- * RightPanel - Tag management panel for the workspace
+ * RightPanel - Tag and Segment management panel for the workspace
  * 
- * This component displays the tag sidebar on the right side of the workspace.
+ * This component displays the tag and segment sidebar on the right side of the workspace.
  * Users can:
  * - View all tags (user-added + API-generated)
  * - Add new tags via thesaurus input with suggestions
  * - Delete existing tags
  * - See visual distinction between user and API tags
+ * - Navigate text segments (from segmentation API)
+ * - Switch between Tags and Segments tabs
  * 
  * FEATURES:
  * 
  * 1. Visual Design:
- *    - Header pill with icon ("Tags" label)
+ *    - Header pill with tab toggle (Tags/Segments)
  *    - White card with strong shadow (matches editor styling)
  *    - Clean, minimal interface
  * 
- * 2. Tag Input Modes:
+ * 2. Tab System:
+ *    - Toggle between Tags and Segments views
+ *    - Segments tab always visible (shows note if empty)
+ * 
+ * 3. Tag Input Modes:
  *    - Legacy: Custom input field passed as prop
  *    - Modern: Thesaurus integration with autocomplete suggestions
  * 
- * 3. Thesaurus Integration:
+ * 4. Thesaurus Integration:
  *    - Fetches tag suggestions from external API
  *    - Optional restriction mode (thesaurus-only vs custom tags)
  *    - Real-time autocomplete as user types
  * 
- * 4. Taxonomy Support (optional):
+ * 5. Taxonomy Support (optional):
  *    - Group tags by hierarchical categories
  *    - Display tag relationships and synonyms
+ * 
+ * 6. Segment Navigation:
+ *    - Scrollable list of segments
+ *    - Click to scroll to segment in editor
+ *    - Empty state message when no segments
  */
-import React from "react";
-import { Box, Paper, Typography } from "@mui/material";
+import React, { useState, useRef, useEffect } from "react";
+import { Box, Paper, Typography, ToggleButton, ToggleButtonGroup, Fade } from "@mui/material";
 import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
+import ViewListIcon from "@mui/icons-material/ViewList";
+import DescriptionIcon from "@mui/icons-material/Description";
 import TagTable from "../tags/TagTable";
+import SegmentNavBar from "../segmentation/SegmentNavBar";
 import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 import type { ThesaurusIndexItem } from "../../../types/Thesaurus";
+import type { Segment } from "../../../types/Segment";
 
 /**
  * Tag row format for display
@@ -115,6 +130,34 @@ interface Props {
    * instead of simple "User" vs "API" groups
    */
   thesaurusIndex?: ThesaurusIndexItem[];
+
+  /**
+   * Segments from segmentation API
+   * Optional array of text segments for navigation
+   */
+  segments?: Segment[];
+
+  /**
+   * Callback when user clicks on a segment
+   * Used to scroll to segment in editor
+   */
+  onSegmentClick?: (segment: Segment) => void;
+
+  /**
+   * Currently active segment ID (for highlighting in document mode)
+   */
+  activeSegmentId?: string;
+
+  /**
+   * Currently selected segment ID (for segment mode - which segment is loaded in editor)
+   */
+  selectedSegmentId?: string | null;
+
+  /**
+   * View mode toggle: "document" (whole document) or "segments" (individual segments)
+   */
+  viewMode?: "document" | "segments";
+  onViewModeChange?: (mode: "document" | "segments") => void;
 }
 
 /**
@@ -133,7 +176,72 @@ const RightPanel: React.FC<Props> = ({
   thesaurus,
   taxonomy,
   thesaurusIndex,
+  segments = [],
+  onSegmentClick,
+  activeSegmentId,
+  selectedSegmentId,
+  viewMode = "document",
+  onViewModeChange,
 }) => {
+  // Auto-switch to segments tab when view mode is segments and segments exist
+  const shouldShowSegments = segments.length > 0;
+  const [activeTab, setActiveTab] = useState<"tags" | "segments">(
+    shouldShowSegments && viewMode === "segments" ? "segments" : "tags"
+  );
+  
+  // Auto-switch to segments tab when view mode changes to segments
+  useEffect(() => {
+    if (viewMode === "segments" && shouldShowSegments && activeTab !== "segments") {
+      setActiveTab("segments");
+    }
+  }, [viewMode, shouldShowSegments, activeTab]);
+  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number; top: number; height: number }>({
+    left: 0,
+    width: 0,
+    top: 0,
+    height: 0,
+  });
+  const tagsButtonRef = useRef<HTMLButtonElement>(null);
+  const segmentsButtonRef = useRef<HTMLButtonElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Update indicator position when tab changes
+  useEffect(() => {
+    const updateIndicator = () => {
+      const activeButton = activeTab === "tags" ? tagsButtonRef.current : segmentsButtonRef.current;
+      const container = containerRef.current;
+      
+      if (activeButton && container) {
+        const containerRect = container.getBoundingClientRect();
+        const buttonRect = activeButton.getBoundingClientRect();
+        
+        setIndicatorStyle({
+          left: buttonRect.left - containerRect.left,
+          width: buttonRect.width,
+          top: buttonRect.top - containerRect.top,
+          height: buttonRect.height,
+        });
+      }
+    };
+
+    // Update immediately
+    updateIndicator();
+    
+    // Also update after a short delay to handle any layout changes
+    const timeout = setTimeout(updateIndicator, 10);
+    
+    return () => clearTimeout(timeout);
+  }, [activeTab]);
+
+  const handleTabChange = (
+    _event: React.MouseEvent<HTMLElement>,
+    newTab: "tags" | "segments" | null
+  ) => {
+    if (newTab !== null) {
+      setActiveTab(newTab);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -147,7 +255,7 @@ const RightPanel: React.FC<Props> = ({
       }}
     >
       {/* ========================================================================
-          HEADER PILL: "Tags" label with icon
+          HEADER PILL: Tab toggle (Tags/Segments)
           ======================================================================== */}
       <Paper
         elevation={0}
@@ -161,37 +269,97 @@ const RightPanel: React.FC<Props> = ({
           backdropFilter: "blur(6px)",    // Subtle blur effect
           boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
           mb: 1.25,                       // Space below pill
+          position: "relative",            // For absolute positioning of indicator
         }}
       >
         <Box
+          ref={containerRef}
           sx={{
+            position: "relative",
             display: "inline-flex",
-            alignItems: "center",
-            gap: 0.75,
-            px: 2,
-            py: 0.6,
-            borderRadius: 999,
-            fontWeight: 800,
           }}
         >
-          {/* Tag icon */}
-          <LocalOfferOutlinedIcon sx={{ fontSize: 18, mr: 0.75 }} />
+          {/* Sliding blue pill indicator */}
+          <Box
+            sx={{
+              position: "absolute",
+              top: `${indicatorStyle.top}px`,
+              left: `${indicatorStyle.left}px`,
+              width: `${indicatorStyle.width}px`,
+              height: `${indicatorStyle.height}px`,
+              backgroundColor: "#3B82F6",
+              borderRadius: 999,
+              transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), top 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              zIndex: 0,
+            }}
+          />
           
-          {/* "Tags" label */}
-          <Typography variant="body2" fontWeight={800}>
-            Tags
-          </Typography>
+          <ToggleButtonGroup
+            value={activeTab}
+            exclusive
+            onChange={handleTabChange}
+            aria-label="panel tabs"
+            sx={{
+              position: "relative",
+              zIndex: 1,
+              "& .MuiToggleButton-root": {
+                border: "none",
+                px: 2,
+                py: 0.6,
+                borderRadius: 999,
+                fontWeight: 800,
+                fontSize: "0.875rem",
+                textTransform: "none",
+                minWidth: "auto", // Prevent buttons from stretching
+                transition: "color 0.2s ease-in-out", // Only transition color
+                margin: "0 2px", // Add small margin between buttons to prevent overlap
+                backgroundColor: "transparent", // Transparent background so indicator shows through
+                "&.Mui-selected": {
+                  backgroundColor: "transparent", // Transparent so blue pill shows
+                  color: "white",
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    color: "white",
+                  },
+                },
+                "&:not(.Mui-selected)": {
+                  color: COLORS.text,
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    color: COLORS.text,
+                  },
+                },
+              },
+            }}
+          >
+            <ToggleButton 
+              ref={tagsButtonRef}
+              value="tags" 
+              aria-label="tags tab"
+            >
+              <LocalOfferOutlinedIcon sx={{ fontSize: 18, mr: 0.75 }} />
+              Tags
+            </ToggleButton>
+            <ToggleButton 
+              ref={segmentsButtonRef}
+              value="segments" 
+              aria-label="segments tab"
+            >
+              <ViewListIcon sx={{ fontSize: 18, mr: 0.75 }} />
+              Segments
+            </ToggleButton>
+          </ToggleButtonGroup>
         </Box>
       </Paper>
 
       {/* ========================================================================
-          MAIN CARD: Contains tag table with input and tag list
+          MAIN CARD: Contains tag table or segment navigation
           ======================================================================== 
           
           Structure uses nested boxes for proper overflow handling:
           - Outer: position relative (for absolute child)
           - Middle: position absolute with inset 0 (fills parent)
-          - Inner: flex 1 (allows TagTable to handle its own scrolling)
+          - Inner: flex 1 (allows content to handle its own scrolling)
       */}
       <Box
         sx={{
@@ -211,21 +379,149 @@ const RightPanel: React.FC<Props> = ({
         <Box
           sx={{ position: "absolute", inset: 0, display: "flex", minHeight: 0 }}
         >
-          <Box sx={{ flex: 1, minHeight: 0 }}>
-            {/* 
-              TagTable renders:
-              - Tag input field (legacy or thesaurus-based)
-              - List of tags with delete buttons
-              - Visual distinction between user/API tags
-            */}
-            <TagTable
-              data={tags}
-              onDelete={onDeleteTag}
-              inputField={tagInputField}        // Legacy input (optional)
-              thesaurus={thesaurus}             // Modern thesaurus input (optional)
-              taxonomy={taxonomy}               // Hierarchical grouping (optional)
-              thesaurusIndex={thesaurusIndex}   // Thesaurus hierarchy (NEW)
-            />
+          <Box 
+            sx={{ 
+              flex: 1, 
+              minHeight: 0, 
+              display: "flex", 
+              flexDirection: "column",
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            {/* Tags tab with fade animation */}
+            {activeTab === "tags" && (
+              <Fade in={true} timeout={300}>
+                <Box
+                  sx={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  {/* 
+                    TagTable renders:
+                    - Tag input field (legacy or thesaurus-based)
+                    - List of tags with delete buttons
+                    - Visual distinction between user/API tags
+                  */}
+                  <TagTable
+                    data={tags}
+                    onDelete={onDeleteTag}
+                    inputField={tagInputField}        // Legacy input (optional)
+                    thesaurus={thesaurus}             // Modern thesaurus input (optional)
+                    taxonomy={taxonomy}               // Hierarchical grouping (optional)
+                    thesaurusIndex={thesaurusIndex}   // Thesaurus hierarchy (NEW)
+                  />
+                </Box>
+              </Fade>
+            )}
+
+            {/* Segments tab with fade animation */}
+            {activeTab === "segments" && (
+              <Fade in={true} timeout={300}>
+                <Box
+                  sx={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  {/* View mode toggle - only show when segments exist */}
+                  {segments.length > 0 && onViewModeChange && (
+                    <Box
+                      sx={{
+                        px: 2,
+                        pt: 2,
+                        pb: 1.5,
+                        borderBottom: `1px solid ${COLORS.border}`,
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          mb: 1,
+                          fontWeight: 600,
+                          color: "text.secondary",
+                          textTransform: "uppercase",
+                          fontSize: "0.7rem",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Editor Mode
+                      </Typography>
+                      <ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_e, newMode) => {
+                          if (newMode !== null) {
+                            onViewModeChange(newMode);
+                          }
+                        }}
+                        size="small"
+                        fullWidth
+                        sx={{
+                          "& .MuiToggleButton-root": {
+                            py: 0.75,
+                            px: 1.5,
+                            textTransform: "none",
+                            fontSize: "0.875rem",
+                            fontWeight: 500,
+                            border: `1px solid ${COLORS.border}`,
+                            "&.Mui-selected": {
+                              backgroundColor: "rgba(139, 195, 74, 0.15)",
+                              color: "rgba(139, 195, 74, 0.9)",
+                              borderColor: "rgba(139, 195, 74, 0.4)",
+                              "&:hover": {
+                                backgroundColor: "rgba(139, 195, 74, 0.2)",
+                              },
+                            },
+                            "&:not(.Mui-selected)": {
+                              backgroundColor: "transparent",
+                              color: "text.secondary",
+                              "&:hover": {
+                                backgroundColor: "rgba(0, 0, 0, 0.04)",
+                              },
+                            },
+                          },
+                        }}
+                      >
+                        <ToggleButton value="document">
+                          <DescriptionIcon sx={{ fontSize: 18, mr: 0.75 }} />
+                          Document
+                        </ToggleButton>
+                        <ToggleButton value="segments">
+                          <ViewListIcon sx={{ fontSize: 18, mr: 0.75 }} />
+                          Segments
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                    </Box>
+                  )}
+
+                  {/* 
+                    SegmentNavBar renders:
+                    - Scrollable list of segments
+                    - Click to scroll to segment in editor (document mode)
+                    - Click to load segment in editor (segment mode)
+                    - Empty state message when no segments
+                  */}
+                  <SegmentNavBar
+                    segments={segments}
+                    activeSegmentId={activeSegmentId}
+                    selectedSegmentId={selectedSegmentId ?? undefined}
+                    viewMode={viewMode}
+                    onSegmentClick={onSegmentClick}
+                  />
+                </Box>
+              </Fade>
+            )}
           </Box>
         </Box>
       </Box>

@@ -1,11 +1,13 @@
 // src/components/workspace/EditorArea.tsx
 import LabelIcon from "@mui/icons-material/Label";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
+import SegmentIcon from "@mui/icons-material/ViewWeek";
 import { Box, IconButton, Tooltip } from "@mui/material";
 import React from "react";
 import {
   type NerSpan,
 } from "../../../types/NotationEditor";
+import type { Segment } from "../../../types/Segment";
 import NotationEditor from "../editor/NotationEditor";
 
 interface Props {
@@ -16,8 +18,13 @@ interface Props {
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClassify: () => void;
   onNer: () => void;
+  onSegment?: () => void;
 
   spans?: NerSpan[];
+  segments?: Segment[];
+  activeSegmentId?: string;
+  selectedSegmentId?: string | null;
+  viewMode?: "document" | "segments";
 
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
@@ -26,6 +33,7 @@ interface Props {
   onDeleteSpan?: (span: NerSpan) => void;
   onAddSpan?: (span: NerSpan) => void;
   onSave?: () => void;
+  placeholder?: string;
 }
 
 const EditorArea: React.FC<Props> = ({
@@ -34,12 +42,18 @@ const EditorArea: React.FC<Props> = ({
   setText,
   onClassify,
   onNer,
+  onSegment,
   spans,
+  segments,
+  activeSegmentId,
+  selectedSegmentId,
+  viewMode = "document",
   highlightedCategories,
   onSelectionChange,
   deletableKeys,
   onDeleteSpan,
   onAddSpan,
+  placeholder,
 }) => {
   return (
     <Box
@@ -55,8 +69,11 @@ const EditorArea: React.FC<Props> = ({
         key={editorInstanceKey}
         value={text}
         onChange={setText}
-        placeholder="Paste text here or upload file"
+        placeholder={placeholder ?? "Paste text here or upload file"}
         spans={spans}
+        segments={segments}
+        activeSegmentId={viewMode === "document" ? activeSegmentId : undefined}
+        selectedSegmentId={viewMode === "segments" ? selectedSegmentId : undefined}
         highlightedCategories={highlightedCategories}
         onSelectionChange={onSelectionChange}
         deletableKeys={deletableKeys}
@@ -102,6 +119,22 @@ const EditorArea: React.FC<Props> = ({
             <TextFieldsIcon sx={{ fontSize: 28 }} />
           </IconButton>
         </Tooltip>
+
+        {onSegment && (
+          <Tooltip title="Run Segmentation">
+            <IconButton
+              onClick={onSegment}
+              sx={{
+                backgroundColor: "rgba(139, 195, 74, 0.18)",
+                "&:hover": { backgroundColor: "rgba(139, 195, 74, 0.28)" },
+                color: "#689F38",
+                boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
+              }}
+            >
+              <SegmentIcon sx={{ fontSize: 28 }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
     </Box>
   );

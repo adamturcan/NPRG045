@@ -14,7 +14,7 @@ export function readJSON<T>(key: string, fallback: T): T {
     const parsed = JSON.parse(raw) as unknown;
     return (parsed as T) ?? fallback;
   } catch (error) {
-    // eslint-disable-next-line no-console
+     
     console.error(`Failed to read JSON from localStorage key "${key}"`, error);
     return fallback;
   }
@@ -28,7 +28,7 @@ export function writeJSON<T>(key: string, value: T): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
-    // eslint-disable-next-line no-console
+     
     console.error(`Failed to write JSON to localStorage key "${key}"`, error);
   }
 }
@@ -41,7 +41,7 @@ export function removeItem(key: string): void {
   try {
     window.localStorage.removeItem(key);
   } catch (error) {
-    // eslint-disable-next-line no-console
+     
     console.error(`Failed to remove localStorage key "${key}"`, error);
   }
 }
