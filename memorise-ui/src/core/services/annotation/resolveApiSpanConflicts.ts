@@ -73,7 +73,13 @@ export const resolveApiSpanConflicts = async (
     }
 
     if (conflictingUserSpans.length === 0) {
-      // Only API conflicts – keep existing API spans
+      // Only API conflicts — auto-replace existing API spans with the incoming API span
+      if (conflictingApiSpans.length > 0) {
+        conflictingApiSpans.forEach((span) => {
+          retainedApiMap.delete(keyOfSpan(span));
+        });
+      }
+      acceptedNewApiSpans.push(candidate);
       continue;
     }
 

@@ -155,6 +155,12 @@ const WorkspaceContainer: React.FC = () => {
     };
   }, [annotations.userSpans, annotations.apiSpans, annotations.deletedApiKeys]);
 
+  // Track latest editor-adjusted spans for precise manual save overrides
+  const latestAdjustedSpansRef = useRef<{
+    userSpans: NerSpan[];
+    apiSpans: NerSpan[];
+  } | null>(null);
+
   // Auto-save: debounced saving of workspace changes
   // Disable auto-save in segment mode to prevent segment text from overwriting document text
   const autosave = useAutoSave(
@@ -221,8 +227,28 @@ const WorkspaceContainer: React.FC = () => {
   
   // Editor actions: save, classify, NER, upload
   const handleSave = useCallback(() => {
-    autosave.saveNow(showNotice);
-  }, [autosave, showNotice]);
+    // Defer to the next macrotask so the queueMicrotask in useSpanAutoAdjust
+    // has already run and updated latestAdjustedSpansRef / annotations state.
+    setTimeout(() => {
+      const overrideFromEditor = latestAdjustedSpansRef.current;
+      const override = overrideFromEditor ?? {
+        userSpans: annotations.userSpans,
+        apiSpans: annotations.apiSpans,
+      };
+
+      console.debug("[WorkspaceContainer] save requested", {
+        workspaceId: currentId,
+        textLength: text?.length ?? 0,
+        userSpans: override.userSpans?.length ?? 0,
+        apiSpans: override.apiSpans?.length ?? 0,
+        hasOverride: !!overrideFromEditor,
+        timestamp: Date.now(),
+      });
+
+      // Always pass spans override so manual save uses the freshest indices
+      autosave.saveNow(showNotice, override);
+    }, 0);
+  }, [autosave, showNotice, currentId, text, annotations.userSpans, annotations.apiSpans]);
 
   const handleRunClassify = useCallback(async () => {
     if (!text.trim()) {
@@ -572,6 +598,52 @@ const WorkspaceContainer: React.FC = () => {
           onDeleteSpan={annotations.deleteSpan}
           onAddSpan={annotations.addSpan}
           onSave={handleSave}
+          onSpansAdjusted={(next) => {
+            // Preserve provenance by using the known combined ordering:
+            // combinedSpans = filteredApiSpans + userSpans
+            const combined = annotations.combinedSpans;
+            if (!Array.isArray(combined) || combined.length !== next.length) {
+              // If counts differ, avoid destructive overwrite.
+              return;
+            }
+
+            // API spans are always the first N items in combinedSpans
+            const apiCount = combined.length - annotations.userSpans.length;
+            if (apiCount < 0 || apiCount > combined.length) {
+              return;
+            }
+
+            const apiNext: NerSpan[] = next.slice(0, apiCount);
+            const userNext: NerSpan[] = next.slice(apiCount);
+
+            // Log editor-adjusted spans vs current annotation state
+            // to track where indices may diverge.
+            // eslint-disable-next-line no-console
+            console.debug("[WorkspaceContainer] onSpansAdjusted", {
+              workspaceId: currentId,
+              combinedCount: combined.length,
+              nextCount: next.length,
+              apiCount,
+              userCount: annotations.userSpans.length,
+              nextPreview: next.slice(0, 5),
+              apiNextPreview: apiNext.slice(0, 5),
+              userNextPreview: userNext.slice(0, 5),
+              timestamp: Date.now(),
+            });
+
+            annotations.setUserSpans(userNext);
+            annotations.setApiSpans(apiNext);
+            latestAdjustedSpansRef.current = { userSpans: userNext, apiSpans: apiNext };
+
+            // Let debounced autosave handle persistence once typing stops
+            // eslint-disable-next-line no-console
+            console.debug("[WorkspaceContainer] spans adjusted (autosave queued)", {
+              workspaceId: currentId,
+              userSpans: userNext.length,
+              apiSpans: apiNext.length,
+              timestamp: Date.now(),
+            });
+          }}
           placeholder={
             translationViewMode === "segments" && !selectedSegmentId
               ? "Select a segment from the right panel"

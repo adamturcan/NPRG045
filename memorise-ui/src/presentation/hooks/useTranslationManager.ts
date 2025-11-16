@@ -54,7 +54,9 @@ interface TranslationManagerOptions {
  */
 export function useTranslationManager(options: TranslationManagerOptions) {
   const apiService = useMemo(() => getApiService(), []);
-  const logError = useErrorLogger({ hook: "useTranslationManager" });
+  // Stabilize error logger dependency to avoid recreating callback every render (which can retrigger effects)
+  const errorContext = useMemo(() => ({ hook: "useTranslationManager" }), []);
+  const logError = useErrorLogger(errorContext);
 
   const {
     workspaceId,

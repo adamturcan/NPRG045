@@ -156,6 +156,16 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
       deletedKeysToLoad = translation?.deletedApiKeys ?? [];
     }
 
+    console.debug("[AnnotationManager] hydrate spans", {
+      workspaceId: workspace.id,
+      activeTab,
+      userCount: userSpansToLoad.length,
+      apiCount: apiSpansToLoad.length,
+      deletedCount: deletedKeysToLoad.length,
+      userPreview: userSpansToLoad.slice(0, 5),
+      apiPreview: apiSpansToLoad.slice(0, 5),
+    });
+
     setUserSpans(userSpansToLoad);
     setApiSpans(apiSpansToLoad);
     setDeletedApiKeys(new Set(deletedKeysToLoad));

@@ -56,6 +56,8 @@ export interface NotationEditorProps {
   onDeleteSpan?: (span: NerSpan) => void;
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
+  /** Called whenever editor adjusts span indices due to text edits */
+  onSpansAdjusted?: (next: NerSpan[]) => void;
   /** keys: `${start}:${end}:${entity}` */
   deletableKeys?: Set<string>;
   /** adding a span via selection "…" menu or change-category */

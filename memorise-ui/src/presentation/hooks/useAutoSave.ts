@@ -89,6 +89,32 @@ export function useAutoSave(
   );
 
   /**
+   * Keep latest data in a ref so debounced timer always saves the newest state
+   * even if only text (or only spans) triggered the scheduling.
+   */
+  const latestRef = useRef<AutoSaveData>(data);
+  useEffect(() => {
+    latestRef.current = {
+      text: data.text,
+      userSpans: data.userSpans,
+      apiSpans: data.apiSpans,
+      deletedApiKeys: data.deletedApiKeys,
+      tags: data.tags,
+    };
+    console.debug("[AutoSave] latestRef updated", {
+      workspaceId,
+      activeTab,
+      textLength: data.text?.length ?? 0,
+      userCount: data.userSpans.length,
+      apiCount: data.apiSpans.length,
+      userPreview: data.userSpans.slice(0, 5),
+      apiPreview: data.apiSpans.slice(0, 5),
+      timestamp: Date.now(),
+    });
+    // Depend on hashes to avoid frequent updates from reference churn
+  }, [data.text, spansHash, deletedApiKeysSerialized, tagsHash]);
+
+  /**
    * Autosave effect: Debounced automatic saving
    * 
    * Automatically saves workspace changes after delay when user stops editing.
@@ -121,6 +147,18 @@ export function useAutoSave(
     
     // Schedule save for delay milliseconds from now
     saveTimer.current = window.setTimeout(() => {
+      const latest = latestRef.current;
+      console.debug("[AutoSave] Debounced save fired", {
+        workspaceId,
+        activeTab,
+        textLength: latest.text?.length ?? 0,
+        userSpans: latest.userSpans?.length ?? 0,
+        apiSpans: latest.apiSpans?.length ?? 0,
+        tags: latest.tags?.length ?? 0,
+        userPreview: latest.userSpans.slice(0, 5),
+        apiPreview: latest.apiSpans.slice(0, 5),
+        timestamp: Date.now(),
+      });
       setWorkspaces((prev) =>
         prev.map((w) => {
           if (w.id !== workspaceId) return w;
@@ -129,11 +167,11 @@ export function useAutoSave(
           if (activeTab === "original") {
             return {
               ...w,
-              text: data.text,
-              userSpans: data.userSpans,
-              apiSpans: data.apiSpans,
-              deletedApiKeys: Array.from(data.deletedApiKeys),
-              tags: data.tags,
+              text: latest.text,
+              userSpans: latest.userSpans,
+              apiSpans: latest.apiSpans,
+              deletedApiKeys: Array.from(latest.deletedApiKeys),
+              tags: latest.tags,
               updatedAt: Date.now(),
             };
           }
@@ -145,15 +183,15 @@ export function useAutoSave(
               t.language === activeTab
                 ? { 
                     ...t, 
-                    text: data.text, 
-                    userSpans: data.userSpans,
-                    apiSpans: data.apiSpans,
-                    deletedApiKeys: Array.from(data.deletedApiKeys),
+                    text: latest.text, 
+                    userSpans: latest.userSpans,
+                    apiSpans: latest.apiSpans,
+                    deletedApiKeys: Array.from(latest.deletedApiKeys),
                     updatedAt: Date.now() 
                   }
                 : t
             ),
-            tags: data.tags,
+            tags: latest.tags,
             updatedAt: Date.now(),
           };
         })
@@ -191,7 +229,7 @@ export function useAutoSave(
    * @param onNotice - Optional callback to show notification after save
    */
   const saveNow = useCallback(
-    (onNotice?: (msg: string) => void) => {
+    (onNotice?: (msg: string) => void, override?: Partial<AutoSaveData>) => {
       if (!workspaceId) return;
       
       // Mark as hydrated (enables autosave)
@@ -204,6 +242,25 @@ export function useAutoSave(
       }
       
       // Save workspace data immediately
+      const latestBase = latestRef.current;
+      const latest: AutoSaveData = {
+        text: override?.text ?? latestBase.text,
+        userSpans: override?.userSpans ?? latestBase.userSpans,
+        apiSpans: override?.apiSpans ?? latestBase.apiSpans,
+        deletedApiKeys: override?.deletedApiKeys ?? latestBase.deletedApiKeys,
+        tags: override?.tags ?? latestBase.tags,
+      };
+      console.debug("[AutoSave] Manual saveNow invoked", {
+        workspaceId,
+        activeTab,
+        textLength: latest.text?.length ?? 0,
+        userSpans: latest.userSpans?.length ?? 0,
+        apiSpans: latest.apiSpans?.length ?? 0,
+        tags: latest.tags?.length ?? 0,
+        userPreview: latest.userSpans.slice(0, 5),
+        apiPreview: latest.apiSpans.slice(0, 5),
+        timestamp: Date.now(),
+      });
       setWorkspaces((prev) =>
         prev.map((w) => {
           if (w.id !== workspaceId) return w;
@@ -212,11 +269,11 @@ export function useAutoSave(
           if (activeTab === "original") {
             return {
               ...w,
-              text: data.text,
-              userSpans: data.userSpans,
-              apiSpans: data.apiSpans,
-              deletedApiKeys: Array.from(data.deletedApiKeys),
-              tags: data.tags,
+              text: latest.text,
+              userSpans: latest.userSpans,
+              apiSpans: latest.apiSpans,
+              deletedApiKeys: Array.from(latest.deletedApiKeys),
+              tags: latest.tags,
               updatedAt: Date.now(),
             };
           }
@@ -228,15 +285,15 @@ export function useAutoSave(
               t.language === activeTab
                 ? { 
                     ...t, 
-                    text: data.text, 
-                    userSpans: data.userSpans,
-                    apiSpans: data.apiSpans,
-                    deletedApiKeys: Array.from(data.deletedApiKeys),
+                    text: latest.text, 
+                    userSpans: latest.userSpans,
+                    apiSpans: latest.apiSpans,
+                    deletedApiKeys: Array.from(latest.deletedApiKeys),
                     updatedAt: Date.now() 
                   }
                 : t
             ),
-            tags: data.tags,
+            tags: latest.tags,
             updatedAt: Date.now(),
           };
         })

@@ -1,0 +1,75 @@
+import { useCallback } from "react";
+import { Text, Path } from "slate";
+import type { LeafInfo, NerSpan } from "../../../types/NotationEditor";
+
+export function useDecorations(params: {
+  indexByPath: Map<string, LeafInfo>;
+  localSpans: NerSpan[];
+  activeSpan: NerSpan | null;
+  highlightedCategories: string[];
+  segments: Array<{ id: string; start: number; end: number; order: number }>;
+  activeSegmentId?: string | null;
+}) {
+  const { indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId } = params;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const decorate = useCallback((entry: [any, Path]) => {
+    const [node, path] = entry;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ranges: any[] = [];
+    if (!Text.isText(node)) return ranges;
+
+    const info = indexByPath.get(path.join("."));
+    if (!info) return ranges;
+
+    if (!activeSegmentId) {
+      for (const s of localSpans) {
+        const start = Math.max(s.start, info.gStart);
+        const end = Math.min(s.end, info.gEnd);
+        if (end <= start) continue;
+        const isActive = (!!activeSpan && activeSpan.start === s.start && activeSpan.end === s.end && activeSpan.entity === s.entity)
+          || (highlightedCategories.length > 0 && highlightedCategories.includes(s.entity));
+        ranges.push({
+          anchor: { path, offset: start - info.gStart },
+          focus: { path, offset: end - info.gStart },
+          underline: true,
+          entity: s.entity,
+          spanStart: s.start,
+          spanEnd: s.end,
+          active: isActive,
+        });
+      }
+    }
+
+    for (const segment of segments) {
+      const nodeStart = info.gStart, nodeEnd = info.gEnd;
+      const isActive = segment.id === activeSegmentId;
+      if (isActive) {
+        const start = Math.max(segment.start, nodeStart);
+        const end = Math.min(segment.end, nodeEnd);
+        if (end > start) {
+          ranges.push({
+            anchor: { path, offset: start - nodeStart },
+            focus: { path, offset: end - nodeStart },
+            segment: true,
+            segmentId: segment.id,
+            segmentOrder: segment.order,
+            segmentActive: true,
+          });
+        }
+      } else {
+        if (segment.start >= nodeStart && segment.start < nodeEnd) {
+          const offset = segment.start - nodeStart;
+          ranges.push({ anchor: { path, offset }, focus: { path, offset }, segment: true, segmentStart: true, segmentId: segment.id, segmentOrder: segment.order, segmentActive: false });
+        }
+        if (segment.end > nodeStart && segment.end <= nodeEnd) {
+          const offset = segment.end - nodeStart;
+          ranges.push({ anchor: { path, offset }, focus: { path, offset }, segment: true, segmentEnd: true, segmentId: segment.id, segmentOrder: segment.order, segmentActive: false });
+        }
+      }
+    }
+    return ranges;
+  }, [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId]);
+
+  return { decorate };
+}

@@ -1,5 +1,6 @@
 // src/components/workspace/EditorArea.tsx
 import LabelIcon from "@mui/icons-material/Label";
+import SaveIcon from "@mui/icons-material/Save";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import SegmentIcon from "@mui/icons-material/ViewWeek";
 import { Box, IconButton, Tooltip } from "@mui/material";
@@ -34,6 +35,7 @@ interface Props {
   onAddSpan?: (span: NerSpan) => void;
   onSave?: () => void;
   placeholder?: string;
+  onSpansAdjusted?: (next: NerSpan[]) => void;
 }
 
 const EditorArea: React.FC<Props> = ({
@@ -54,6 +56,8 @@ const EditorArea: React.FC<Props> = ({
   onDeleteSpan,
   onAddSpan,
   placeholder,
+  onSpansAdjusted,
+  onSave,
 }) => {
   return (
     <Box
@@ -79,6 +83,7 @@ const EditorArea: React.FC<Props> = ({
         deletableKeys={deletableKeys}
         onDeleteSpan={onDeleteSpan}
         onAddSpan={onAddSpan}
+        onSpansAdjusted={onSpansAdjusted}
       />
 
       {/* Action buttons */}
@@ -92,6 +97,21 @@ const EditorArea: React.FC<Props> = ({
           gap: 1.25,
         }}
       >
+        {onSave && (
+          <Tooltip title="Save (Cmd/Ctrl+S)">
+            <IconButton
+              onClick={onSave}
+              sx={{
+                backgroundColor: "rgba(148, 163, 184, 0.22)",
+                "&:hover": { backgroundColor: "rgba(148, 163, 184, 0.32)" },
+                color: "#0F172A",
+                boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
+              }}
+            >
+              <SaveIcon sx={{ fontSize: 28 }} />
+            </IconButton>
+          </Tooltip>
+        )}
         <Tooltip title="Semantic Tagging">
           <IconButton
             onClick={onClassify}
