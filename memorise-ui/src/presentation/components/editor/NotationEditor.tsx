@@ -36,7 +36,7 @@ import React, {
   useState,
   useRef,
 } from "react";
-import { createEditor, Path, Editor, Text, Range, Point } from "slate";
+import { createEditor, Path, Editor, Text, Range, Point, Transforms } from "slate";
 import type { Descendant } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory } from "slate-history";
@@ -64,6 +64,8 @@ import SelectionBubble from "./SelectionBubble";
 import SpanBubble from "./SpanBubble";
 import CategoryMenu from "./CategoryMenu";
 import EditorContainer from "./EditorContainer";
+import DeletionConfirmationDialog from "./DeletionConfirmationDialog";
+import MultiDeletionDialog from "./MultiDeletionDialog";
 
 const NotationEditor: React.FC<NotationEditorProps> = ({
   value,
@@ -76,7 +78,6 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   onAddSpan,
   segments = [],
   activeSegmentId,
-  selectedSegmentId,
 }) => {
   // Initialize Slate editor with React and History plugins
   const editor = useMemo(() => {
@@ -116,6 +117,24 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   const [spanMenuAnchor, setSpanMenuAnchor] = useState<HTMLElement | null>(
     null
   );
+
+  // Deletion confirmation dialog state
+  const [pendingDeletion, setPendingDeletion] = useState<NerSpan | null>(null);
+  
+  // Multi-deletion dialog state
+  const [pendingMultiDeletion, setPendingMultiDeletion] = useState<NerSpan[]>([]);
+  
+  // Store pending character insertion after span deletion
+  const [pendingCharInsertion, setPendingCharInsertion] = useState<{
+    char: string;
+    selection: { start: number; end: number };
+  } | null>(null);
+  
+  // Store pending paste/cut operation after span deletion
+  const [pendingPasteOperation, setPendingPasteOperation] = useState<{
+    type: 'paste' | 'cut';
+    selection: { start: number; end: number };
+  } | null>(null);
 
   // Flag to prevent bubbles from closing during interaction
   const suppressCloseRef = useRef(false);
@@ -253,144 +272,95 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       const info = indexByPath.get(keyFromPath(path));
       if (!info) return ranges;
 
-      // Find selected segment if in segment view mode
-      const selectedSegment = selectedSegmentId && segments
-        ? segments.find((seg) => seg.id === selectedSegmentId)
-        : null;
-      const segmentOffset = selectedSegment ? selectedSegment.start : 0;
-
-      // Show annotations (NER spans)
-      // When activeSegmentId is set (document mode), hide all NER spans to focus on the segment
-      // When selectedSegmentId is set (segment mode), show spans with adjusted offsets
+      // Show annotations (NER spans) - hide when a segment is active
+      // When activeSegmentId is set, hide all NER spans to focus on the segment
       if (!activeSegmentId) {
         for (const s of localSpans) {
-          // In segment mode, filter spans to only those that overlap with the selected segment
-          if (selectedSegment) {
-            // Check if span overlaps with segment (must have some overlap)
-            if (s.end <= selectedSegment.start || s.start >= selectedSegment.end) {
-              continue; // Span doesn't overlap with segment - skip it completely
-            }
-            
-            // Convert span from global coordinates to segment-relative coordinates
-            // The segment text in the editor starts at position 0, so we subtract segment.start
-            const spanStartInSegment = s.start - segmentOffset;
-            const spanEndInSegment = s.end - segmentOffset;
-            
-            // Clip span to segment boundaries (0 to segment length)
-            // The segment length is: selectedSegment.end - selectedSegment.start
-            const segmentLength = selectedSegment.end - selectedSegment.start;
-            const clippedStart = Math.max(0, spanStartInSegment);
-            const clippedEnd = Math.min(segmentLength, spanEndInSegment);
-            
-            // If after clipping the span is invalid, skip it
-            if (clippedEnd <= clippedStart) {
-              continue;
-            }
-            
-            // Check overlap with current text node
-            // In segment mode, info.gStart and info.gEnd are already segment-relative (start at 0)
-            // since the editor value is just the segment text
-            const start = Math.max(clippedStart, info.gStart);
-            const end = Math.min(clippedEnd, info.gEnd);
-            if (end <= start) continue; // No overlap with this text node
+          const start = Math.max(s.start, info.gStart);
+          const end = Math.min(s.end, info.gEnd);
+          if (end <= start) continue; // No overlap
 
-            // Determine if this span should be highlighted
-            const isActive =
-              (!!activeSpan &&
-                activeSpan.start === s.start &&
-                activeSpan.end === s.end &&
-                activeSpan.entity === s.entity) ||
-              (highlightedCategories.length > 0 &&
-                highlightedCategories.includes(s.entity));
+          // Determine if this span should be highlighted
+          const isActive =
+            (!!activeSpan &&
+              activeSpan.start === s.start &&
+              activeSpan.end === s.end &&
+              activeSpan.entity === s.entity) ||
+            (highlightedCategories.length > 0 &&
+              highlightedCategories.includes(s.entity));
 
-            // Add decoration range for this span
-            // Offsets are relative to the text node start (info.gStart), which is segment-relative
-            ranges.push({
-              anchor: { path, offset: start - info.gStart },
-              focus: { path, offset: end - info.gStart },
-              underline: true,
-              entity: s.entity,
-              spanStart: s.start,
-              spanEnd: s.end,
-              active: isActive,
-            });
-          } else {
-            // Document mode: use original global offsets
-            const start = Math.max(s.start, info.gStart);
-            const end = Math.min(s.end, info.gEnd);
-            if (end <= start) continue; // No overlap
-
-            // Determine if this span should be highlighted
-            const isActive =
-              (!!activeSpan &&
-                activeSpan.start === s.start &&
-                activeSpan.end === s.end &&
-                activeSpan.entity === s.entity) ||
-              (highlightedCategories.length > 0 &&
-                highlightedCategories.includes(s.entity));
-
-            // Add decoration range for this span
-            ranges.push({
-              anchor: { path, offset: start - info.gStart },
-              focus: { path, offset: end - info.gStart },
-              underline: true,
-              entity: s.entity,
-              spanStart: s.start,
-              spanEnd: s.end,
-              active: isActive,
-            });
-          }
+          // Add decoration range for this span
+          ranges.push({
+            anchor: { path, offset: start - info.gStart },
+            focus: { path, offset: end - info.gStart },
+            underline: true,
+            entity: s.entity,
+            spanStart: s.start,
+            spanEnd: s.end,
+            active: isActive,
+          });
         }
       }
 
-      // Show segments - full highlight for active, only end marker for inactive
-      // Only show segment markers in document mode (not in segment mode)
-      if (!selectedSegmentId && segments) {
-        for (const segment of segments) {
-          const segmentStart = segment.start;
-          const segmentEnd = segment.end;
-          const nodeStart = info.gStart;
-          const nodeEnd = info.gEnd;
-          
-          // Determine if this segment is active (highlighted)
-          const isActive = segment.id === activeSegmentId;
+      // Show segments - always visible when they exist, highlight active one
+      for (const segment of segments) {
+        const segmentStart = segment.start;
+        const segmentEnd = segment.end;
+        const nodeStart = info.gStart;
+        const nodeEnd = info.gEnd;
+        
+        // Determine if this segment is active (highlighted)
+        const isActive = segment.id === activeSegmentId;
 
-          if (isActive) {
-            // Active segment: highlight the entire segment range (no start marker)
-            const start = Math.max(segmentStart, nodeStart);
-            const end = Math.min(segmentEnd, nodeEnd);
-            if (end > start) {
-              ranges.push({
-                anchor: { path, offset: start - nodeStart },
-                focus: { path, offset: end - nodeStart },
-                segment: true,
-                segmentId: segment.id,
-                segmentOrder: segment.order,
-                segmentActive: true,
-              });
-            }
-          } else {
-            // Inactive segment: only show end boundary marker (no start marker)
-            // Check if segment end is in this node
-            if (segmentEnd > nodeStart && segmentEnd <= nodeEnd) {
-              const offset = segmentEnd - nodeStart;
-              ranges.push({
-                anchor: { path, offset },
-                focus: { path, offset },
-                segment: true,
-                segmentEnd: true,
-                segmentId: segment.id,
-                segmentOrder: segment.order,
-                segmentActive: false,
-              });
-            }
+        if (isActive) {
+          // Active segment: highlight the entire segment range
+          const start = Math.max(segmentStart, nodeStart);
+          const end = Math.min(segmentEnd, nodeEnd);
+          if (end > start) {
+            ranges.push({
+              anchor: { path, offset: start - nodeStart },
+              focus: { path, offset: end - nodeStart },
+              segment: true,
+              segmentId: segment.id,
+              segmentOrder: segment.order,
+              segmentActive: true,
+            });
+          }
+        } else {
+          // Inactive segment: only show start/end boundary markers
+          // Check if segment start is in this node
+          if (segmentStart >= nodeStart && segmentStart < nodeEnd) {
+            const offset = segmentStart - nodeStart;
+            ranges.push({
+              anchor: { path, offset },
+              focus: { path, offset },
+              segment: true,
+              segmentStart: true,
+              segmentId: segment.id,
+              segmentOrder: segment.order,
+              segmentActive: false,
+            });
+          }
+
+          // Check if segment end is in this node
+          if (segmentEnd > nodeStart && segmentEnd <= nodeEnd) {
+            const offset = segmentEnd - nodeStart;
+            ranges.push({
+              anchor: { path, offset },
+              focus: { path, offset },
+              segment: true,
+              segmentEnd: true,
+              segmentId: segment.id,
+              segmentOrder: segment.order,
+              segmentActive: false,
+            });
           }
         }
       }
 
       return ranges;
     },
-    [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId]
+    [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId]
   );
 
   /**
@@ -412,23 +382,10 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
           setSelBox(null); // Hide selection bubble if visible
 
           try {
-            // In segment mode, convert global coordinates to segment-relative coordinates
-            const selectedSegment = selectedSegmentId && segments
-              ? segments.find((seg) => seg.id === selectedSegmentId)
-              : null;
-            let spanStart = clicked.start;
-            let spanEnd = clicked.end;
-            
-            if (selectedSegment) {
-              // Convert to segment-relative coordinates
-              spanStart = clicked.start - selectedSegment.start;
-              spanEnd = clicked.end - selectedSegment.start;
-            }
-            
             // Calculate bubble position
             const range: Range = {
-              anchor: globalToPoint(spanStart),
-              focus: globalToPoint(spanEnd),
+              anchor: globalToPoint(clicked.start),
+              focus: globalToPoint(clicked.end),
             };
             const domRange = ReactEditor.toDOMRange(editor, range);
             const containerRect = containerRef.current?.getBoundingClientRect();
@@ -460,7 +417,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
         />
       );
     },
-    [activeSpan, editor, globalToPoint, posFromDomRange, selectedSegmentId, segments]
+    [activeSpan, editor, globalToPoint, posFromDomRange]
   );
 
   /**
@@ -561,18 +518,8 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
 
     // Convert selection to global offsets (cheap operation)
     const [startPoint, endPoint] = Range.edges(sel);
-    let gStart = pointToGlobal(startPoint.path, startPoint.offset);
-    let gEnd = pointToGlobal(endPoint.path, endPoint.offset);
-    
-    // In segment mode, convert relative offsets back to global offsets
-    const selectedSegment = selectedSegmentId 
-      ? segments.find((seg) => seg.id === selectedSegmentId)
-      : null;
-    if (selectedSegment) {
-      gStart += selectedSegment.start;
-      gEnd += selectedSegment.start;
-    }
-    
+    const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+    const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
     const start = Math.min(gStart, gEnd);
     const end = Math.max(gStart, gEnd);
     
@@ -629,8 +576,6 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     updateBubblePosition,
     activeSpan,
     activeSegmentId,
-    selectedSegmentId,
-    segments,
   ]);
 
   /**
@@ -698,26 +643,6 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     };
 
   /**
-   * Delete the currently active annotation span
-   */
-  const deleteCurrentSpan = () => {
-    if (spanBox && onDeleteSpan) onDeleteSpan(spanBox.span);
-    
-    // Remove from local state
-    setLocalSpans((prev) =>
-      prev.filter(
-        (s) =>
-          !(
-            s.start === spanBox?.span.start &&
-            s.end === spanBox?.span.end &&
-            s.entity === spanBox?.span.entity
-          )
-      )
-    );
-    closeAllUI();
-  };
-
-  /**
    * Close all bubbles and menus
    */
   const closeAllUI = useCallback(() => {
@@ -728,6 +653,270 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     setActiveSpan(null);
     ReactEditor.blur(editor);
   }, [editor]);
+
+  /**
+   * Find the span that contains or intersects with a given cursor position
+   * Returns the first matching span, or null if none found
+   */
+  const findSpanAtCursor = useCallback((cursorOffset: number): NerSpan | null => {
+    // Find the first span that contains the cursor position
+    // A span contains the cursor if: start <= cursorOffset < end
+    for (const span of localSpans) {
+      if (cursorOffset >= span.start && cursorOffset < span.end) {
+        return span;
+      }
+    }
+    return null;
+  }, [localSpans]);
+
+  /**
+   * Find all spans that intersect with a selection range
+   * Returns an array of all intersecting spans
+   */
+  const findSpansInSelection = useCallback((start: number, end: number): NerSpan[] => {
+    const selectionAnnotation = Annotation.fromSpan({ start, end, entity: 'TEMP' });
+    return localSpans.filter((span) => {
+      const spanAnnotation = Annotation.fromSpan(span);
+      return selectionAnnotation.overlapsWith(spanAnnotation);
+    });
+  }, [localSpans]);
+
+  /**
+   * Get text snippet for a span (for display in deletion dialog)
+   */
+  const getSpanText = useCallback((span: NerSpan): string => {
+    try {
+      const startPoint = globalToPoint(span.start);
+      const endPoint = globalToPoint(span.end);
+      const range: Range = { anchor: startPoint, focus: endPoint };
+      return Editor.string(editor, range);
+    } catch {
+      return "";
+    }
+  }, [editor, globalToPoint]);
+
+  /**
+   * Get text snippets for multiple spans (returns a Map of span key to text)
+   */
+  const getSpanTexts = useCallback((spans: NerSpan[]): Map<string, string> => {
+    const texts = new Map<string, string>();
+    const keyOfSpan = (s: NerSpan) => `${s.start}:${s.end}:${s.entity}`;
+    
+    spans.forEach((span) => {
+      const key = keyOfSpan(span);
+      const text = getSpanText(span);
+      texts.set(key, text);
+    });
+    
+    return texts;
+  }, [getSpanText]);
+
+  /**
+   * Request deletion of a span (shows confirmation dialog first)
+   */
+  const requestDeleteSpan = useCallback((spanToDelete: NerSpan) => {
+    setPendingDeletion(spanToDelete);
+    closeAllUI();
+  }, [closeAllUI]);
+
+  /**
+   * Actually perform the deletion (called after user confirms)
+   */
+  const confirmDeleteSpan = useCallback(() => {
+    if (!pendingDeletion) return;
+
+    if (onDeleteSpan) {
+      onDeleteSpan(pendingDeletion);
+    }
+    
+    // Remove from local state
+    setLocalSpans((prev) =>
+      prev.filter(
+        (s) =>
+          !(
+            s.start === pendingDeletion.start &&
+            s.end === pendingDeletion.end &&
+            s.entity === pendingDeletion.entity
+          )
+      )
+    );
+    
+    setPendingDeletion(null);
+  }, [pendingDeletion, onDeleteSpan]);
+
+  /**
+   * Cancel deletion (close dialog)
+   */
+  const cancelDeleteSpan = useCallback(() => {
+    setPendingDeletion(null);
+  }, []);
+
+  /**
+   * Request multi-deletion (shows dialog with checkboxes)
+   */
+  const requestMultiDeleteSpans = useCallback((
+    spansToDelete: NerSpan[],
+    charToInsert?: { char: string; selection: { start: number; end: number } },
+    pasteOperation?: { type: 'paste' | 'cut'; selection: { start: number; end: number } }
+  ) => {
+    setPendingMultiDeletion(spansToDelete);
+    setPendingCharInsertion(charToInsert || null);
+    setPendingPasteOperation(pasteOperation || null);
+    closeAllUI();
+  }, [closeAllUI]);
+
+  /**
+   * Confirm multi-deletion (delete selected spans one by one)
+   */
+  const confirmMultiDeleteSpans = useCallback((selectedSpans: NerSpan[]) => {
+    if (selectedSpans.length === 0) {
+      setPendingMultiDeletion([]);
+      setPendingCharInsertion(null);
+      return;
+    }
+
+    // Delete spans one by one
+    selectedSpans.forEach((span) => {
+      if (onDeleteSpan) {
+        onDeleteSpan(span);
+      }
+    });
+
+    // Remove from local state
+    setLocalSpans((prev) => {
+      let updated = prev;
+      selectedSpans.forEach((spanToDelete) => {
+        updated = updated.filter(
+          (s) =>
+            !(
+              s.start === spanToDelete.start &&
+              s.end === spanToDelete.end &&
+              s.entity === spanToDelete.entity
+            )
+        );
+      });
+      return updated;
+    });
+
+    // Handle pending operations after deletion
+    const charInsert = pendingCharInsertion;
+    const pasteOp = pendingPasteOperation;
+    setPendingMultiDeletion([]);
+    setPendingCharInsertion(null);
+    setPendingPasteOperation(null);
+
+    // Handle character insertion
+    if (charInsert) {
+      setTimeout(() => {
+        try {
+          const startPoint = globalToPoint(charInsert.selection.start);
+          const endPoint = globalToPoint(charInsert.selection.end);
+          ReactEditor.focus(editor);
+          Transforms.select(editor, {
+            anchor: startPoint,
+            focus: endPoint,
+          });
+          Transforms.insertText(editor, charInsert.char);
+        } catch {
+          // If insertion fails, user can type the character manually
+        }
+      }, 0);
+    }
+
+    // Handle paste operation
+    if (pasteOp && pasteOp.type === 'paste') {
+      setTimeout(async () => {
+        try {
+          const startPoint = globalToPoint(pasteOp.selection.start);
+          const endPoint = globalToPoint(pasteOp.selection.end);
+          ReactEditor.focus(editor);
+          Transforms.select(editor, {
+            anchor: startPoint,
+            focus: endPoint,
+          });
+          
+          // Read from clipboard and paste
+          const text = await navigator.clipboard.readText();
+          Transforms.insertText(editor, text);
+        } catch {
+          // If clipboard access fails, try using document.execCommand as fallback
+          try {
+            const startPoint = globalToPoint(pasteOp.selection.start);
+            const endPoint = globalToPoint(pasteOp.selection.end);
+            ReactEditor.focus(editor);
+            Transforms.select(editor, {
+              anchor: startPoint,
+              focus: endPoint,
+            });
+            document.execCommand('paste');
+          } catch {
+            // If both fail, user can paste manually
+          }
+        }
+      }, 0);
+    }
+
+    // Handle cut operation
+    if (pasteOp && pasteOp.type === 'cut') {
+      setTimeout(async () => {
+        try {
+          const startPoint = globalToPoint(pasteOp.selection.start);
+          const endPoint = globalToPoint(pasteOp.selection.end);
+          const selectionRange = {
+            anchor: startPoint,
+            focus: endPoint,
+          };
+          
+          // Get selected text from the original range before selecting/deleting
+          const selectedText = Editor.string(editor, selectionRange);
+          
+          ReactEditor.focus(editor);
+          Transforms.select(editor, selectionRange);
+          
+          // Copy to clipboard
+          await navigator.clipboard.writeText(selectedText);
+          
+          // Delete the selected text
+          Transforms.delete(editor);
+        } catch {
+          // If clipboard access fails, try using document.execCommand as fallback
+          try {
+            const startPoint = globalToPoint(pasteOp.selection.start);
+            const endPoint = globalToPoint(pasteOp.selection.end);
+            const selectionRange = {
+              anchor: startPoint,
+              focus: endPoint,
+            };
+            
+            ReactEditor.focus(editor);
+            Transforms.select(editor, selectionRange);
+            document.execCommand('copy');
+            Transforms.delete(editor);
+          } catch {
+            // If both fail, user can cut manually
+          }
+        }
+      }, 0);
+    }
+  }, [onDeleteSpan, pendingCharInsertion, pendingPasteOperation, editor, globalToPoint]);
+
+  /**
+   * Cancel multi-deletion (close dialog)
+   */
+  const cancelMultiDeleteSpans = useCallback(() => {
+    setPendingMultiDeletion([]);
+    setPendingCharInsertion(null);
+    setPendingPasteOperation(null);
+  }, []);
+
+  /**
+   * Delete the currently active annotation span
+   */
+  const deleteCurrentSpan = () => {
+    if (spanBox) {
+      requestDeleteSpan(spanBox.span);
+    }
+  };
 
   /**
    * ============================================================================
@@ -877,8 +1066,115 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
                 setSpanBox(null);
                 setSelMenuAnchor(null);
                 setSpanMenuAnchor(null);
+              } else if (event.key === "Delete" || event.key === "Backspace") {
+                const sel = editor.selection;
+                if (!sel || !Range.isRange(sel)) return;
+
+                // Convert selection to global offsets immediately
+                // Do this before any other operations to ensure we have the correct selection
+                const [startPoint, endPoint] = Range.edges(sel);
+                const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+                const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+                const start = Math.min(gStart, gEnd);
+                const end = Math.max(gStart, gEnd);
+
+                if (Range.isCollapsed(sel)) {
+                  // Cursor is at a single position (not a selection)
+                  // For Backspace, check position before cursor; for Delete, check at cursor
+                  const checkOffset = event.key === "Backspace" 
+                    ? Math.max(0, start - 1) 
+                    : start;
+                  
+                  const intersectingSpan = findSpanAtCursor(checkOffset);
+                  if (intersectingSpan) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    requestDeleteSpan(intersectingSpan);
+                    return;
+                  }
+                } else {
+                  // Multi-select: find all spans that intersect with the selection
+                  // IMPORTANT: Check for spans BEFORE allowing default deletion
+                  const intersectingSpans = findSpansInSelection(start, end);
+                  if (intersectingSpans.length > 0) {
+                    // Prevent default text deletion behavior immediately
+                    // This must happen BEFORE Slate processes the deletion
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // Show multi-deletion dialog
+                    requestMultiDeleteSpans(intersectingSpans);
+                    return;
+                  }
+                }
+                // If no spans found, let the default deletion behavior proceed
+                // (Slate will handle normal text deletion)
+              } else if (
+                // Handle character key presses that replace selected text
+                // Check if it's a single character (not a special key)
+                event.key.length === 1 &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey
+              ) {
+                const sel = editor.selection;
+                // Only handle if there's a non-collapsed selection (text is highlighted)
+                if (sel && Range.isRange(sel) && !Range.isCollapsed(sel)) {
+                  // Convert selection to global offsets
+                  const [startPoint, endPoint] = Range.edges(sel);
+                  const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+                  const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+                  const start = Math.min(gStart, gEnd);
+                  const end = Math.max(gStart, gEnd);
+
+                  // Find all spans that intersect with the selection
+                  const intersectingSpans = findSpansInSelection(start, end);
+                  if (intersectingSpans.length > 0) {
+                    // Prevent default text replacement behavior
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // Show multi-deletion dialog with the character to insert after deletion
+                    requestMultiDeleteSpans(intersectingSpans, {
+                      char: event.key,
+                      selection: { start, end },
+                    });
+                    return;
+                  }
+                }
+                // If no spans found, let the default text replacement proceed
+              } else if (
+                // Handle Ctrl+V (paste) and Ctrl+X (cut)
+                (event.key === "v" || event.key === "x") &&
+                (event.ctrlKey || event.metaKey)
+              ) {
+                const sel = editor.selection;
+                // Only handle if there's a non-collapsed selection (text is highlighted)
+                if (sel && Range.isRange(sel) && !Range.isCollapsed(sel)) {
+                  // Convert selection to global offsets
+                  const [startPoint, endPoint] = Range.edges(sel);
+                  const gStart = pointToGlobal(startPoint.path, startPoint.offset);
+                  const gEnd = pointToGlobal(endPoint.path, endPoint.offset);
+                  const start = Math.min(gStart, gEnd);
+                  const end = Math.max(gStart, gEnd);
+
+                  // Find all spans that intersect with the selection
+                  const intersectingSpans = findSpansInSelection(start, end);
+                  if (intersectingSpans.length > 0) {
+                    // Prevent default paste/cut behavior
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // Show multi-deletion dialog with the paste/cut operation
+                    requestMultiDeleteSpans(intersectingSpans, undefined, {
+                      type: event.key === "v" ? "paste" : "cut",
+                      selection: { start, end },
+                    });
+                    return;
+                  }
+                }
+                // If no spans found, let the default paste/cut behavior proceed
               }
-              // For other keys (typing, arrow keys, backspace), don't clear the bubble
+              // For other keys (arrow keys, etc.), don't clear the bubble
               // Let the selection change naturally trigger updateSelectionOverlay
             }}
             onSelect={() => {
@@ -923,13 +1219,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
                   opacity: 0.55,
                   color: "#5A6A7A",
                   fontFamily: "DM Mono, monospace",
-                  whiteSpace: "nowrap",
-                  display: "inline",
-                  top: "18px",
-                  left: "18px",
                 }}
-                contentEditable={false}
-                className="slate-placeholder"
               >
                 {props.children}
               </span>
@@ -981,6 +1271,24 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
             onDelete={deleteCurrentSpan}
           />
         </EditorContainer>
+
+        {/* Deletion confirmation dialog */}
+        <DeletionConfirmationDialog
+          open={pendingDeletion !== null}
+          span={pendingDeletion}
+          spanText={pendingDeletion ? getSpanText(pendingDeletion) : undefined}
+          onConfirm={confirmDeleteSpan}
+          onCancel={cancelDeleteSpan}
+        />
+
+        {/* Multi-deletion dialog */}
+        <MultiDeletionDialog
+          open={pendingMultiDeletion.length > 0}
+          spans={pendingMultiDeletion}
+          spanTexts={pendingMultiDeletion.length > 0 ? getSpanTexts(pendingMultiDeletion) : new Map()}
+          onConfirm={confirmMultiDeleteSpans}
+          onCancel={cancelMultiDeleteSpans}
+        />
       </Slate>
     </Box>
   );

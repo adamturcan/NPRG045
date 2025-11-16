@@ -35,6 +35,12 @@ export type SpanBox = {
   span: NerSpan;
 };
 
+export type DeletionWarningBox = {
+  top: number;
+  left: number;
+  affectedSpans: NerSpan[];
+};
+
 export type LeafInfo = { 
   path: number[]; 
   gStart: number; 
