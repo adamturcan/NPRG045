@@ -58,6 +58,8 @@ export interface NotationEditorProps {
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
   /** Called whenever editor adjusts span indices due to text edits */
   onSpansAdjusted?: (next: NerSpan[]) => void;
+  /** Called whenever editor adjusts segment indices due to text edits */
+  onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
   /** keys: `${start}:${end}:${entity}` */
   deletableKeys?: Set<string>;
   /** adding a span via selection "…" menu or change-category */
@@ -66,8 +68,6 @@ export interface NotationEditorProps {
   segments?: Array<{ id: string; start: number; end: number; order: number }>;
   /** active segment ID for highlighting */
   activeSegmentId?: string;
-  /** Called whenever editor adjusts segment indices due to text edits */
-  onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
   /** selected segment ID in segment view mode - used to adjust annotation offsets */
   selectedSegmentId?: string;
 }

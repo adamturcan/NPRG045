@@ -36,7 +36,7 @@ interface Props {
   onSave?: () => void;
   placeholder?: string;
   onSpansAdjusted?: (next: NerSpan[]) => void;
-  onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
+  onSegmentsAdjusted?: (next: Segment[]) => void;
 }
 
 const EditorArea: React.FC<Props> = ({

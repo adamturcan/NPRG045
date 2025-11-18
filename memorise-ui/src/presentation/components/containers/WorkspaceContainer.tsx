@@ -653,49 +653,30 @@ const WorkspaceContainer: React.FC = () => {
             });
           }}
           onSegmentsAdjusted={(next) => {
-            if (!currentId || !currentWs) {
-              return;
-            }
-
-            // Deep comparison to prevent unnecessary updates and infinite loops
-            const currentSegments = currentWs.segments || [];
-            const segmentsChanged = 
-              next.length !== currentSegments.length ||
-              next.some((s, i) => {
-                const current = currentSegments[i];
-                return !current || s.id !== current.id || s.start !== current.start || s.end !== current.end || s.order !== current.order;
-              });
-
-            if (!segmentsChanged) {
-              // eslint-disable-next-line no-console
-              console.debug("[WorkspaceContainer] segments unchanged, skipping update", {
-                workspaceId: currentId,
-                segmentCount: next.length,
-              });
-              return;
-            }
+            if (!currentId) return;
+            
+            // Log segment adjustments
+            // eslint-disable-next-line no-console
+            console.debug("[WorkspaceContainer] onSegmentsAdjusted", {
+              workspaceId: currentId,
+              beforeCount: currentWs?.segments?.length ?? 0,
+              nextCount: next.length,
+              nextPreview: next.slice(0, 5),
+              timestamp: Date.now(),
+            });
 
             // Update workspace with adjusted segments
-            setWorkspaces((prev) => {
-              const ws = prev[currentId];
-              if (!ws) return prev;
-              
-              return {
-                ...prev,
-                [currentId]: {
-                  ...ws,
-                  segments: next,
-                  updatedAt: Date.now(),
-                },
-              };
-            });
+            const updatedWorkspaces = workspaces.map((ws) =>
+              ws.id === currentId
+                ? { ...ws, segments: next, updatedAt: Date.now() }
+                : ws
+            );
+            setWorkspaces(updatedWorkspaces);
 
             // Let debounced autosave handle persistence once typing stops
             // eslint-disable-next-line no-console
             console.debug("[WorkspaceContainer] segments adjusted (autosave queued)", {
               workspaceId: currentId,
-              segmentCount: next.length,
-              timestamp: Date.now(),
             });
           }}
           placeholder={
