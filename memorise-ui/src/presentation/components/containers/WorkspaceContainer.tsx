@@ -652,6 +652,52 @@ const WorkspaceContainer: React.FC = () => {
               timestamp: Date.now(),
             });
           }}
+          onSegmentsAdjusted={(next) => {
+            if (!currentId || !currentWs) {
+              return;
+            }
+
+            // Deep comparison to prevent unnecessary updates and infinite loops
+            const currentSegments = currentWs.segments || [];
+            const segmentsChanged = 
+              next.length !== currentSegments.length ||
+              next.some((s, i) => {
+                const current = currentSegments[i];
+                return !current || s.id !== current.id || s.start !== current.start || s.end !== current.end || s.order !== current.order;
+              });
+
+            if (!segmentsChanged) {
+              // eslint-disable-next-line no-console
+              console.debug("[WorkspaceContainer] segments unchanged, skipping update", {
+                workspaceId: currentId,
+                segmentCount: next.length,
+              });
+              return;
+            }
+
+            // Update workspace with adjusted segments
+            setWorkspaces((prev) => {
+              const ws = prev[currentId];
+              if (!ws) return prev;
+              
+              return {
+                ...prev,
+                [currentId]: {
+                  ...ws,
+                  segments: next,
+                  updatedAt: Date.now(),
+                },
+              };
+            });
+
+            // Let debounced autosave handle persistence once typing stops
+            // eslint-disable-next-line no-console
+            console.debug("[WorkspaceContainer] segments adjusted (autosave queued)", {
+              workspaceId: currentId,
+              segmentCount: next.length,
+              timestamp: Date.now(),
+            });
+          }}
           placeholder={
             translationViewMode === "segments" && !selectedSegmentId
               ? "Select a segment from the right panel"

@@ -36,6 +36,7 @@ interface Props {
   onSave?: () => void;
   placeholder?: string;
   onSpansAdjusted?: (next: NerSpan[]) => void;
+  onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
 }
 
 const EditorArea: React.FC<Props> = ({
@@ -57,6 +58,7 @@ const EditorArea: React.FC<Props> = ({
   onAddSpan,
   placeholder,
   onSpansAdjusted,
+  onSegmentsAdjusted,
   onSave,
 }) => {
   return (
@@ -84,6 +86,7 @@ const EditorArea: React.FC<Props> = ({
         onDeleteSpan={onDeleteSpan}
         onAddSpan={onAddSpan}
         onSpansAdjusted={onSpansAdjusted}
+        onSegmentsAdjusted={onSegmentsAdjusted}
       />
 
       {/* Action buttons */}

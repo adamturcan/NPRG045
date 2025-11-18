@@ -74,6 +74,7 @@ import { useKeyboardHandlers } from "../../hooks/editor/useKeyboardHandlers";
 import { useMenuHandlers } from "../../hooks/editor/useMenuHandlers";
 import { useDeletionDialogs } from "../../hooks/editor/useDeletionDialogs";
 import { useSpanAutoAdjust } from "../../hooks/editor/useSpanAutoAdjust";
+import { useRangeAutoAdjust } from "../../hooks/editor/useRangeAutoAdjust";
 
 
 const NotationEditor: React.FC<NotationEditorProps> = ({
@@ -88,6 +89,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   segments = [],
   activeSegmentId,
   onSpansAdjusted,
+  onSegmentsAdjusted,
 }) => {
   // Initialize Slate editor with React and History plugins
   const editor = useMemo(() => {
@@ -108,6 +110,38 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   useEffect(() => {
     setLocalSpans(spans);
   }, [spans]);
+
+  // Local copy of segments for optimistic UI updates
+  // Always keep segments sorted by start position
+  const [localSegments, setLocalSegments] = useState<Array<{ id: string; start: number; end: number; order: number }>>(() => 
+    [...segments].sort((a, b) => a.start - b.start)
+  );
+  
+  // Use a ref to track if we're in the middle of an adjustment to prevent prop overwrites
+  const isAdjustingRef = useRef(false);
+  
+  useEffect(() => {
+    // Skip sync if we're currently adjusting segments (prevents overwriting local adjustments)
+    if (isAdjustingRef.current) {
+      return;
+    }
+    
+    // Sort segments from props before comparing
+    const sortedSegments = [...segments].sort((a, b) => a.start - b.start);
+    const sortedLocal = [...localSegments].sort((a, b) => a.start - b.start);
+    
+    // Deep comparison to prevent unnecessary updates and infinite loops
+    const segmentsChanged = 
+      sortedSegments.length !== sortedLocal.length ||
+      sortedSegments.some((s, i) => {
+        const local = sortedLocal[i];
+        return !local || s.id !== local.id || s.start !== local.start || s.end !== local.end || s.order !== local.order;
+      });
+    
+    if (segmentsChanged) {
+      setLocalSegments(sortedSegments);
+    }
+  }, [segments, localSegments]);
 
  
 
@@ -168,8 +202,77 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     pointToGlobal,
     getSpans: () => localSpans,
     setSpans: setLocalSpans,
-    version: slateValue,
     onAdjusted: onSpansAdjusted,
+  });
+  const { applyPendingOps: applyPendingSegmentOps } = useRangeAutoAdjust({
+    editor: editor as unknown as ReactEditor,
+    pointToGlobal,
+    getRanges: () => {
+      // Ensure segments are sorted by start position before processing
+      return [...localSegments].sort((a, b) => a.start - b.start);
+    },
+    setRanges: (updater) => {
+      isAdjustingRef.current = true;
+      setLocalSegments((prev) => {
+        // Sort before updating to maintain order
+        const sorted = [...prev].sort((a, b) => a.start - b.start);
+        const updated = updater(sorted);
+        // Ensure result is also sorted (in case adjustment changes order)
+        const sortedUpdated = [...updated].sort((a, b) => a.start - b.start);
+        console.debug("[NotationEditor] setLocalSegments from adjustment", {
+          before: sorted.map(s => ({ id: s.id, start: s.start, end: s.end })),
+          after: sortedUpdated.map(s => ({ id: s.id, start: s.start, end: s.end })),
+        });
+        // Reset flag after callback completes to allow prop sync to resume
+        // Use setTimeout to ensure it happens after the onAdjusted callback
+        setTimeout(() => {
+          isAdjustingRef.current = false;
+        }, 0);
+        return sortedUpdated;
+      });
+    },
+    onAdjusted: (next) => {
+      // Sort segments before calling callback
+      const sorted = [...next].sort((a, b) => a.start - b.start);
+      onSegmentsAdjusted?.(sorted);
+    },
+    logPrefix: "[SegmentAutoAdjust]",
+    skipIfEmpty: true, // Skip if segments are empty to prevent infinite loops
+    checkChanged: (next, prev) => {
+      // Deep comparison for segments including id and order
+      // Sort both arrays before comparing to ensure consistent comparison
+      const sortedNext = [...next].sort((a, b) => a.start - b.start);
+      const sortedPrev = [...prev].sort((a, b) => a.start - b.start);
+      
+      if (sortedNext.length !== sortedPrev.length) {
+        console.debug("[SegmentAutoAdjust] checkChanged: length mismatch", {
+          nextLength: sortedNext.length,
+          prevLength: sortedPrev.length,
+        });
+        return true;
+      }
+      
+      const changed = sortedNext.some((s, i) => {
+        const p = sortedPrev[i];
+        const isChanged = !p || s.id !== p.id || s.start !== p.start || s.end !== p.end || s.order !== p.order;
+        if (isChanged) {
+          console.debug("[SegmentAutoAdjust] checkChanged: segment changed", {
+            index: i,
+            next: { id: s.id, start: s.start, end: s.end, order: s.order },
+            prev: p ? { id: p.id, start: p.start, end: p.end, order: p.order } : null,
+          });
+        }
+        return isChanged;
+      });
+      
+      if (!changed) {
+        console.debug("[SegmentAutoAdjust] checkChanged: no changes detected", {
+          segments: sortedNext.map(s => ({ id: s.id, start: s.start, end: s.end })),
+        });
+      }
+      
+      return changed;
+    },
   });
 
   // Deletion dialogs and flows
@@ -225,7 +328,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     localSpans,
     activeSpan,
     highlightedCategories,
-    segments,
+    segments: localSegments,
     activeSegmentId,
   });
 
@@ -383,9 +486,10 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
         editor={editor}
         initialValue={slateValue}
         onChange={(val) => {
-          // Apply pending operation-based span adjustments synchronously within onChange,
+          // Apply pending operation-based span and segment adjustments synchronously within onChange,
           // before Slate clears operations, so highlights update in the same tick.
           applyPendingOps();
+          applyPendingSegmentOps();
           setSlateValue(val);
           onChange(toPlainTextWithNewlines(val));
           // Don't update selection overlay here - let onSelect handle it
@@ -410,7 +514,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
               setSpanBox,
               setSelMenuAnchor,
               setSpanMenuAnchor,
-              segments,
+              segments: localSegments,
             }).onKeyDown}
             onSelect={onSelectThrottled}
             style={{

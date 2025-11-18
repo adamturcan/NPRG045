@@ -134,31 +134,29 @@ export class SegmentationApiService {
     // Sort segments by start position
     const sortedSegments = [...segments].sort((a, b) => a.start - b.start);
     
-    // Build new text with border spaces between segments
+    // Build new text with border spaces between segments sequentially
+    // Segments from API are consecutive (no gaps), so we build text in order
     let newText = '';
-    let offsetAdjustment = 0; // Track how many characters we've inserted before current position
     const adjustedSegments: Segment[] = [];
 
     for (let i = 0; i < sortedSegments.length; i++) {
       const segment = sortedSegments[i];
       
-      // Calculate adjusted start position (accounting for previously inserted border spaces)
-      const segmentStart = segment.start + offsetAdjustment;
+      // Segment start is the current position in newText (after previous segments and border spaces)
+      const segmentStart = newText.length;
       
-      // Add segment text
+      // Add segment text from original text
       const segmentText = text.substring(segment.start, segment.end);
       newText += segmentText;
       
-      // segment.end in new text is at the end of the segment text (before border space)
+      // Segment end is at the end of the segment text (before border space)
       const segmentEnd = newText.length;
       
-      // Add border space after segment (except for last segment)
-      if (i < sortedSegments.length - 1) {
-        newText += ' ';
-        // Border space is at position segmentEnd in the new text
-        // Next segment's start will need to account for this inserted space
-        offsetAdjustment += 1;
-      }
+      // Add border space after every segment (including last one)
+      // This ensures consistency if new segments are added later
+      // Border space is at position segmentEnd in the new text
+      newText += ' ';
+      // Next segment will start at segmentEnd + 1 (after the border space)
       
       // Create adjusted segment with new indices
       // Note: segment.end points to the end of segment text, border space is at segment.end

@@ -38,7 +38,7 @@ export function useKeyboardHandlers(params: {
 
   /**
    * Check if a position is a border space (non-deletable space between segments)
-   * Border spaces are at segment.end positions (except for the last segment)
+   * Border spaces are at segment.end positions (including the last segment)
    */
   const isBorderSpace = useCallback((offset: number): boolean => {
     if (segments.length === 0) return false;
@@ -46,8 +46,8 @@ export function useKeyboardHandlers(params: {
     // Sort segments by start position
     const sortedSegments = [...segments].sort((a, b) => a.start - b.start);
     
-    // Check if offset is at any segment.end position (except last segment)
-    for (let i = 0; i < sortedSegments.length - 1; i++) {
+    // Check if offset is at any segment.end position (including last segment)
+    for (let i = 0; i < sortedSegments.length; i++) {
       if (offset === sortedSegments[i].end) {
         return true;
       }
