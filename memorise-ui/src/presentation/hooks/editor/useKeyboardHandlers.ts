@@ -40,6 +40,13 @@ export function useKeyboardHandlers(params: {
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      // Block undo (Ctrl+Z / Cmd+Z)
+      if (event.key === "z" && (event.ctrlKey || event.metaKey) && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (event.key === "Escape") {
         event.preventDefault();
         closeAllUI();
