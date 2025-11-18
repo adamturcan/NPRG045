@@ -95,7 +95,6 @@ export class SegmentationApiService {
           id: `seg-${i}`,
           start: fallbackStart,
           end: segmentEnd,
-          text: segmentText,
           order: result.label,
         });
         searchStart = segmentEnd;
@@ -106,7 +105,6 @@ export class SegmentationApiService {
           id: `seg-${i}`,
           start: segmentStart,
           end: segmentEnd,
-          text: segmentText,
           order: result.label,
         });
         // Next search starts after this segment
@@ -115,6 +113,63 @@ export class SegmentationApiService {
     }
 
     return segments;
+  }
+
+  /**
+   * Inserts border spaces between segments and adjusts segment indices.
+   * 
+   * Border spaces are inserted at segment.end positions (except for last segment).
+   * After insertion, segment.end points to the end of the segment text,
+   * and the border space is at position segment.end.
+   * 
+   * @param segments - Segments with original indices
+   * @param text - Original text
+   * @returns Object with modified text (with border spaces) and adjusted segments
+   */
+  insertBorderSpaces(segments: Segment[], text: string): { text: string; segments: Segment[] } {
+    if (segments.length === 0) {
+      return { text, segments: [] };
+    }
+
+    // Sort segments by start position
+    const sortedSegments = [...segments].sort((a, b) => a.start - b.start);
+    
+    // Build new text with border spaces between segments
+    let newText = '';
+    let offsetAdjustment = 0; // Track how many characters we've inserted before current position
+    const adjustedSegments: Segment[] = [];
+
+    for (let i = 0; i < sortedSegments.length; i++) {
+      const segment = sortedSegments[i];
+      
+      // Calculate adjusted start position (accounting for previously inserted border spaces)
+      const segmentStart = segment.start + offsetAdjustment;
+      
+      // Add segment text
+      const segmentText = text.substring(segment.start, segment.end);
+      newText += segmentText;
+      
+      // segment.end in new text is at the end of the segment text (before border space)
+      const segmentEnd = newText.length;
+      
+      // Add border space after segment (except for last segment)
+      if (i < sortedSegments.length - 1) {
+        newText += ' ';
+        // Border space is at position segmentEnd in the new text
+        // Next segment's start will need to account for this inserted space
+        offsetAdjustment += 1;
+      }
+      
+      // Create adjusted segment with new indices
+      // Note: segment.end points to the end of segment text, border space is at segment.end
+      adjustedSegments.push({
+        ...segment,
+        start: segmentStart,
+        end: segmentEnd,
+      });
+    }
+
+    return { text: newText, segments: adjustedSegments };
   }
 }
 

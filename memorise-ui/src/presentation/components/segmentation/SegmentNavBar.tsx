@@ -10,21 +10,20 @@
 import React, { useCallback } from "react";
 import { Box, Typography, Paper, List, ListItem, ListItemButton } from "@mui/material";
 import type { Segment } from "../../../types/Segment";
+import { getSegmentText } from "../../../types/Segment";
 
 interface SegmentNavBarProps {
   segments: Segment[];
   activeSegmentId?: string;
-  selectedSegmentId?: string; // For segment mode - which segment is currently loaded in editor
-  viewMode?: "document" | "segments";
   onSegmentClick?: (segment: Segment) => void;
+  text?: string; // Full text to derive segment text from indices
 }
 
 const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
   segments,
   activeSegmentId,
-  selectedSegmentId,
-  viewMode = "document",
   onSegmentClick,
+  text = "",
 }) => {
   const handleSegmentClick = useCallback(
     (segment: Segment) => {
@@ -87,15 +86,12 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
           },
         }}
       >
-        {segments.map((segment, index) => {
-          // In segment mode, use selectedSegmentId; in document mode, use activeSegmentId
-          const isActive = viewMode === "segments" 
-            ? (selectedSegmentId !== undefined && segment.id === selectedSegmentId)
-            : (activeSegmentId !== undefined && segment.id === activeSegmentId);
-          const preview = segment.text.length > 50 
-            ? `${segment.text.substring(0, 50)}...` 
-            : segment.text;
-          const segmentNumber = index + 1;
+        {segments.map((segment) => {
+          const isActive = segment.id === activeSegmentId;
+          const segmentText = segment.text ?? getSegmentText(segment, text);
+          const preview = segmentText.length > 50 
+            ? `${segmentText.substring(0, 50)}...` 
+            : segmentText;
 
           return (
             <ListItem
@@ -143,7 +139,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                         textAlign: "center",
                       }}
                     >
-                      {segmentNumber}
+                      {segment.order + 1}
                     </Paper>
                     <Typography
                       variant="caption"
@@ -152,7 +148,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                         fontWeight: 500,
                       }}
                     >
-                      Segment {segmentNumber}
+                      Segment {segment.order + 1}
                     </Typography>
                   </Box>
                   <Typography

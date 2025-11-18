@@ -26,8 +26,7 @@ const EntityLeaf: React.FC<EntityLeafProps> = ({
   // Check if this leaf is part of a segment
   const isSegment = leaf.segment === true;
   const isActiveSegment = leaf.segmentActive === true;
-  const isSegmentStart = leaf.segmentStart === true;
-  const isSegmentEnd = leaf.segmentEnd === true;
+  const isSegmentBorder = leaf.segmentBorder === true;
   
   // Check if this leaf is part of an annotated entity span
   if (leaf.underline) {
@@ -100,34 +99,22 @@ const EntityLeaf: React.FC<EntityLeafProps> = ({
     );
   }
 
-  // Render plain text or segment (no entity annotation)
+  // Render plain text, segment, or border space (no entity annotation)
   const segmentStyle: React.CSSProperties = {
     color: COLORS.text,
     position: "relative",
   };
 
-  // Add segment styling if this is a segment
-  if (isSegment) {
-    if (isActiveSegment) {
-      // Active segment: full highlight with green background (no start border)
-      segmentStyle.backgroundColor = "rgba(139, 195, 74, 0.15)";
-      // Only add end border if this is the end marker
-      if (isSegmentEnd) {
-        segmentStyle.borderRight = "3px solid rgba(139, 195, 74, 0.6)";
-        segmentStyle.paddingRight = "2px";
-      }
-      segmentStyle.transition = "background-color 0.2s, border-color 0.2s";
-    } else if (isSegmentEnd) {
-      // Inactive segment: only show end boundary marker
-      segmentStyle.backgroundColor = "transparent";
-      segmentStyle.position = "relative";
-      segmentStyle.display = "inline-block";
-      segmentStyle.borderRight = "2px solid rgba(139, 195, 74, 0.4)";
-      segmentStyle.marginRight = "-2px"; // Compensate for border width
-    } else {
-      // Segment content (not end): no styling for inactive segments
-      segmentStyle.backgroundColor = "transparent";
-    }
+  // Style border spaces (highlighted, non-deletable spaces between segments)
+  if (isSegmentBorder) {
+    segmentStyle.backgroundColor = "rgba(139, 195, 74, 0.3)";
+    segmentStyle.userSelect = "none";
+    segmentStyle.cursor = "default";
+    segmentStyle.transition = "background-color 0.2s";
+  } else if (isSegment && isActiveSegment) {
+    // Active segment: full highlight with green background
+    segmentStyle.backgroundColor = "rgba(139, 195, 74, 0.15)";
+    segmentStyle.transition = "background-color 0.2s";
   }
 
   return (

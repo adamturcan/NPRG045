@@ -410,6 +410,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
               setSpanBox,
               setSelMenuAnchor,
               setSpanMenuAnchor,
+              segments,
             }).onKeyDown}
             onSelect={onSelectThrottled}
             style={{

@@ -24,11 +24,15 @@ import {
 import TranslateIcon from "@mui/icons-material/Translate";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import type { Segment } from "../../../types/Segment";
+import { getSegmentText } from "../../../types/Segment";
 import type { LanguageCode } from "../../../shared/utils/translation";
 
 interface Props {
   /** Segments to display */
   segments: Segment[];
+  
+  /** Full text to derive segment text from indices */
+  text?: string;
   
   /** Current translation language */
   targetLang: LanguageCode;
@@ -50,6 +54,7 @@ interface Props {
 
 const SegmentTranslationView: React.FC<Props> = ({
   segments,
+  text = "",
   targetLang,
   segmentTranslations = {},
   onTranslateSegment,
@@ -213,7 +218,7 @@ const SegmentTranslationView: React.FC<Props> = ({
                   Original
                 </Typography>
                 <Typography variant="body2" sx={{ color: "text.primary" }}>
-                  {segment.text}
+                  {segment.text ?? getSegmentText(segment, text)}
                 </Typography>
               </Box>
 

@@ -41,10 +41,15 @@ export function useDecorations(params: {
       }
     }
 
-    for (const segment of segments) {
+    // Sort segments by start position to find border spaces
+    const sortedSegments = [...segments].sort((a, b) => a.start - b.start);
+    
+    for (const segment of sortedSegments) {
       const nodeStart = info.gStart, nodeEnd = info.gEnd;
       const isActive = segment.id === activeSegmentId;
+      
       if (isActive) {
+        // Highlight active segment content
         const start = Math.max(segment.start, nodeStart);
         const end = Math.min(segment.end, nodeEnd);
         if (end > start) {
@@ -57,15 +62,20 @@ export function useDecorations(params: {
             segmentActive: true,
           });
         }
-      } else {
-        if (segment.start >= nodeStart && segment.start < nodeEnd) {
-          const offset = segment.start - nodeStart;
-          ranges.push({ anchor: { path, offset }, focus: { path, offset }, segment: true, segmentStart: true, segmentId: segment.id, segmentOrder: segment.order, segmentActive: false });
-        }
-        if (segment.end > nodeStart && segment.end <= nodeEnd) {
-          const offset = segment.end - nodeStart;
-          ranges.push({ anchor: { path, offset }, focus: { path, offset }, segment: true, segmentEnd: true, segmentId: segment.id, segmentOrder: segment.order, segmentActive: false });
-        }
+      }
+      
+      // Mark border space after segment (space at segment.end position)
+      // Border space is the character immediately after segment.end
+      const borderSpacePos = segment.end;
+      if (borderSpacePos >= nodeStart && borderSpacePos < nodeEnd) {
+        const offset = borderSpacePos - nodeStart;
+        ranges.push({
+          anchor: { path, offset },
+          focus: { path, offset: offset + 1 },
+          segmentBorder: true,
+          segmentId: segment.id,
+          segmentOrder: segment.order,
+        });
       }
     }
     return ranges;

@@ -293,15 +293,22 @@ const WorkspaceContainer: React.FC = () => {
         return;
       }
       
-      // Update workspace with segments
+      // Insert border spaces between segments and adjust indices
+      const { text: textWithBorders, segments: adjustedSegments } = 
+        segmentationService.insertBorderSpaces(segments, text);
+      
+      // Update text with border spaces
+      setText(textWithBorders);
+      
+      // Update workspace with adjusted segments
       const updatedWorkspaces = workspaces.map((ws) =>
         ws.id === currentId
-          ? { ...ws, segments, updatedAt: Date.now() }
+          ? { ...ws, segments: adjustedSegments, updatedAt: Date.now() }
           : ws
       );
       setWorkspaces(updatedWorkspaces);
       
-      showNotice(`Text segmented into ${segments.length} segment${segments.length !== 1 ? 's' : ''}.`, { tone: "success" });
+      showNotice(`Text segmented into ${adjustedSegments.length} segment${adjustedSegments.length !== 1 ? 's' : ''}.`, { tone: "success" });
     } catch (error) {
       const appError = logError(error, {
         operation: "segment text",
@@ -413,8 +420,9 @@ const WorkspaceContainer: React.FC = () => {
       // Set selectedSegmentId for list highlighting
       setSelectedSegmentId(segment.id);
       // Don't set activeSegmentId in segment mode - we don't want editor highlighting
-      // Load the segment text into editor
-      setText(segment.text);
+      // Load the segment text into editor (derive from indices if needed)
+      const segmentText = segment.text ?? (text ? text.substring(segment.start, segment.end) : "");
+      setText(segmentText);
       // Force editor remount to show new content
       setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
       return;
@@ -678,6 +686,7 @@ const WorkspaceContainer: React.FC = () => {
           onSegmentClick={handleSegmentClick}
           viewMode={translationViewMode}
           onViewModeChange={setTranslationViewMode}
+          text={text}
         />
       </Box>
 

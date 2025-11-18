@@ -158,6 +158,11 @@ interface Props {
    */
   viewMode?: "document" | "segments";
   onViewModeChange?: (mode: "document" | "segments") => void;
+
+  /**
+   * Full text to derive segment text from indices
+   */
+  text?: string;
 }
 
 /**
@@ -182,6 +187,7 @@ const RightPanel: React.FC<Props> = ({
   selectedSegmentId,
   viewMode = "document",
   onViewModeChange,
+  text = "",
 }) => {
   // Auto-switch to segments tab when view mode is segments and segments exist
   const shouldShowSegments = segments.length > 0;
@@ -518,6 +524,7 @@ const RightPanel: React.FC<Props> = ({
                     selectedSegmentId={selectedSegmentId ?? undefined}
                     viewMode={viewMode}
                     onSegmentClick={onSegmentClick}
+                    text={text}
                   />
                 </Box>
               </Fade>
