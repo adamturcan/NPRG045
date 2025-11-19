@@ -975,8 +975,8 @@ const WorkspaceContainer: React.FC = () => {
             .map(s => ({
               id: s.id,
               order: s.order,
-              oldStart: latestWs.segments.find(orig => orig.id === s.id)?.start,
-              oldEnd: latestWs.segments.find(orig => orig.id === s.id)?.end,
+              oldStart: latestWs.segments?.find(orig => orig.id === s.id)?.start,
+              oldEnd: latestWs.segments?.find(orig => orig.id === s.id)?.end,
               newStart: s.start,
               newEnd: s.end,
             })),

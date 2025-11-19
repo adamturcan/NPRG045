@@ -79,7 +79,7 @@ const EditorArea: React.FC<Props> = ({
         spans={spans}
         segments={segments}
         activeSegmentId={viewMode === "document" ? activeSegmentId : undefined}
-        selectedSegmentId={viewMode === "segments" ? selectedSegmentId : undefined}
+        selectedSegmentId={viewMode === "segments" ? (selectedSegmentId ?? undefined) : undefined}
         activeTab={activeTab ?? undefined}
         highlightedCategories={highlightedCategories}
         onSelectionChange={onSelectionChange}

@@ -11,7 +11,7 @@
  * - Shows translation status (translated ✓ or not)
  * - Displays translated text when available
  */
-import React, { useState } from "react";
+import React from "react";
 import {
   Box,
   Card,
