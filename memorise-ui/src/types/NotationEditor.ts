@@ -70,6 +70,8 @@ export interface NotationEditorProps {
   activeSegmentId?: string;
   /** selected segment ID in segment view mode - used to adjust annotation offsets */
   selectedSegmentId?: string;
+  /** active translation tab ("original" or translation language code) - used to hide segment borders in translation view */
+  activeTab?: string;
 }
 
 export interface EntityLeafProps {

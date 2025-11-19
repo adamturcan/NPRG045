@@ -1211,6 +1211,7 @@ const WorkspaceContainer: React.FC = () => {
           activeSegmentId={activeSegmentId}
           selectedSegmentId={selectedSegmentId}
           viewMode={translationViewMode}
+          activeTab={translations.activeTab}
           highlightedCategories={EMPTY_HIGHLIGHTED_CATEGORIES}
           deletableKeys={annotations.deletableKeys}
           onDeleteSpan={annotations.deleteSpan}
@@ -1333,6 +1334,7 @@ const WorkspaceContainer: React.FC = () => {
           viewMode={translationViewMode}
           onViewModeChange={setTranslationViewMode}
           text={fullDocumentText}
+          activeTab={translations.activeTab}
         />
       </Box>
 

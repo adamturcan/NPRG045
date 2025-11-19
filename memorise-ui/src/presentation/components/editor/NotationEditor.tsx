@@ -88,6 +88,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   segments = [],
   activeSegmentId,
   selectedSegmentId,
+  activeTab = "original",
   onSpansAdjusted,
   onSegmentsAdjusted,
 }) => {
@@ -352,6 +353,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     segments: localSegments,
     activeSegmentId,
     selectedSegmentId,
+    activeTab,
   });
 
   /**

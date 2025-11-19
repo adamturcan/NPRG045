@@ -10,8 +10,9 @@ export function useDecorations(params: {
   segments: Array<{ id: string; start: number; end: number; order: number }>;
   activeSegmentId?: string | null;
   selectedSegmentId?: string;
+  activeTab?: string;
 }) {
-  const { indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId } = params;
+  const { indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId, activeTab = "original" } = params;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const decorate = useCallback((entry: [any, Path]) => {
@@ -71,20 +72,23 @@ export function useDecorations(params: {
       
       // Mark border space after segment (space at segment.end position)
       // Border space is the character immediately after segment.end
-      const borderSpacePos = segment.end;
-      if (borderSpacePos >= nodeStart && borderSpacePos < nodeEnd) {
-        const offset = borderSpacePos - nodeStart;
-        ranges.push({
-          anchor: { path, offset },
-          focus: { path, offset: offset + 1 },
-          segmentBorder: true,
-          segmentId: segment.id,
-          segmentOrder: segment.order,
-        });
+      // Only show borders in original tab, not in translation view
+      if (activeTab === "original") {
+        const borderSpacePos = segment.end;
+        if (borderSpacePos >= nodeStart && borderSpacePos < nodeEnd) {
+          const offset = borderSpacePos - nodeStart;
+          ranges.push({
+            anchor: { path, offset },
+            focus: { path, offset: offset + 1 },
+            segmentBorder: true,
+            segmentId: segment.id,
+            segmentOrder: segment.order,
+          });
+        }
       }
     }
     return ranges;
-  }, [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId]);
+  }, [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId, activeTab]);
 
   return { decorate };
 }

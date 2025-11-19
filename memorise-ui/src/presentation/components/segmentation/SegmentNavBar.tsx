@@ -60,6 +60,17 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
     );
   }
 
+  // Sort segments by start position (or order) to ensure correct sequence
+  // Use the sorted array index for numbering, not the API's order field
+  const sortedSegments = [...segments].sort((a, b) => {
+    // First try sorting by start position
+    if (a.start !== b.start) {
+      return a.start - b.start;
+    }
+    // If start positions are equal, fall back to order
+    return a.order - b.order;
+  });
+
   return (
     <Box
       sx={{
@@ -90,7 +101,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
           },
         }}
       >
-        {segments.map((segment) => {
+        {sortedSegments.map((segment, index) => {
           // In document view, use activeSegmentId for highlighting
           // In segment view, use selectedSegmentId for highlighting
           const isActive = viewMode === "document" 
@@ -147,7 +158,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                         textAlign: "center",
                       }}
                     >
-                      {segment.order + 1}
+                      {index + 1}
                     </Paper>
                     <Typography
                       variant="caption"
@@ -156,7 +167,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                         fontWeight: 500,
                       }}
                     >
-                      Segment {segment.order + 1}
+                      Segment {index + 1}
                     </Typography>
                   </Box>
                   <Typography

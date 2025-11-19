@@ -1,6 +1,5 @@
 // src/components/workspace/EditorArea.tsx
 import LabelIcon from "@mui/icons-material/Label";
-import SaveIcon from "@mui/icons-material/Save";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import SegmentIcon from "@mui/icons-material/ViewWeek";
 import { Box, IconButton, Tooltip } from "@mui/material";
@@ -26,6 +25,7 @@ interface Props {
   activeSegmentId?: string;
   selectedSegmentId?: string | null;
   viewMode?: "document" | "segments";
+  activeTab?: string; // "original" or translation language code
 
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
@@ -51,6 +51,7 @@ const EditorArea: React.FC<Props> = ({
   activeSegmentId,
   selectedSegmentId,
   viewMode = "document",
+  activeTab = "original",
   highlightedCategories,
   onSelectionChange,
   deletableKeys,
@@ -80,6 +81,7 @@ const EditorArea: React.FC<Props> = ({
         segments={segments}
         activeSegmentId={viewMode === "document" ? activeSegmentId : undefined}
         selectedSegmentId={viewMode === "segments" ? selectedSegmentId : undefined}
+        activeTab={activeTab}
         highlightedCategories={highlightedCategories}
         onSelectionChange={onSelectionChange}
         deletableKeys={deletableKeys}
@@ -100,21 +102,6 @@ const EditorArea: React.FC<Props> = ({
           gap: 1.25,
         }}
       >
-        {onSave && (
-          <Tooltip title="Save (Cmd/Ctrl+S)">
-            <IconButton
-              onClick={onSave}
-              sx={{
-                backgroundColor: "rgba(148, 163, 184, 0.22)",
-                "&:hover": { backgroundColor: "rgba(148, 163, 184, 0.32)" },
-                color: "#0F172A",
-                boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
-              }}
-            >
-              <SaveIcon sx={{ fontSize: 28 }} />
-            </IconButton>
-          </Tooltip>
-        )}
         <Tooltip title="Semantic Tagging">
           <IconButton
             onClick={onClassify}
@@ -144,23 +131,29 @@ const EditorArea: React.FC<Props> = ({
         </Tooltip>
 
         {onSegment && (
-          <Tooltip title={viewMode === "segments" ? "Segmentation not available in segment view" : "Run Segmentation"}>
+          <Tooltip title={
+            viewMode === "segments" 
+              ? "Segmentation not available in segment view" 
+              : (activeTab !== "original" && viewMode === "document")
+              ? "Segmentation not available in translation view"
+              : "Run Segmentation"
+          }>
             <span>
               <IconButton
                 onClick={onSegment}
-                disabled={viewMode === "segments"}
+                disabled={viewMode === "segments" || (activeTab !== "original" && viewMode === "document")}
                 sx={{
-                  backgroundColor: viewMode === "segments" 
+                  backgroundColor: (viewMode === "segments" || (activeTab !== "original" && viewMode === "document"))
                     ? "rgba(139, 195, 74, 0.08)" 
                     : "rgba(139, 195, 74, 0.18)",
                   "&:hover": { 
-                    backgroundColor: viewMode === "segments" 
+                    backgroundColor: (viewMode === "segments" || (activeTab !== "original" && viewMode === "document"))
                       ? "rgba(139, 195, 74, 0.08)" 
                       : "rgba(139, 195, 74, 0.28)" 
                   },
-                  color: viewMode === "segments" ? "#94A3B8" : "#689F38",
+                  color: (viewMode === "segments" || (activeTab !== "original" && viewMode === "document")) ? "#94A3B8" : "#689F38",
                   boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
-                  cursor: viewMode === "segments" ? "not-allowed" : "pointer",
+                  cursor: (viewMode === "segments" || (activeTab !== "original" && viewMode === "document")) ? "not-allowed" : "pointer",
                 }}
               >
                 <SegmentIcon sx={{ fontSize: 28 }} />

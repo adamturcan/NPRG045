@@ -99,6 +99,17 @@ const SegmentTranslationView: React.FC<Props> = ({
     );
   }
 
+  // Sort segments by start position (or order) to ensure correct sequence
+  // Use the sorted array index for numbering, not the API's order field
+  const sortedSegments = [...segments].sort((a, b) => {
+    // First try sorting by start position
+    if (a.start !== b.start) {
+      return a.start - b.start;
+    }
+    // If start positions are equal, fall back to order
+    return a.order - b.order;
+  });
+
   return (
     <Box
       sx={{
@@ -118,7 +129,7 @@ const SegmentTranslationView: React.FC<Props> = ({
         Translate individual segments. Each segment can be translated independently.
       </Typography>
 
-      {segments.map((segment) => {
+      {sortedSegments.map((segment, index) => {
         const translated = isTranslated(segment.id);
         const isCurrentlyTranslating = translatingSegmentId === segment.id;
         const isExpanded = expandedSegments.has(segment.id);
@@ -149,7 +160,7 @@ const SegmentTranslationView: React.FC<Props> = ({
               >
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <Chip
-                    label={`Segment ${segment.order + 1}`}
+                    label={`Segment ${index + 1}`}
                     size="small"
                     sx={{
                       backgroundColor: "rgba(139, 195, 74, 0.15)",
