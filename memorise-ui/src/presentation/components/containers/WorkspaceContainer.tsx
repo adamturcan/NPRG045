@@ -11,6 +11,7 @@ import { useParams } from "react-router-dom";
 import type { NerSpan } from "../../../types/NotationEditor";
 import type { Notice, NoticeOptions } from "../../../types/Notice";
 import type { Segment } from "../../../types/Segment";
+import { getSegmentText } from "../../../types/Segment";
 
 import RightPanel, { type TagRow } from "../right/RightPanel";
 import { NotificationSnackbar } from "../shared/NotificationSnackbar";
@@ -339,7 +340,11 @@ const WorkspaceContainer: React.FC = () => {
   // Handle view mode change - save text before switching to segment mode, restore when switching back
   useEffect(() => {
     if (translationViewMode === "document") {
-      // Restore text when switching back to document mode
+      // When switching back to document mode, preserve selected segment as active
+      // If there was a selected segment in segment view, make it active in document view
+      if (selectedSegmentId) {
+        setActiveSegmentId(selectedSegmentId);
+      }
       setSelectedSegmentId(null);
       
       // First try to restore from ref (most recent) - only if it's not empty
@@ -402,13 +407,30 @@ const WorkspaceContainer: React.FC = () => {
         }
       }
       
-      // Always clear editor when switching to segment mode (will be populated when segment is clicked)
-      setSelectedSegmentId(null);
-      // Use setTimeout to ensure this happens after any other effects
-      setTimeout(() => {
-        setText("");
-        setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
-      }, 0);
+      // When switching to segment mode, preserve active segment as selected
+      // If there's an active segment in document view, select it in segment view
+      if (activeSegmentId) {
+        setSelectedSegmentId(activeSegmentId);
+        // Load the segment text into editor immediately
+        const segment = currentWs?.segments?.find((s) => s.id === activeSegmentId);
+        if (segment) {
+          // Get full document text for deriving segment text
+          const docText = translations.activeTab === "original"
+            ? currentWs?.text || ""
+            : currentWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+          const segmentText = segment.text ?? getSegmentText(segment, docText);
+          setText(segmentText);
+          setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+        }
+      } else {
+        // No active segment - clear editor when switching to segment mode
+        setSelectedSegmentId(null);
+        // Use setTimeout to ensure this happens after any other effects
+        setTimeout(() => {
+          setText("");
+          setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+        }, 0);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationViewMode]);
@@ -542,6 +564,19 @@ const WorkspaceContainer: React.FC = () => {
     })),
     [tags.combinedTags]
   );
+
+  // Get the full document text for segment previews (based on active tab)
+  // This ensures previews work even when editor text is empty in segment mode
+  const fullDocumentText = useMemo(() => {
+    if (translations.activeTab === "original") {
+      return currentWs?.text || "";
+    } else {
+      const translation = currentWs?.translations?.find(
+        (t) => t.language === translations.activeTab
+      );
+      return translation?.text || "";
+    }
+  }, [currentWs?.text, currentWs?.translations, translations.activeTab]);
 
   // ============================================================================
   // STEP 6: RENDER
@@ -713,7 +748,7 @@ const WorkspaceContainer: React.FC = () => {
           onSegmentClick={handleSegmentClick}
           viewMode={translationViewMode}
           onViewModeChange={setTranslationViewMode}
-          text={text}
+          text={fullDocumentText}
         />
       </Box>
 

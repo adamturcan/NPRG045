@@ -144,18 +144,28 @@ const EditorArea: React.FC<Props> = ({
         </Tooltip>
 
         {onSegment && (
-          <Tooltip title="Run Segmentation">
-            <IconButton
-              onClick={onSegment}
-              sx={{
-                backgroundColor: "rgba(139, 195, 74, 0.18)",
-                "&:hover": { backgroundColor: "rgba(139, 195, 74, 0.28)" },
-                color: "#689F38",
-                boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
-              }}
-            >
-              <SegmentIcon sx={{ fontSize: 28 }} />
-            </IconButton>
+          <Tooltip title={viewMode === "segments" ? "Segmentation not available in segment view" : "Run Segmentation"}>
+            <span>
+              <IconButton
+                onClick={onSegment}
+                disabled={viewMode === "segments"}
+                sx={{
+                  backgroundColor: viewMode === "segments" 
+                    ? "rgba(139, 195, 74, 0.08)" 
+                    : "rgba(139, 195, 74, 0.18)",
+                  "&:hover": { 
+                    backgroundColor: viewMode === "segments" 
+                      ? "rgba(139, 195, 74, 0.08)" 
+                      : "rgba(139, 195, 74, 0.28)" 
+                  },
+                  color: viewMode === "segments" ? "#94A3B8" : "#689F38",
+                  boxShadow: "0 2px 8px rgba(12,24,38,0.10)",
+                  cursor: viewMode === "segments" ? "not-allowed" : "pointer",
+                }}
+              >
+                <SegmentIcon sx={{ fontSize: 28 }} />
+              </IconButton>
+            </span>
           </Tooltip>
         )}
       </Box>
