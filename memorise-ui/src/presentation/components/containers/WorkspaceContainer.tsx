@@ -337,6 +337,9 @@ const WorkspaceContainer: React.FC = () => {
   // Store text before switching to segment mode (for immediate restore)
   const documentTextRef = useRef<string>("");
   
+  // Store the full document text when in segment view (for syncing edits back)
+  const fullDocumentTextRef = useRef<string>("");
+  
   // Handle view mode change - save text before switching to segment mode, restore when switching back
   useEffect(() => {
     if (translationViewMode === "document") {
@@ -347,12 +350,15 @@ const WorkspaceContainer: React.FC = () => {
       }
       setSelectedSegmentId(null);
       
-      // First try to restore from ref (most recent) - only if it's not empty
-      let textToLoad = documentTextRef.current;
+      // Load text - prefer fullDocumentTextRef (has latest edits) over workspace (may be stale)
+      // The fullDocumentTextRef is updated by handleTextChange when editing in segment view
+      let textToLoad: string;
       
-      // If ref is empty (e.g., on page reload), always load from workspace
-      // This ensures we get the original document text, not any segment text
-      if (!textToLoad) {
+      // First try the ref (has the most recent edits from segment view)
+      if (fullDocumentTextRef.current) {
+        textToLoad = fullDocumentTextRef.current;
+      } else {
+        // Fall back to workspace (for cases like page reload)
         if (translations.activeTab === "original") {
           textToLoad = currentWs?.text || "";
         } else {
@@ -370,8 +376,9 @@ const WorkspaceContainer: React.FC = () => {
         setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
       }
       
-      // Clear ref after restore
+      // Clear refs after restore
       documentTextRef.current = "";
+      fullDocumentTextRef.current = "";
     } else if (translationViewMode === "segments") {
       // Save current text before switching to segment mode
       if (text && text.trim()) {
@@ -411,20 +418,45 @@ const WorkspaceContainer: React.FC = () => {
       // If there's an active segment in document view, select it in segment view
       if (activeSegmentId) {
         setSelectedSegmentId(activeSegmentId);
-        // Load the segment text into editor immediately
-        const segment = currentWs?.segments?.find((s) => s.id === activeSegmentId);
-        if (segment) {
-          // Get full document text for deriving segment text
-          const docText = translations.activeTab === "original"
-            ? currentWs?.text || ""
-            : currentWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
-          const segmentText = segment.text ?? getSegmentText(segment, docText);
-          setText(segmentText);
-          setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+        // Get the latest workspace state to ensure we have the most recent segments and text
+        const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+        const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+        
+        if (latestWs) {
+          // Load the segment text into editor immediately
+          const segment = latestWs.segments?.find((s) => s.id === activeSegmentId);
+          if (segment) {
+            // Get full document text for deriving segment text
+            // Prefer ref if available (has latest edits), otherwise use workspace
+            let docText = fullDocumentTextRef.current;
+            if (!docText) {
+              docText = translations.activeTab === "original"
+                ? latestWs?.text || ""
+                : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+            }
+            // Store the full document text for syncing edits back
+            fullDocumentTextRef.current = docText;
+            const segmentText = segment.text ?? getSegmentText(segment, docText);
+            setText(segmentText);
+            setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+          }
         }
       } else {
         // No active segment - clear editor when switching to segment mode
         setSelectedSegmentId(null);
+        // Get the latest workspace state
+        const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+        const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+        
+        // Store the full document text even when no segment is selected
+        // Prefer ref if available (has latest edits), otherwise use workspace
+        let docText = fullDocumentTextRef.current;
+        if (!docText && latestWs) {
+          docText = translations.activeTab === "original"
+            ? latestWs?.text || ""
+            : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+        }
+        fullDocumentTextRef.current = docText;
         // Use setTimeout to ensure this happens after any other effects
         setTimeout(() => {
           setText("");
@@ -442,8 +474,35 @@ const WorkspaceContainer: React.FC = () => {
       // Set selectedSegmentId for list highlighting
       setSelectedSegmentId(segment.id);
       // Don't set activeSegmentId in segment mode - we don't want editor highlighting
-      // Load the segment text into editor (derive from indices if needed)
-      const segmentText = segment.text ?? (text ? text.substring(segment.start, segment.end) : "");
+      
+      // Get the latest workspace state to ensure we have the most recent segments and text
+      const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+      const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+      
+      if (!latestWs) {
+        return;
+      }
+      
+      // Find the segment with the latest indices (in case it was updated by previous edits)
+      const latestSegment = latestWs.segments?.find(s => s.id === segment.id);
+      if (!latestSegment) {
+        return;
+      }
+      
+      // Get the full document text - prefer ref (has latest edits) over workspace (may be stale)
+      let docText = fullDocumentTextRef.current;
+      if (!docText) {
+        // Fall back to workspace text if ref is empty
+        docText = translations.activeTab === "original"
+          ? latestWs?.text || ""
+          : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+      }
+      
+      // Store it in the ref for future edits
+      fullDocumentTextRef.current = docText;
+      
+      // Load the segment text into editor using the latest segment indices and text
+      const segmentText = latestSegment.text ?? getSegmentText(latestSegment, docText);
       setText(segmentText);
       // Force editor remount to show new content
       setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
@@ -499,6 +558,303 @@ const WorkspaceContainer: React.FC = () => {
       });
     }
   }, [translationViewMode, currentId, translations.activeTab]);
+
+  // Wrapper for setText that handles segment view mode - syncs edits back to full document
+  const handleTextChange = useCallback((newText: string) => {
+    // If we're in segment view and have a selected segment, sync the edit back to the full document
+    if (translationViewMode === "segments" && selectedSegmentId && currentId) {
+      // Get the latest workspace state to ensure we have the most recent segments
+      // This is important because currentWs might be stale if there were rapid edits
+      const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+      const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+      
+      if (!latestWs?.segments) {
+        // Fall back to document view behavior if no segments
+        setText(newText);
+        return;
+      }
+      
+      // Find the segment with the latest indices (in case it was updated by previous edits)
+      const segment = latestWs.segments.find(s => s.id === selectedSegmentId);
+      if (!segment) {
+        console.warn("[WorkspaceContainer] handleTextChange - segment not found", {
+          selectedSegmentId,
+          availableSegments: latestWs.segments.map(s => s.id),
+        });
+        setText(newText);
+        return;
+      }
+      
+      // Process the segment update
+      {
+        // Get the current full document text (from ref or workspace)
+        // Prefer ref as it has the most recent edits from previous keystrokes
+        let fullText = fullDocumentTextRef.current;
+        if (!fullText) {
+          // Fall back to workspace text if ref is empty
+          fullText = translations.activeTab === "original"
+            ? latestWs?.text || ""
+            : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+          fullDocumentTextRef.current = fullText;
+        }
+        
+        // IMPORTANT: Use the segment's current indices from the latest workspace
+        // These may have been updated by previous edits, so we need the most recent values
+        const currentSegmentStart = segment.start;
+        const currentSegmentEnd = segment.end;
+        
+        // Verify the segment indices are valid for the current text
+        if (currentSegmentStart < 0 || currentSegmentEnd > fullText.length || currentSegmentEnd <= currentSegmentStart) {
+          console.error("[WorkspaceContainer] invalid segment indices", {
+            segmentId: segment.id,
+            start: currentSegmentStart,
+            end: currentSegmentEnd,
+            fullTextLength: fullText.length,
+          });
+          setText(newText);
+          return;
+        }
+        
+        // Calculate the old segment text length
+        const oldSegmentLength = currentSegmentEnd - currentSegmentStart;
+        
+        // Check if this is the last segment
+        const isLastSegment = segment.order === (latestWs.segments.length - 1);
+        
+        // The border space is at segment.end (if not last segment)
+        // We need to check if there's a border space after the segment
+        const hasBorderSpace = !isLastSegment && currentSegmentEnd < fullText.length && fullText[currentSegmentEnd] === " ";
+        
+        // The new segment text from editor - this is what the user typed
+        let newSegmentText = newText;
+        
+        // Replace the segment portion in the full document text
+        // The segment text is from segment.start to segment.end
+        // If there's a border space, it's at segment.end (one character after segment text)
+        const beforeSegment = fullText.substring(0, currentSegmentStart);
+        const afterSegmentStart = hasBorderSpace ? currentSegmentEnd + 1 : currentSegmentEnd;
+        const afterSegment = fullText.substring(afterSegmentStart);
+        
+        // Verify the text extraction matches what we expect
+        const actualSegmentText = fullText.substring(currentSegmentStart, currentSegmentEnd);
+        if (actualSegmentText !== (segment.text ?? actualSegmentText)) {
+          console.warn("[WorkspaceContainer] segment text mismatch", {
+            segmentId: segment.id,
+            expectedText: segment.text,
+            actualText: actualSegmentText,
+            start: currentSegmentStart,
+            end: currentSegmentEnd,
+          });
+        }
+        
+        // Build the updated full text - this replaces the segment text and preserves everything after
+        // All subsequent segments' text is preserved in afterSegment, they just need their indices shifted
+        const updatedFullText = beforeSegment + newSegmentText + (hasBorderSpace ? " " : "") + afterSegment;
+        
+        // Calculate the new segment length and the difference
+        const newSegmentLength = newSegmentText.length;
+        const lengthDiff = newSegmentLength - oldSegmentLength;
+        
+        // Update the edited segment's end index
+        // The new end is at: start + newLength (border space will be at this position if not last)
+        const updatedSegment = {
+          ...segment,
+          start: currentSegmentStart, // Keep the start the same
+          end: currentSegmentStart + newSegmentLength, // Update end based on new length
+        };
+        
+        // Update all subsequent segments' indices using the same logic as adjustSegmentForInsert
+        // In document view, when text is inserted/deleted, segments after the position shift
+        // Here we're replacing segment text, which is equivalent to:
+        // - Deleting oldSegmentLength chars at currentSegmentStart
+        // - Inserting newSegmentLength chars at currentSegmentStart
+        // - Net effect: text length changes by lengthDiff at currentSegmentStart
+        // - All segments with start > currentSegmentEnd should shift by lengthDiff
+        // But since we're replacing, segments with start >= currentSegmentEnd should shift
+        const updatedSegments = latestWs.segments.map(s => {
+          if (s.id === segment.id) {
+            // Update the edited segment
+            return updatedSegment;
+          }
+          
+          // Use position-based logic like adjustSegmentForInsert, not just order-based
+          // Segments that start after the edited segment's end should shift
+          if (s.start > currentSegmentEnd) {
+            // Segment is entirely after the edited segment - shift by lengthDiff
+            const shifted = {
+              ...s, // Preserve all properties (id, order, text, translations, etc.)
+              start: s.start + lengthDiff,
+              end: s.end + lengthDiff,
+            };
+            
+            // Verify the shifted segment indices are valid
+            if (shifted.start < 0 || shifted.end > updatedFullText.length || shifted.end <= shifted.start) {
+              console.error("[WorkspaceContainer] invalid shifted segment indices", {
+                segmentId: s.id,
+                order: s.order,
+                originalStart: s.start,
+                originalEnd: s.end,
+                shiftedStart: shifted.start,
+                shiftedEnd: shifted.end,
+                lengthDiff,
+                updatedFullTextLength: updatedFullText.length,
+                editedSegmentEnd: currentSegmentEnd,
+              });
+            }
+            
+            return shifted;
+          } else if (s.start === currentSegmentEnd && !isLastSegment) {
+            // Segment starts right at the border space - this should be the next segment
+            // It should shift by lengthDiff (the border space position shifts)
+            const shifted = {
+              ...s,
+              start: updatedSegment.end + (hasBorderSpace ? 1 : 0), // New border space position
+              end: s.end + lengthDiff,
+            };
+            return shifted;
+          }
+          
+          // Segments before or overlapping with edited segment - shouldn't happen, but preserve
+          console.warn("[WorkspaceContainer] segment before edited segment - unexpected", {
+            segmentId: s.id,
+            order: s.order,
+            start: s.start,
+            end: s.end,
+            editedSegmentStart: currentSegmentStart,
+            editedSegmentEnd: currentSegmentEnd,
+          });
+          return s;
+        });
+        
+        // Verify the updated segments don't overlap
+        const sortedUpdated = [...updatedSegments].sort((a, b) => a.order - b.order);
+        for (let i = 0; i < sortedUpdated.length - 1; i++) {
+          const current = sortedUpdated[i];
+          const next = sortedUpdated[i + 1];
+          const isLastCurrent = current.order === (sortedUpdated.length - 1);
+          const expectedNextStart = isLastCurrent 
+            ? current.end 
+            : current.end + 1; // +1 for border space
+          
+          if (next.start !== expectedNextStart) {
+            console.error("[WorkspaceContainer] segment overlap detected", {
+              currentSegment: {
+                id: current.id,
+                order: current.order,
+                start: current.start,
+                end: current.end,
+              },
+              nextSegment: {
+                id: next.id,
+                order: next.order,
+                start: next.start,
+                end: next.end,
+              },
+              expectedNextStart,
+              actualNextStart: next.start,
+              difference: next.start - expectedNextStart,
+            });
+          }
+        }
+        
+        // Verify the update is correct
+        console.debug("[WorkspaceContainer] segment update", {
+          segmentId: segment.id,
+          segmentOrder: segment.order,
+          currentStart: currentSegmentStart,
+          currentEnd: currentSegmentEnd,
+          oldLength: oldSegmentLength,
+          newLength: newSegmentLength,
+          lengthDiff,
+          hasBorderSpace,
+          updatedSegment: {
+            start: updatedSegment.start,
+            end: updatedSegment.end,
+          },
+          subsequentSegments: updatedSegments
+            .filter(s => s.order > segment.order)
+            .slice(0, 3)
+            .map(s => ({
+              id: s.id,
+              order: s.order,
+              oldStart: latestWs.segments.find(orig => orig.id === s.id)?.start,
+              oldEnd: latestWs.segments.find(orig => orig.id === s.id)?.end,
+              newStart: s.start,
+              newEnd: s.end,
+            })),
+        });
+        
+        // Update the full document text ref
+        fullDocumentTextRef.current = updatedFullText;
+        
+        // Log the update for debugging
+        console.debug("[WorkspaceContainer] handleTextChange - updating workspace", {
+          segmentId: segment.id,
+          segmentOrder: segment.order,
+          oldLength: oldSegmentLength,
+          newLength: newSegmentLength,
+          lengthDiff,
+          updatedFullTextLength: updatedFullText.length,
+          originalFullTextLength: fullText.length,
+          updatedSegmentsCount: updatedSegments.length,
+          originalSegmentsCount: latestWs.segments.length,
+          allUpdatedSegments: updatedSegments.map(s => ({
+            id: s.id,
+            order: s.order,
+            start: s.start,
+            end: s.end,
+            textPreview: updatedFullText.substring(s.start, Math.min(s.end, updatedFullText.length)).substring(0, 20),
+          })),
+        });
+        
+        // Update workspace with new text and segments (use function updater to avoid race conditions)
+        setWorkspaces((prev) => {
+          const updated = prev.map((ws) =>
+            ws.id === currentId
+              ? {
+                  ...ws,
+                  text: translations.activeTab === "original" ? updatedFullText : ws.text,
+                  translations: translations.activeTab === "original"
+                    ? ws.translations
+                    : ws.translations?.map(t =>
+                        t.language === translations.activeTab
+                          ? { ...t, text: updatedFullText, updatedAt: Date.now() }
+                          : t
+                      ),
+                  segments: updatedSegments,
+                  updatedAt: Date.now(),
+                }
+              : ws
+          );
+          
+          // Verify the update
+          const updatedWs = updated.find(ws => ws.id === currentId);
+          if (updatedWs) {
+            console.debug("[WorkspaceContainer] workspace updated", {
+              workspaceId: currentId,
+              textLength: translations.activeTab === "original" ? updatedWs.text.length : updatedWs.translations?.find(t => t.language === translations.activeTab)?.text.length,
+              segmentsCount: updatedWs.segments.length,
+              segmentsPreview: updatedWs.segments.slice(0, 5).map(s => ({
+                id: s.id,
+                order: s.order,
+                start: s.start,
+                end: s.end,
+              })),
+            });
+          }
+          
+          return updated;
+        });
+        
+        // Don't call setText with the full text - keep showing just the segment in the editor
+        // The editor already has the new segment text, so we don't need to update it
+        return;
+      }
+    }
+    
+    // Document view: normal text update
+    setText(newText);
+  }, [translationViewMode, selectedSegmentId, currentId, translations.activeTab, setWorkspaces]);
 
   // Tag actions: add, delete
   const addCustomTag = useCallback(
@@ -578,6 +934,26 @@ const WorkspaceContainer: React.FC = () => {
     }
   }, [currentWs?.text, currentWs?.translations, translations.activeTab]);
 
+  // Keep fullDocumentTextRef in sync with workspace text when in segment view
+  // But be careful not to overwrite local edits - only sync if ref is empty
+  useEffect(() => {
+    if (translationViewMode === "segments" && selectedSegmentId) {
+      // Only update ref if it's empty (initial load) - don't overwrite local edits
+      if (!fullDocumentTextRef.current) {
+        const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+        const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+        if (latestWs) {
+          const docText = translations.activeTab === "original"
+            ? latestWs?.text || ""
+            : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+          if (docText) {
+            fullDocumentTextRef.current = docText;
+          }
+        }
+      }
+    }
+  }, [translationViewMode, selectedSegmentId, currentId, translations.activeTab]);
+
   // ============================================================================
   // STEP 6: RENDER
   // ============================================================================
@@ -626,7 +1002,7 @@ const WorkspaceContainer: React.FC = () => {
         <EditorArea
           editorInstanceKey={editorInstanceKey}
           text={text}
-          setText={setText}
+          setText={handleTextChange}
           onUpload={handleUpload}
           onClassify={handleRunClassify}
           onNer={handleRunNer}
@@ -690,6 +1066,14 @@ const WorkspaceContainer: React.FC = () => {
           onSegmentsAdjusted={(next) => {
             if (!currentId) return;
             
+            // In segment view, we handle segment adjustments manually in handleTextChange
+            // to avoid conflicts with operations that are relative to the segment, not the full document
+            // So we ignore auto-adjustments from useSpanAutoAdjust in segment view
+            if (translationViewMode === "segments") {
+              console.debug("[WorkspaceContainer] ignoring onSegmentsAdjusted in segment view (handled manually)");
+              return;
+            }
+            
             // Log segment adjustments
             // eslint-disable-next-line no-console
             console.debug("[WorkspaceContainer] onSegmentsAdjusted", {
@@ -701,12 +1085,13 @@ const WorkspaceContainer: React.FC = () => {
             });
 
             // Update workspace with adjusted segments
-            const updatedWorkspaces = workspaces.map((ws) =>
-              ws.id === currentId
-                ? { ...ws, segments: next, updatedAt: Date.now() }
-                : ws
+            setWorkspaces((prev) =>
+              prev.map((ws) =>
+                ws.id === currentId
+                  ? { ...ws, segments: next, updatedAt: Date.now() }
+                  : ws
+              )
             );
-            setWorkspaces(updatedWorkspaces);
 
             // Let debounced autosave handle persistence once typing stops
             // eslint-disable-next-line no-console
