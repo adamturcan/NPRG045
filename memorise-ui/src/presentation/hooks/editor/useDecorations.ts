@@ -9,8 +9,9 @@ export function useDecorations(params: {
   highlightedCategories: string[];
   segments: Array<{ id: string; start: number; end: number; order: number }>;
   activeSegmentId?: string | null;
+  selectedSegmentId?: string;
 }) {
-  const { indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId } = params;
+  const { indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId } = params;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const decorate = useCallback((entry: [any, Path]) => {
@@ -22,7 +23,11 @@ export function useDecorations(params: {
     const info = indexByPath.get(path.join("."));
     if (!info) return ranges;
 
-    if (!activeSegmentId) {
+    // Show spans in document view (when no activeSegmentId) OR in segment view (when selectedSegmentId is set)
+    // In segment view, spans are already adjusted to start from 0, so they align with the displayed segment text
+    const shouldShowSpans = !activeSegmentId || selectedSegmentId;
+    
+    if (shouldShowSpans) {
       for (const s of localSpans) {
         const start = Math.max(s.start, info.gStart);
         const end = Math.min(s.end, info.gEnd);
@@ -79,7 +84,7 @@ export function useDecorations(params: {
       }
     }
     return ranges;
-  }, [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId]);
+  }, [indexByPath, localSpans, activeSpan, highlightedCategories, segments, activeSegmentId, selectedSegmentId]);
 
   return { decorate };
 }

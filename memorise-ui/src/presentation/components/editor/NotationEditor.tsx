@@ -87,6 +87,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   onAddSpan,
   segments = [],
   activeSegmentId,
+  selectedSegmentId,
   onSpansAdjusted,
   onSegmentsAdjusted,
 }) => {
@@ -104,11 +105,35 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   // Track the currently clicked/active annotation span
   const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
   
-  // Local copy of spans for optimistic UI updates
-  const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
+  // Find the selected segment when in segment view mode
+  const selectedSegment = selectedSegmentId 
+    ? segments.find(s => s.id === selectedSegmentId)
+    : null;
+
+  // Adjust spans for segment view: filter and offset-adjust spans within the segment
+  // In document view, use spans as-is. In segment view, filter to segment range
+  // and adjust offsets to be relative to segment start (0-based)
+  const adjustedSpans = useMemo(() => {
+    if (!selectedSegment || !selectedSegmentId) {
+      // Document view: use spans as-is
+      return spans;
+    }
+
+    // Segment view: filter spans within segment range and adjust offsets
+    return spans
+      .filter(span => span.start >= selectedSegment.start && span.end <= selectedSegment.end)
+      .map(span => ({
+        ...span,
+        start: span.start - selectedSegment.start,
+        end: span.end - selectedSegment.start,
+      }));
+  }, [spans, selectedSegment, selectedSegmentId]);
+  
+  // Local copy of spans for optimistic UI updates (uses adjusted spans)
+  const [localSpans, setLocalSpans] = useState<NerSpan[]>(adjustedSpans);
   useEffect(() => {
-    setLocalSpans(spans);
-  }, [spans]);
+    setLocalSpans(adjustedSpans);
+  }, [adjustedSpans]);
 
   // Local copy of segments for optimistic UI updates
   const [localSegments, setLocalSegments] = useState<typeof segments>(segments);
@@ -163,6 +188,52 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   }, [value]);
 
   // Span adjustments are reported synchronously from useSpanAutoAdjust's onAdjusted
+  // When in segment view, convert adjusted spans back to document offsets before reporting
+  const handleSpansAdjusted = useCallback((adjustedSpans: NerSpan[]) => {
+    if (!selectedSegment || !selectedSegmentId || !onSpansAdjusted) {
+      // Document view or no callback: pass through
+      onSpansAdjusted?.(adjustedSpans);
+      return;
+    }
+
+    // Segment view: convert segment-relative offsets back to document offsets
+    const documentSpans = adjustedSpans.map(span => ({
+      ...span,
+      start: span.start + selectedSegment.start,
+      end: span.end + selectedSegment.start,
+    }));
+    onSpansAdjusted(documentSpans);
+  }, [selectedSegment, selectedSegmentId, onSpansAdjusted]);
+
+  // Wrapper for onAddSpan: convert segment-relative offsets to document offsets in segment view
+  const handleAddSpan = useCallback((span: NerSpan) => {
+    if (selectedSegment && selectedSegmentId) {
+      // Convert segment-relative offsets back to document offsets
+      const documentSpan = {
+        ...span,
+        start: span.start + selectedSegment.start,
+        end: span.end + selectedSegment.start,
+      };
+      onAddSpan?.(documentSpan);
+    } else {
+      onAddSpan?.(span);
+    }
+  }, [onAddSpan, selectedSegment, selectedSegmentId]);
+
+  // Wrapper for onDeleteSpan: convert segment-relative offsets to document offsets in segment view
+  const handleDeleteSpan = useCallback((span: NerSpan) => {
+    if (selectedSegment && selectedSegmentId) {
+      // Convert segment-relative offsets back to document offsets
+      const documentSpan = {
+        ...span,
+        start: span.start + selectedSegment.start,
+        end: span.end + selectedSegment.start,
+      };
+      onDeleteSpan?.(documentSpan);
+    } else {
+      onDeleteSpan?.(span);
+    }
+  }, [onDeleteSpan, selectedSegment, selectedSegmentId]);
 
   // Container ref used to calculate bubble positions
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -213,7 +284,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     pointToGlobal,
     getSpans: () => localSpans,
     setSpans: setLocalSpans,
-    onAdjusted: onSpansAdjusted,
+    onAdjusted: handleSpansAdjusted,
     getSegments: segments.length > 0 ? () => localSegments : undefined,
     setSegments: segments.length > 0 ? setLocalSegments : undefined,
     onSegmentsAdjusted: segments.length > 0 ? (next: typeof segments) => {
@@ -240,7 +311,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   } = useDeletionDialogs({
     editor,
     globalToPoint,
-    onDeleteSpan,
+    onDeleteSpan: handleDeleteSpan,
     setLocalSpans,
     closeAllUI,
   });
@@ -249,8 +320,8 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     if (!spanBox) return;
     const span = spanBox.span;
   
-    // 1) call external delete if provided
-    onDeleteSpan?.(span);
+    // 1) call external delete if provided (uses handleDeleteSpan which converts offsets)
+    handleDeleteSpan(span);
   
     // 2) update local spans
     setLocalSpans(prev =>
@@ -261,7 +332,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     setSpanBox(null);
     setSpanMenuAnchor(null);
     setActiveSpan(null);
-  }, [spanBox, onDeleteSpan]);
+  }, [spanBox, handleDeleteSpan]);
   /**
    * ============================================================================
    * DECORATIONS: Apply visual styling to annotated spans and segments
@@ -280,6 +351,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     highlightedCategories,
     segments: localSegments,
     activeSegmentId,
+    selectedSegmentId,
   });
 
   /**
@@ -306,8 +378,8 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     activeSegmentId,
     localSpans,
     setLocalSpans,
-    onAddSpan,
-    onDeleteSpan,
+    onAddSpan: handleAddSpan,
+    onDeleteSpan: handleDeleteSpan,
     closeAllUI,
   });
 
