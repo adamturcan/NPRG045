@@ -7,6 +7,7 @@ import type { NoticeOptions } from "../../types/Notice";
 import { presentError } from "../../application/errors/errorPresenter";
 import { useErrorLogger } from "./useErrorLogger";
 import { getApiService } from "../../infrastructure/providers/apiProvider";
+import { getSegmentText } from "../../types/Segment";
 
 /**
  * Options for useTranslationManager hook
@@ -34,6 +35,10 @@ interface TranslationManagerOptions {
   setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
   /** Callback to show notifications */
   onNotice: (msg: string, options?: NoticeOptions) => void;
+  /** View mode: "document" or "segments" */
+  viewMode?: "document" | "segments";
+  /** Currently selected segment ID (for segment view) */
+  selectedSegmentId?: string | null;
 }
 
 /**
@@ -67,6 +72,8 @@ export function useTranslationManager(options: TranslationManagerOptions) {
     setEditorInstanceKey,
     setWorkspaces,
     onNotice,
+    viewMode = "document",
+    selectedSegmentId = null,
   } = options;
 
   /**
@@ -112,13 +119,25 @@ export function useTranslationManager(options: TranslationManagerOptions) {
 
   /**
    * Get list of existing translation languages for this workspace
-   * Deduplicated to handle any existing duplicates in workspace data
+   * In segment view, only show languages that have translations for the current segment
+   * In document view, show all translation languages
    */
   const translationLanguages = useMemo(() => {
-    const languages = (workspace?.translations || []).map((t) => t.language);
-    // Remove duplicates while preserving order
-    return Array.from(new Set(languages));
-  }, [workspace?.translations]); // Only depend on translations array, not entire workspace object
+    if (viewMode === "segments" && selectedSegmentId) {
+      // In segment view: only show languages that have translations for this segment
+      const segment = workspace?.segments?.find(s => s.id === selectedSegmentId);
+      if (segment?.translations) {
+        return Object.keys(segment.translations);
+      }
+      // If no segment translations exist, only show "original"
+      return [];
+    } else {
+      // In document view: show all translation languages
+      const languages = (workspace?.translations || []).map((t) => t.language);
+      // Remove duplicates while preserving order
+      return Array.from(new Set(languages));
+    }
+  }, [workspace?.translations, workspace?.segments, viewMode, selectedSegmentId]);
 
   /**
    * Fetch supported languages on mount
@@ -193,6 +212,7 @@ export function useTranslationManager(options: TranslationManagerOptions) {
   /**
    * Handle switching between tabs
    * Save current content AND NER spans before switching
+   * In segment view, save to segment.translations; in document view, save to workspace.translations
    */
   const handleTabSwitch = useCallback(
     (tabId: string) => {
@@ -220,36 +240,65 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         return prev.map((w) => {
           if (w.id !== currentWorkspaceId) return w;
 
-          if (activeTab === "original") {
-            // Save original text and spans
-            updatedWorkspace = { 
-              ...w, 
-              text: currentText, 
-              userSpans: currentUserSpans,
-              apiSpans: currentApiSpans,
-              deletedApiKeys: Array.from(currentDeletedApiKeys),
-              updatedAt: Date.now() 
-            };
-            return updatedWorkspace;
+          if (viewMode === "segments" && selectedSegmentId) {
+            // Segment view: save to segment.translations
+            if (activeTab === "original") {
+              // Save original segment text (not spans, as spans are document-level)
+              // Note: segment text is synced via handleTextChange in WorkspaceContainer
+              updatedWorkspace = { ...w, updatedAt: Date.now() };
+              return updatedWorkspace;
+            } else {
+              // Save translation text to segment.translations[languageCode]
+              updatedWorkspace = {
+                ...w,
+                segments: (w.segments || []).map((seg) =>
+                  seg.id === selectedSegmentId
+                    ? {
+                        ...seg,
+                        translations: {
+                          ...(seg.translations || {}),
+                          [activeTab]: currentText,
+                        },
+                      }
+                    : seg
+                ),
+                updatedAt: Date.now(),
+              };
+              return updatedWorkspace;
+            }
           } else {
-            // Save translation text and spans
-            updatedWorkspace = {
-              ...w,
-              translations: (w.translations || []).map((t) =>
-                t.language === activeTab
-                  ? { 
-                      ...t, 
-                      text: currentText, 
-                      userSpans: currentUserSpans,
-                      apiSpans: currentApiSpans,
-                      deletedApiKeys: Array.from(currentDeletedApiKeys),
-                      updatedAt: Date.now() 
-                    }
-                  : t
-              ),
-              updatedAt: Date.now(),
-            };
-            return updatedWorkspace;
+            // Document view: save to workspace.translations (existing logic)
+            if (activeTab === "original") {
+              // Save original text and spans
+              updatedWorkspace = { 
+                ...w, 
+                text: currentText, 
+                userSpans: currentUserSpans,
+                apiSpans: currentApiSpans,
+                deletedApiKeys: Array.from(currentDeletedApiKeys),
+                updatedAt: Date.now() 
+              };
+              return updatedWorkspace;
+            } else {
+              // Save translation text and spans
+              updatedWorkspace = {
+                ...w,
+                translations: (w.translations || []).map((t) =>
+                  t.language === activeTab
+                    ? { 
+                        ...t, 
+                        text: currentText, 
+                        userSpans: currentUserSpans,
+                        apiSpans: currentApiSpans,
+                        deletedApiKeys: Array.from(currentDeletedApiKeys),
+                        updatedAt: Date.now() 
+                      }
+                    : t
+                ),
+                updatedAt: Date.now(),
+              };
+              return updatedWorkspace;
+            }
           }
         });
       });
@@ -264,17 +313,35 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       // Note: Spans will be automatically loaded by useAnnotationManager hook when activeTab changes
       let newText = "";
 
-      if (tabId === "original") {
-        // Load original text from updated workspace
-        newText = updatedWorkspace?.text || currentWorkspace.text || "";
+      if (viewMode === "segments" && selectedSegmentId) {
+        // Segment view: load from segment.translations
+        if (tabId === "original") {
+          // Load original segment text
+          const segment = updatedWorkspace?.segments?.find(s => s.id === selectedSegmentId) ||
+                         currentWorkspace.segments?.find(s => s.id === selectedSegmentId);
+          if (segment) {
+            // Get full document text to derive segment text
+            const fullDocText = currentWorkspace.text || "";
+            newText = segment.text ?? getSegmentText(segment, fullDocText);
+          }
+        } else {
+          // Load translation from segment.translations[languageCode]
+          const segment = updatedWorkspace?.segments?.find(s => s.id === selectedSegmentId) ||
+                         currentWorkspace.segments?.find(s => s.id === selectedSegmentId);
+          newText = segment?.translations?.[tabId] || "";
+        }
       } else {
-        // Load translation text from updated workspace
-        const translation = updatedWorkspace?.translations?.find(
-          (t) => t.language === tabId
-        ) || currentWorkspace.translations?.find(
-          (t) => t.language === tabId
-        );
-        newText = translation?.text || "";
+        // Document view: load from workspace.translations (existing logic)
+        if (tabId === "original") {
+          newText = updatedWorkspace?.text || currentWorkspace.text || "";
+        } else {
+          const translation = updatedWorkspace?.translations?.find(
+            (t) => t.language === tabId
+          ) || currentWorkspace.translations?.find(
+            (t) => t.language === tabId
+          );
+          newText = translation?.text || "";
+        }
       }
       
       // Step 5: Update editor with new content
@@ -291,12 +358,15 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       setText,
       setEditorInstanceKey,
       setWorkspaces,
+      viewMode,
+      selectedSegmentId,
     ]
   );
 
   /**
    * Add a new translation language
-   * Creates translation via API and adds to workspace
+   * In segment view: translates only the selected segment and stores in segment.translations
+   * In document view: translates whole document and stores in workspace.translations
    */
   const handleAddTranslation = useCallback(
     async (targetLang: string) => {
@@ -308,23 +378,50 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         return;
       }
 
-      // Check if translation already exists for this language
-      const existingTranslation = workspace.translations?.find(
-        (t) => t.language === targetLang
-      );
-      if (existingTranslation) {
-        onNotice(`Translation to ${targetLang} already exists. Use update instead.`, {
-          tone: "warning",
-        });
-        return;
-      }
-
-      // Capture the current workspace ID and original text at this moment
-      // This prevents race conditions if user switches workspaces during translation
+      // Capture the current workspace ID at this moment
       const capturedWorkspaceId = workspaceId;
-      const originalText = workspace.text || "";
       
-      if (!originalText.trim()) {
+      // Determine text to translate based on view mode
+      let textToTranslate: string;
+      let isSegmentTranslation = false;
+      
+      if (viewMode === "segments" && selectedSegmentId) {
+        // Segment view: use only the selected segment's text
+        const segment = workspace.segments?.find(s => s.id === selectedSegmentId);
+        if (!segment) {
+          onNotice("No segment selected.", { tone: "warning" });
+          return;
+        }
+        
+        // Get segment text
+        const fullDocText = workspace.text || "";
+        textToTranslate = segment.text ?? getSegmentText(segment, fullDocText);
+        isSegmentTranslation = true;
+        
+        // Check if translation already exists for this segment
+        if (segment.translations?.[targetLang]) {
+          onNotice(`Translation to ${targetLang} already exists for this segment. Use update instead.`, {
+            tone: "warning",
+          });
+          return;
+        }
+      } else {
+        // Document view: use whole document text
+        textToTranslate = workspace.text || "";
+        
+        // Check if translation already exists for this language
+        const existingTranslation = workspace.translations?.find(
+          (t) => t.language === targetLang
+        );
+        if (existingTranslation) {
+          onNotice(`Translation to ${targetLang} already exists. Use update instead.`, {
+            tone: "warning",
+          });
+          return;
+        }
+      }
+      
+      if (!textToTranslate.trim()) {
         onNotice("Add some text before creating translation.", {
           tone: "warning",
         });
@@ -332,40 +429,63 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       }
 
       try {
-        // Import translation API lazily to keep bundle size low
         setIsUpdating(true);
         onNotice(`Translating to ${targetLang}...`, {
           tone: "info",
           persistent: true,
         });
 
-        // Call translation API with the captured original text
+        // Call translation API with the text to translate
         const result = await apiService.translate({
-          text: originalText,
+          text: textToTranslate,
           targetLang: targetLang as LanguageCode,
         });
 
-        // Create new translation object (persist auto-detected source if provided)
-        const newTranslation = {
-          language: targetLang,
-          text: result.translatedText,
-          sourceLang: result.sourceLang ?? "auto",
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        if (isSegmentTranslation) {
+          // Segment view: store in segment.translations[languageCode]
+          setWorkspaces((prev) =>
+            prev.map((w) =>
+              w.id === capturedWorkspaceId
+                ? {
+                    ...w,
+                    segments: (w.segments || []).map((seg) =>
+                      seg.id === selectedSegmentId
+                        ? {
+                            ...seg,
+                            translations: {
+                              ...(seg.translations || {}),
+                              [targetLang]: result.translatedText,
+                            },
+                          }
+                        : seg
+                    ),
+                    updatedAt: Date.now(),
+                  }
+                : w
+            )
+          );
+        } else {
+          // Document view: store in workspace.translations
+          const newTranslation = {
+            language: targetLang,
+            text: result.translatedText,
+            sourceLang: result.sourceLang ?? "auto",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
 
-        // Add to workspace (use captured workspaceId)
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === capturedWorkspaceId
-              ? {
-                  ...w,
-                  translations: [...(w.translations || []), newTranslation],
-                  updatedAt: Date.now(),
-                }
-              : w
-          )
-        );
+          setWorkspaces((prev) =>
+            prev.map((w) =>
+              w.id === capturedWorkspaceId
+                ? {
+                    ...w,
+                    translations: [...(w.translations || []), newTranslation],
+                    updatedAt: Date.now(),
+                  }
+                : w
+            )
+          );
+        }
 
         // Only switch tabs and update editor if still on the same workspace
         if (workspaceId === capturedWorkspaceId) {
@@ -407,24 +527,46 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       onNotice,
       isUpdating,
       logError,
+      viewMode,
+      selectedSegmentId,
     ]
   );
 
   /**
    * Update a translation by re-translating from current original text
-   * Useful when original text has been edited
+   * In segment view: updates segment translation
+   * In document view: updates document translation
    */
   const handleUpdateTranslation = useCallback(
     async (targetLang: string) => {
       if (!workspaceId || !workspace) return;
 
       // Capture state at the moment user clicks update
-      // This prevents race conditions if user switches tabs during translation
       const capturedWorkspaceId = workspaceId;
       const capturedActiveTab = activeTab;
-      const originalText = workspace.text || "";
       
-      if (!originalText.trim()) {
+      // Determine text to translate based on view mode
+      let textToTranslate: string;
+      let isSegmentTranslation = false;
+      
+      if (viewMode === "segments" && selectedSegmentId) {
+        // Segment view: use only the selected segment's original text
+        const segment = workspace.segments?.find(s => s.id === selectedSegmentId);
+        if (!segment) {
+          onNotice("No segment selected.", { tone: "warning" });
+          return;
+        }
+        
+        // Get segment's original text (from full document)
+        const fullDocText = workspace.text || "";
+        textToTranslate = segment.text ?? getSegmentText(segment, fullDocText);
+        isSegmentTranslation = true;
+      } else {
+        // Document view: use whole document text
+        textToTranslate = workspace.text || "";
+      }
+      
+      if (!textToTranslate.trim()) {
         onNotice("Add some text before updating translation.", {
           tone: "warning",
         });
@@ -434,44 +576,66 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       setIsUpdating(true);
 
       try {
-        // Import translation API lazily to keep bundle size low
         onNotice(`Updating ${targetLang} translation...`, {
           tone: "info",
           persistent: true,
         });
 
-        // Call translation API with the captured original text
+        // Call translation API with the text to translate
         const result = await apiService.translate({
-          text: originalText,
+          text: textToTranslate,
           targetLang: targetLang as LanguageCode,
         });
 
-        // Update existing translation in workspace
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === capturedWorkspaceId
-              ? {
-                  ...w,
-                  translations: (w.translations || []).map((t) =>
-                    t.language === targetLang
-                      ? {
-                          ...t,
-                          text: result.translatedText,
-                          sourceLang: result.sourceLang ?? t.sourceLang ?? "auto",
-                          updatedAt: Date.now(),
-                        }
-                      : t
-                  ),
-                  updatedAt: Date.now(),
-                }
-              : w
-          )
-        );
+        if (isSegmentTranslation) {
+          // Segment view: update segment.translations[languageCode]
+          setWorkspaces((prev) =>
+            prev.map((w) =>
+              w.id === capturedWorkspaceId
+                ? {
+                    ...w,
+                    segments: (w.segments || []).map((seg) =>
+                      seg.id === selectedSegmentId
+                        ? {
+                            ...seg,
+                            translations: {
+                              ...(seg.translations || {}),
+                              [targetLang]: result.translatedText,
+                            },
+                          }
+                        : seg
+                    ),
+                    updatedAt: Date.now(),
+                  }
+                : w
+            )
+          );
+        } else {
+          // Document view: update workspace.translations
+          setWorkspaces((prev) =>
+            prev.map((w) =>
+              w.id === capturedWorkspaceId
+                ? {
+                    ...w,
+                    translations: (w.translations || []).map((t) =>
+                      t.language === targetLang
+                        ? {
+                            ...t,
+                            text: result.translatedText,
+                            sourceLang: result.sourceLang ?? t.sourceLang ?? "auto",
+                            updatedAt: Date.now(),
+                          }
+                        : t
+                    ),
+                    updatedAt: Date.now(),
+                  }
+                : w
+            )
+          );
+        }
 
         // Only update editor if user is still on the same tab that triggered the update
         if (workspaceId === capturedWorkspaceId && capturedActiveTab === targetLang) {
-          // User is still on the same tab - update editor with new translation
-          // Don't call handleTabSwitch as it would save the old text first
           const translatedContent = result.translatedText || "";
           setText(translatedContent);
           // Force editor remount for clean state
@@ -493,26 +657,25 @@ export function useTranslationManager(options: TranslationManagerOptions) {
         setIsUpdating(false);
       }
     },
-    /* eslint-disable react-hooks/exhaustive-deps */
-    // workspace is intentionally excluded - we only depend on workspace?.id to avoid infinite loops
     [
       apiService,
       workspaceId,
-      workspace?.id, // Use ID only to avoid infinite loops
+      workspace?.id,
       activeTab,
       setWorkspaces,
       onNotice,
-      handleTabSwitch,
       logError,
       setText,
-      setEditorInstanceKey
+      setEditorInstanceKey,
+      viewMode,
+      selectedSegmentId,
     ]
-    /* eslint-enable react-hooks/exhaustive-deps */
   );
 
   /**
    * Delete a translation language
-   * If deleting the active tab, switch to "original" first
+   * In segment view: deletes translation from segment.translations
+   * In document view: deletes translation from workspace.translations
    */
   const handleDeleteTranslation = useCallback(
     (targetLang: string) => {
@@ -521,29 +684,80 @@ export function useTranslationManager(options: TranslationManagerOptions) {
       // If deleting the currently active tab, switch to original first
       if (activeTab === targetLang) {
         setActiveTab("original");
-        // Ensure text is always a string
-        setText(workspace.text || "");
+        
+        if (viewMode === "segments" && selectedSegmentId) {
+          // Load original segment text
+          const segment = workspace.segments?.find(s => s.id === selectedSegmentId);
+          if (segment) {
+            const fullDocText = workspace.text || "";
+            const segmentText = segment.text ?? getSegmentText(segment, fullDocText);
+            setText(segmentText);
+          } else {
+            setText("");
+          }
+        } else {
+          // Load original document text
+          setText(workspace.text || "");
+        }
+        
         setEditorInstanceKey(`${workspaceId}:original:${Date.now()}`);
       }
 
       // Remove translation from workspace
-      setWorkspaces((prev) =>
-        prev.map((w) =>
-          w.id === workspaceId
-            ? {
-                ...w,
-                translations: (w.translations || []).filter(
-                  (t) => t.language !== targetLang
-                ),
-                updatedAt: Date.now(),
-              }
-            : w
-        )
-      );
+      if (viewMode === "segments" && selectedSegmentId) {
+        // Segment view: remove from segment.translations
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === workspaceId
+              ? {
+                  ...w,
+                  segments: (w.segments || []).map((seg) =>
+                    seg.id === selectedSegmentId
+                      ? {
+                          ...seg,
+                          translations: Object.fromEntries(
+                            Object.entries(seg.translations || {}).filter(
+                              ([lang]) => lang !== targetLang
+                            )
+                          ),
+                        }
+                      : seg
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : w
+          )
+        );
+      } else {
+        // Document view: remove from workspace.translations
+        setWorkspaces((prev) =>
+          prev.map((w) =>
+            w.id === workspaceId
+              ? {
+                  ...w,
+                  translations: (w.translations || []).filter(
+                    (t) => t.language !== targetLang
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : w
+          )
+        );
+      }
 
       onNotice(`Translation "${targetLang}" deleted.`);
     },
-    [workspaceId, workspace, activeTab, setText, setEditorInstanceKey, setWorkspaces, onNotice]
+    [
+      workspaceId,
+      workspace,
+      activeTab,
+      setText,
+      setEditorInstanceKey,
+      setWorkspaces,
+      onNotice,
+      viewMode,
+      selectedSegmentId,
+    ]
   );
 
   /**

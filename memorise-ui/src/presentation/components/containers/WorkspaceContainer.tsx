@@ -87,6 +87,8 @@ const WorkspaceContainer: React.FC = () => {
   const [activeSegmentId, setActiveSegmentId] = useState<string | undefined>(undefined);
   const [translationViewMode, setTranslationViewMode] = useState<"document" | "segments">("document");
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  // Track if segment click handler is currently processing (to prevent effect from interfering)
+  const isSegmentClickProcessingRef = useRef<boolean>(false);
   
   // Notification handlers
   const showNotice = useCallback(
@@ -141,6 +143,8 @@ const WorkspaceContainer: React.FC = () => {
     setEditorInstanceKey,
     setWorkspaces,
     onNotice: showNotice,
+    viewMode: translationViewMode,
+    selectedSegmentId: selectedSegmentId,
   });
 
   // Annotations: NER spans (user-created + API-generated)
@@ -224,6 +228,49 @@ const WorkspaceContainer: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationViewMode, selectedSegmentId]);
+
+  // Reset to "original" tab when switching segments in segment view if current tab doesn't have translation
+  // Also load the segment text when switching (only if not already handled by handleSegmentClick)
+  useEffect(() => {
+    // Skip if segment click handler is currently processing
+    if (isSegmentClickProcessingRef.current) {
+      return;
+    }
+    
+    if (translationViewMode === "segments" && selectedSegmentId && currentWs) {
+      const segment = currentWs.segments?.find(s => s.id === selectedSegmentId);
+      if (segment) {
+        const currentTab = translations.activeTab;
+        let targetTab = currentTab;
+        
+        // Check if current tab has translation for this segment
+        if (currentTab !== "original") {
+          const hasTranslation = segment.translations?.[currentTab];
+          if (!hasTranslation) {
+            // Switch to original tab if current tab doesn't have translation for this segment
+            targetTab = "original";
+            translations.setActiveTab("original");
+          }
+        }
+        
+        // Load the appropriate text for the segment
+        const fullDocText = currentWs.text || "";
+        let segmentText: string;
+        if (targetTab === "original") {
+          segmentText = segment.text ?? getSegmentText(segment, fullDocText);
+        } else {
+          segmentText = segment.translations?.[targetTab] || "";
+        }
+        
+        // Only update if we have text to show
+        if (segmentText) {
+          setText(segmentText);
+          setEditorInstanceKey(`${currentId ?? "new"}:${targetTab}:${Date.now()}`);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSegmentId, translationViewMode, currentWs?.segments]);
 
   // Reset active segment when workspace changes
   useEffect(() => {
@@ -395,6 +442,18 @@ const WorkspaceContainer: React.FC = () => {
       }
       setSelectedSegmentId(null);
       
+      // Check if current tab exists in document translations, if not switch to "original"
+      const currentTab = translations.activeTab;
+      let targetTab = currentTab;
+      if (currentTab !== "original") {
+        const hasTranslation = currentWs?.translations?.some(t => t.language === currentTab);
+        if (!hasTranslation) {
+          // Switch to original tab if current tab doesn't exist in document translations
+          targetTab = "original";
+          translations.setActiveTab("original");
+        }
+      }
+      
       // Load text - prefer fullDocumentTextRef (has latest edits) over workspace (may be stale)
       // The fullDocumentTextRef is updated by handleTextChange when editing in segment view
       let textToLoad: string;
@@ -404,11 +463,11 @@ const WorkspaceContainer: React.FC = () => {
         textToLoad = fullDocumentTextRef.current;
       } else {
         // Fall back to workspace (for cases like page reload)
-        if (translations.activeTab === "original") {
+        if (targetTab === "original") {
           textToLoad = currentWs?.text || "";
         } else {
           const translation = currentWs?.translations?.find(
-            (t) => t.language === translations.activeTab
+            (t) => t.language === targetTab
           );
           textToLoad = translation?.text || "";
         }
@@ -418,7 +477,7 @@ const WorkspaceContainer: React.FC = () => {
       if (textToLoad) {
         setText(textToLoad);
         // Force editor remount to show restored content
-        setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+        setEditorInstanceKey(`${currentId ?? "new"}:${targetTab}:${Date.now()}`);
       }
       
       // Clear refs after restore
@@ -471,19 +530,39 @@ const WorkspaceContainer: React.FC = () => {
           // Load the segment text into editor immediately
           const segment = latestWs.segments?.find((s) => s.id === activeSegmentId);
           if (segment) {
+            // Check if current tab has a translation for this segment, if not switch to "original"
+            const currentTab = translations.activeTab;
+            let targetTab = currentTab;
+            if (currentTab !== "original") {
+              const hasTranslation = segment.translations?.[currentTab];
+              if (!hasTranslation) {
+                // Switch to original tab if current tab doesn't have translation for this segment
+                targetTab = "original";
+                translations.setActiveTab("original");
+              }
+            }
+            
             // Get full document text for deriving segment text
             // Prefer ref if available (has latest edits), otherwise use workspace
             let docText = fullDocumentTextRef.current;
             if (!docText) {
-              docText = translations.activeTab === "original"
+              docText = targetTab === "original"
                 ? latestWs?.text || ""
-                : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+                : latestWs?.translations?.find((t) => t.language === targetTab)?.text || "";
             }
             // Store the full document text for syncing edits back
             fullDocumentTextRef.current = docText;
-            const segmentText = segment.text ?? getSegmentText(segment, docText);
+            
+            // Load the appropriate text based on target tab
+            let segmentText: string;
+            if (targetTab === "original") {
+              segmentText = segment.text ?? getSegmentText(segment, docText);
+            } else {
+              segmentText = segment.translations?.[targetTab] || "";
+            }
+            
             setText(segmentText);
-            setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+            setEditorInstanceKey(`${currentId ?? "new"}:${targetTab}:${Date.now()}`);
           }
         }
       } else {
@@ -516,6 +595,9 @@ const WorkspaceContainer: React.FC = () => {
   const handleSegmentClick = useCallback((segment: Segment) => {
     // If in segment mode, load segment text into editor (no highlighting in editor)
     if (translationViewMode === "segments") {
+      // Mark that we're processing a segment click to prevent effect from interfering
+      isSegmentClickProcessingRef.current = true;
+      
       // Set selectedSegmentId for list highlighting
       setSelectedSegmentId(segment.id);
       // Don't set activeSegmentId in segment mode - we don't want editor highlighting
@@ -525,32 +607,60 @@ const WorkspaceContainer: React.FC = () => {
       const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
       
       if (!latestWs) {
+        isSegmentClickProcessingRef.current = false;
         return;
       }
       
       // Find the segment with the latest indices (in case it was updated by previous edits)
       const latestSegment = latestWs.segments?.find(s => s.id === segment.id);
       if (!latestSegment) {
+        isSegmentClickProcessingRef.current = false;
         return;
+      }
+      
+      // Determine which tab to use: keep current if it has translation, otherwise switch to "original"
+      const currentTab = translations.activeTab;
+      let targetTab = currentTab;
+      if (currentTab !== "original") {
+        const hasTranslation = latestSegment.translations?.[currentTab];
+        if (!hasTranslation) {
+          // Switch to original tab
+          targetTab = "original";
+          translations.setActiveTab("original");
+        }
       }
       
       // Get the full document text - prefer ref (has latest edits) over workspace (may be stale)
       let docText = fullDocumentTextRef.current;
       if (!docText) {
         // Fall back to workspace text if ref is empty
-        docText = translations.activeTab === "original"
+        docText = targetTab === "original"
           ? latestWs?.text || ""
-          : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+          : latestWs?.translations?.find((t) => t.language === targetTab)?.text || "";
       }
       
       // Store it in the ref for future edits
       fullDocumentTextRef.current = docText;
       
-      // Load the segment text into editor using the latest segment indices and text
-      const segmentText = latestSegment.text ?? getSegmentText(latestSegment, docText);
+      // Determine which text to load based on target tab (not activeTab, which might not have updated yet)
+      let segmentText: string;
+      if (targetTab === "original") {
+        // Load original segment text
+        segmentText = latestSegment.text ?? getSegmentText(latestSegment, docText);
+      } else {
+        // Load translation from segment.translations[languageCode]
+        segmentText = latestSegment.translations?.[targetTab] || "";
+      }
+      
       setText(segmentText);
       // Force editor remount to show new content
-      setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+      setEditorInstanceKey(`${currentId ?? "new"}:${targetTab}:${Date.now()}`);
+      
+      // Reset the flag after a short delay to allow state updates to complete
+      setTimeout(() => {
+        isSegmentClickProcessingRef.current = false;
+      }, 100);
+      
       return;
     }
     
