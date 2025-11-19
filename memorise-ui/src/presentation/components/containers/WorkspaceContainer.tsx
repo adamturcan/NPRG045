@@ -105,10 +105,18 @@ const WorkspaceContainer: React.FC = () => {
   // STEP 3: HOOKS FOR BUSINESS LOGIC
   // ============================================================================
   
+  // Determine current segment for tag scoping
+  // Only filter by segment in segment view mode, not in document view
+  // In document view, always show document-level tags regardless of highlighting
+  const currentSegmentId = translationViewMode === "segments" 
+    ? selectedSegmentId 
+    : undefined; // In document view, don't filter by segment
+
   // Tags: user-added + API-generated semantic tags
   const tags = useSemanticTags({
     initialTags: currentWs?.tags,
     hydrateKey: currentId,
+    segmentId: currentSegmentId ?? undefined,
   });
 
   // Thesaurus: 750k keyword lookup with Web Worker for performance
@@ -252,12 +260,30 @@ const WorkspaceContainer: React.FC = () => {
   }, [autosave, showNotice, currentId, text, annotations.userSpans, annotations.apiSpans]);
 
   const handleRunClassify = useCallback(async () => {
-    if (!text.trim()) {
+    // In segment view, use the segment text; in document view, use the full text
+    let textToClassify = text;
+    
+    if (translationViewMode === "segments" && selectedSegmentId && currentWs?.segments) {
+      const selectedSegment = currentWs.segments.find((s) => s.id === selectedSegmentId);
+      if (selectedSegment) {
+        // Get the full document text to derive segment text
+        const fullDocText = fullDocumentTextRef.current || 
+          (translations.activeTab === "original"
+            ? currentWs?.text || ""
+            : currentWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "");
+        // Use segment text, not the full document text
+        textToClassify = selectedSegment.text ?? getSegmentText(selectedSegment, fullDocText);
+      }
+    }
+    
+    if (!textToClassify.trim()) {
       showNotice("Paste some text before running classify.");
       return;
     }
+    
     try {
-      await tags.runClassify(text);
+      // Pass segment context when running classification
+      await tags.runClassify(textToClassify, currentSegmentId ?? undefined);
       showNotice("Classification completed.");
     } catch (error) {
       const appError = logError(error, {
@@ -269,7 +295,7 @@ const WorkspaceContainer: React.FC = () => {
         persistent: notice.persistent,
       });
     }
-  }, [logError, showNotice, tags, text]);
+  }, [logError, showNotice, tags, text, currentSegmentId, translationViewMode, selectedSegmentId, currentWs?.segments, currentWs?.text, currentWs?.translations, translations.activeTab]);
 
   const handleRunNer = useCallback(async () => {
     // In segment view, we need to adjust NER spans by segment offset
@@ -878,9 +904,10 @@ const WorkspaceContainer: React.FC = () => {
   // Tag actions: add, delete
   const addCustomTag = useCallback(
     (name: string, keywordId?: number, parentId?: number) => {
-      tags.addCustomTag(name, keywordId, parentId);
+      // Pass current segment context when adding tags
+      tags.addCustomTag(name, keywordId, parentId, currentSegmentId ?? undefined);
     },
-    [tags]
+    [tags, currentSegmentId]
   );
 
   const deleteTag = useCallback(

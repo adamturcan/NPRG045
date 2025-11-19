@@ -5,4 +5,5 @@ export interface TagItem {
   source: TagSource;
   label?: number;     // KeywordID from thesaurus (when from API classification)
   parentId?: number;  // ParentID to disambiguate entries with same KeywordID
+  segmentId?: string; // Optional segment ID - if undefined, tag applies to whole document
 }

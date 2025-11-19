@@ -195,12 +195,18 @@ const RightPanel: React.FC<Props> = ({
     shouldShowSegments && viewMode === "segments" ? "segments" : "tags"
   );
   
-  // Auto-switch to segments tab when view mode changes to segments
+  // Track previous view mode to only auto-switch on transition from document to segments
+  const prevViewModeRef = useRef<"document" | "segments">(viewMode);
+  
+  // Auto-switch to segments tab only when view mode changes from "document" to "segments"
+  // This allows users to manually switch back to tags view even when in segment view mode
   useEffect(() => {
-    if (viewMode === "segments" && shouldShowSegments && activeTab !== "segments") {
+    const prevViewMode = prevViewModeRef.current;
+    if (prevViewMode === "document" && viewMode === "segments" && shouldShowSegments) {
       setActiveTab("segments");
     }
-  }, [viewMode, shouldShowSegments, activeTab]);
+    prevViewModeRef.current = viewMode;
+  }, [viewMode, shouldShowSegments]);
   const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number; top: number; height: number }>({
     left: 0,
     width: 0,
@@ -408,6 +414,42 @@ const RightPanel: React.FC<Props> = ({
                     height: "100%",
                   }}
                 >
+                  {/* Segment context indicator - show when viewing segment-specific tags in segment view */}
+                  {viewMode === "segments" && selectedSegmentId && (
+                    <Box
+                      sx={{
+                        px: 2,
+                        pt: 1.5,
+                        pb: 1,
+                        borderBottom: `1px solid ${COLORS.border}`,
+                        backgroundColor: "rgba(59, 130, 246, 0.05)",
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          fontWeight: 600,
+                          color: "text.secondary",
+                          fontSize: "0.75rem",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Segment Tags
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: "0.8125rem",
+                          color: "text.primary",
+                          mt: 0.25,
+                        }}
+                      >
+                        {selectedSegmentId}
+                      </Typography>
+                    </Box>
+                  )}
                   {/* 
                     TagTable renders:
                     - Tag input field (legacy or thesaurus-based)

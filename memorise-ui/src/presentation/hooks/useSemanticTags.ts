@@ -27,6 +27,8 @@ type Options = {
   initialTags?: TagItem[];
   /** Changes when a different workspace is selected; triggers hydration */
   hydrateKey?: string | null;
+  /** Optional segment ID - when provided, tags are filtered/scoped to this segment */
+  segmentId?: string | null;
 };
 
 export function useSemanticTags(opts?: Options) {
@@ -108,14 +110,31 @@ export function useSemanticTags(opts?: Options) {
    * Combines user tags and API tags into a single array, removing duplicates.
    * A tag is considered duplicate if it has the same name (case-insensitive)
    * from the same source.
+   * 
+   * Filters tags by segmentId when segmentId is provided:
+   * - If segmentId is provided, shows only tags for that segment (or tags without segmentId)
+   * - If segmentId is null/undefined, shows only document-level tags (no segmentId)
    */
   const combinedTags: TagItem[] = useMemo(() => {
     const key = (t: TagItem) => `${t.source}:${t.name.toLowerCase()}:${t.label || ''}:${t.parentId || ''}`;
     const map = new Map<string, TagItem>();
+    
+    // Filter tags based on segmentId context
+    let tagsToProcess: TagItem[] = [];
+    if (opts?.segmentId) {
+      // Segment view: show ONLY tags for this specific segment
+      tagsToProcess = [...userTags, ...apiTags].filter(t => 
+        t.segmentId === opts.segmentId
+      );
+    } else {
+      // Document view: show only document-level tags (no segmentId)
+      tagsToProcess = [...userTags, ...apiTags].filter(t => !t.segmentId);
+    }
+    
     // User tags appear first in the array
-    [...userTags, ...apiTags].forEach((t) => map.set(key(t), t));
+    tagsToProcess.forEach((t) => map.set(key(t), t));
     return Array.from(map.values());
-  }, [userTags, apiTags]);
+  }, [userTags, apiTags, opts?.segmentId]);
 
   /**
    * ============================================================================
@@ -128,9 +147,10 @@ export function useSemanticTags(opts?: Options) {
    * Prevents duplicates (case-insensitive) and empty tags
    * Also looks up KeywordID and ParentID from thesaurus if available
    * Automatically restructures tags to create hierarchical relationships
+   * Associates tag with current segment if segmentId is provided
    */
   const addCustomTag = useCallback(
-    async (name: string, keywordId?: number, parentId?: number) => {
+    async (name: string, keywordId?: number, parentId?: number, segmentId?: string | null) => {
       const tag = name.trim();
       if (!tag) return;
       
@@ -188,6 +208,7 @@ export function useSemanticTags(opts?: Options) {
         source: "user" as const,
         label: finalKeywordId,    // Include KeywordID if found
         parentId: finalParentId,  // Include ParentID if found (disambiguates duplicates)
+        segmentId: segmentId ?? undefined, // Associate with segment if provided
       };
       
       // Simply add the new tag - let the TagTable handle hierarchy building
@@ -247,8 +268,9 @@ export function useSemanticTags(opts?: Options) {
    * Replaces all API tags with new results (preserves user tags)
    * For duplicate KeywordIDs, adds ALL instances from thesaurus
    * Scrolls the tag panel to top after completion
+   * Associates tags with segment if segmentId is provided
    */
-  const runClassify = useCallback(async (text: string) => {
+  const runClassify = useCallback(async (text: string, segmentId?: string | null) => {
     if (!text.trim()) return;
 
     let data: { results?: unknown };
@@ -306,6 +328,7 @@ export function useSemanticTags(opts?: Options) {
                   source: "api" as const,
                   label: match.id,
                   parentId: match.parentId,
+                  segmentId: segmentId ?? undefined, // Associate with segment if provided
                 });
               }
             }
@@ -324,6 +347,7 @@ export function useSemanticTags(opts?: Options) {
                 source: "api" as const,
                 label: match.id,
                 parentId: match.parentId,
+                segmentId: segmentId ?? undefined, // Associate with segment if provided
               });
             }
           } else {
@@ -332,6 +356,7 @@ export function useSemanticTags(opts?: Options) {
               name: name,
               source: "api" as const,
               label: keywordId,
+              segmentId: segmentId ?? undefined, // Associate with segment if provided
             });
           }
         } catch {
@@ -340,6 +365,7 @@ export function useSemanticTags(opts?: Options) {
             name: name,
             source: "api" as const,
             label: keywordId,
+            segmentId: segmentId ?? undefined, // Associate with segment if provided
           });
         }
       } else {
@@ -347,12 +373,26 @@ export function useSemanticTags(opts?: Options) {
         newTags.push({
           name: name,
           source: "api" as const,
+          segmentId: segmentId ?? undefined, // Associate with segment if provided
         });
       }
     }
     
     // Replace API tags (user tags remain unchanged)
-    setApiTags(newTags);
+    // If segmentId is provided, only replace tags for that segment
+    // Otherwise, replace all API tags (document-level classification)
+    if (segmentId) {
+      // Segment-specific: remove old tags for this segment, add new ones
+      setApiTags((prev) => {
+        // Keep tags from other segments and document-level tags
+        const otherTags = prev.filter(t => !t.segmentId || t.segmentId !== segmentId);
+        // Add new tags for this segment
+        return [...otherTags, ...newTags];
+      });
+    } else {
+      // Document-level: replace all API tags (preserve user tags)
+      setApiTags(newTags);
+    }
     
     // Scroll tag panel to top to show new results
     setTimeout(
