@@ -258,28 +258,55 @@ export function useAnnotationManager(options: AnnotationManagerOptions = {}) {
    * 
    * Flow:
    * 1. Call NER API with current text (from active tab)
-   * 2. Update apiSpans state
-   * 3. Clear deletedApiKeys (show all new results)
-   * 4. Save to workspace (if workspaceId and setWorkspaces provided)
+   * 2. If in segment view (segmentOffset provided), adjust spans to document coordinates
+   * 3. Update apiSpans state
+   * 4. Clear deletedApiKeys (show all new results)
+   * 5. Save to workspace (if workspaceId and setWorkspaces provided)
    *    - If original tab: save to workspace root
    *    - If translation tab: save to that translation's data
-   * 5. Show success notification
+   * 6. Show success notification
    * 
    * Replaces API spans but preserves user spans.
    * Each translation has its own separate NER spans.
+   * 
+   * @param text - Text to run NER on (segment text in segment view, full text in document view)
+   * @param workspaceId - Workspace ID for saving results
+   * @param segmentOffset - Optional segment start offset (for segment view). If provided, incoming spans will be adjusted by this offset.
+   * @param fullDocumentText - Optional full document text (for segment view). If provided, used for conflict resolution instead of segment text.
    */
   const runNer = useCallback(
-    async (text: string, workspaceId?: string | null) => {
+    async (
+      text: string,
+      workspaceId?: string | null,
+      segmentOffset?: number,
+      fullDocumentText?: string
+    ) => {
       if (!text.trim()) {
         onNotice?.("Paste some text before running NER.");
         return;
       }
 
       try {
+        // Get spans from NER API (offsets are relative to the text parameter)
+        let incomingSpans = await apiService.ner(text);
+
+        // If in segment view, adjust spans to document coordinates
+        if (segmentOffset !== undefined) {
+          incomingSpans = incomingSpans.map((span) => ({
+            ...span,
+            start: span.start + segmentOffset,
+            end: span.end + segmentOffset,
+          }));
+        }
+
+        // Use fullDocumentText for conflict resolution if provided (segment view),
+        // otherwise use the text parameter (document view)
+        const conflictResolutionText = fullDocumentText ?? text;
+
         const { nextUserSpans, nextApiSpans, conflictsHandled } =
           await resolveApiSpanConflicts({
-            text,
-            incomingSpans: await apiService.ner(text),
+            text: conflictResolutionText,
+            incomingSpans,
             userSpans,
             existingApiSpans: filteredApiSpans,
             onConflict: requestConflictResolution,

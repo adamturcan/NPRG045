@@ -272,8 +272,27 @@ const WorkspaceContainer: React.FC = () => {
   }, [logError, showNotice, tags, text]);
 
   const handleRunNer = useCallback(async () => {
-    await annotations.runNer(text, currentId ?? null);
-  }, [text, currentId, annotations]);
+    // In segment view, we need to adjust NER spans by segment offset
+    // and use full document text for conflict resolution
+    let segmentOffset: number | undefined = undefined;
+    let fullDocumentTextForNer: string | undefined = undefined;
+
+    if (translationViewMode === "segments" && selectedSegmentId && currentWs?.segments) {
+      const selectedSegment = currentWs.segments.find((s) => s.id === selectedSegmentId);
+      if (selectedSegment) {
+        segmentOffset = selectedSegment.start;
+        // Use fullDocumentText for conflict resolution (prefer ref if available for latest edits)
+        // Compute full document text inline to avoid dependency on variable defined later
+        const fullDocText = fullDocumentTextRef.current || 
+          (translations.activeTab === "original"
+            ? currentWs?.text || ""
+            : currentWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "");
+        fullDocumentTextForNer = fullDocText;
+      }
+    }
+
+    await annotations.runNer(text, currentId ?? null, segmentOffset, fullDocumentTextForNer);
+  }, [text, currentId, annotations, translationViewMode, selectedSegmentId, currentWs?.segments, currentWs?.text, currentWs?.translations, translations.activeTab]);
 
   const handleRunSegment = useCallback(async () => {
     if (!text.trim()) {
