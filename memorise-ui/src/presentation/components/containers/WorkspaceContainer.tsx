@@ -89,6 +89,8 @@ const WorkspaceContainer: React.FC = () => {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   // Track if segment click handler is currently processing (to prevent effect from interfering)
   const isSegmentClickProcessingRef = useRef<boolean>(false);
+  // Track the last selected segment ID to avoid unnecessary updates
+  const lastSelectedSegmentIdRef = useRef<string | null>(null);
   
   // Notification handlers
   const showNotice = useCallback(
@@ -237,9 +239,17 @@ const WorkspaceContainer: React.FC = () => {
       return;
     }
     
+    // Only run if the selected segment actually changed (not just workspace update)
+    if (selectedSegmentId === lastSelectedSegmentIdRef.current) {
+      return;
+    }
+    
     if (translationViewMode === "segments" && selectedSegmentId && currentWs) {
       const segment = currentWs.segments?.find(s => s.id === selectedSegmentId);
       if (segment) {
+        // Update the ref to track this segment
+        lastSelectedSegmentIdRef.current = selectedSegmentId;
+        
         const currentTab = translations.activeTab;
         let targetTab = currentTab;
         
@@ -268,9 +278,12 @@ const WorkspaceContainer: React.FC = () => {
           setEditorInstanceKey(`${currentId ?? "new"}:${targetTab}:${Date.now()}`);
         }
       }
+    } else if (!selectedSegmentId) {
+      // Clear the ref when no segment is selected
+      lastSelectedSegmentIdRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSegmentId, translationViewMode, currentWs?.segments]);
+  }, [selectedSegmentId, translationViewMode]);
 
   // Reset active segment when workspace changes
   useEffect(() => {
@@ -714,9 +727,9 @@ const WorkspaceContainer: React.FC = () => {
     }
   }, [translationViewMode, currentId, translations.activeTab]);
 
-  // Wrapper for setText that handles segment view mode - syncs edits back to full document
+  // Wrapper for setText that handles segment view mode - syncs edits back to full document or segment translations
   const handleTextChange = useCallback((newText: string) => {
-    // If we're in segment view and have a selected segment, sync the edit back to the full document
+    // If we're in segment view and have a selected segment, handle the edit appropriately
     if (translationViewMode === "segments" && selectedSegmentId && currentId) {
       // Get the latest workspace state to ensure we have the most recent segments
       // This is important because currentWs might be stale if there were rapid edits
@@ -740,7 +753,37 @@ const WorkspaceContainer: React.FC = () => {
         return;
       }
       
-      // Process the segment update
+      // If we're on a translation tab (not "original"), save to segment.translations[languageCode]
+      if (translations.activeTab !== "original") {
+        // Save translation text to segment.translations[languageCode]
+        setWorkspaces((prev) =>
+          prev.map((ws) =>
+            ws.id === currentId
+              ? {
+                  ...ws,
+                  segments: (ws.segments || []).map((seg) =>
+                    seg.id === selectedSegmentId
+                      ? {
+                          ...seg,
+                          translations: {
+                            ...(seg.translations || {}),
+                            [translations.activeTab]: newText,
+                          },
+                        }
+                      : seg
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : ws
+          )
+        );
+        // Don't sync back to full document - translations are stored separately
+        // But we still need to update the editor with the new text
+        setText(newText);
+        return;
+      }
+      
+      // Process the segment update for original text (sync back to full document)
       {
         // Get the current full document text (from ref or workspace)
         // Prefer ref as it has the most recent edits from previous keystrokes
