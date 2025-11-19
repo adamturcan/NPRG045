@@ -539,9 +539,9 @@ const WorkspaceContainer: React.FC = () => {
         const latestWorkspaces = useWorkspaceStore.getState().workspaces;
         const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
         
-        if (latestWs) {
+        if (latestWs && latestWs.segments) {
           // Load the segment text into editor immediately
-          const segment = latestWs.segments?.find((s) => s.id === activeSegmentId);
+          const segment = latestWs.segments.find((s) => s.id === activeSegmentId);
           if (segment) {
             // Check if current tab has a translation for this segment, if not switch to "original"
             const currentTab = translations.activeTab;
@@ -560,8 +560,8 @@ const WorkspaceContainer: React.FC = () => {
             let docText = fullDocumentTextRef.current;
             if (!docText) {
               docText = targetTab === "original"
-                ? latestWs?.text || ""
-                : latestWs?.translations?.find((t) => t.language === targetTab)?.text || "";
+                ? latestWs.text || ""
+                : latestWs.translations?.find((t) => t.language === targetTab)?.text || "";
             }
             // Store the full document text for syncing edits back
             fullDocumentTextRef.current = docText;
@@ -1028,16 +1028,19 @@ const WorkspaceContainer: React.FC = () => {
           // Verify the update
           const updatedWs = updated.find(ws => ws.id === currentId);
           if (updatedWs) {
+            const textForTab = translations.activeTab === "original" 
+              ? updatedWs.text 
+              : updatedWs.translations?.find(t => t.language === translations.activeTab)?.text;
             console.debug("[WorkspaceContainer] workspace updated", {
               workspaceId: currentId,
-              textLength: translations.activeTab === "original" ? updatedWs.text.length : updatedWs.translations?.find(t => t.language === translations.activeTab)?.text.length,
-              segmentsCount: updatedWs.segments.length,
-              segmentsPreview: updatedWs.segments.slice(0, 5).map(s => ({
+              textLength: textForTab?.length ?? 0,
+              segmentsCount: updatedWs.segments?.length ?? 0,
+              segmentsPreview: updatedWs.segments?.slice(0, 5).map(s => ({
                 id: s.id,
                 order: s.order,
                 start: s.start,
                 end: s.end,
-              })),
+              })) ?? [],
             });
           }
           

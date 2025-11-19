@@ -26,7 +26,8 @@ const EntityLeaf: React.FC<EntityLeafProps> = ({
   // Check if this leaf is part of a segment
   const isSegment = leaf.segment === true;
   const isActiveSegment = leaf.segmentActive === true;
-  const isSegmentBorder = leaf.segmentBorder === true;
+  // Check if this is a border space (segmentStart or segmentEnd)
+  const isSegmentBorder = leaf.segmentStart === true || leaf.segmentEnd === true;
   
   // Check if this leaf is part of an annotated entity span
   if (leaf.underline) {
@@ -47,9 +48,9 @@ const EntityLeaf: React.FC<EntityLeafProps> = ({
 
       // Construct the clicked span object
       const clicked: NerSpan = {
-        start: leaf.spanStart,
-        end: leaf.spanEnd,
-        entity: leaf.entity,
+        start: leaf.spanStart ?? 0,
+        end: leaf.spanEnd ?? 0,
+        entity: leaf.entity ?? "",
       };
 
       // Check if user clicked the currently active span

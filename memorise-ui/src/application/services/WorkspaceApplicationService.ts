@@ -4,6 +4,7 @@ import type { Workspace as WorkspaceDTO } from '../../types/Workspace';
 import type { TagItem } from '../../types/Tag';
 import type { Translation } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
+import type { Segment } from '../../types/Segment';
 import { CreateWorkspaceUseCase } from '../../core/usecases/workspace/CreateWorkspaceUseCase';
 import { DeleteWorkspaceUseCase } from '../../core/usecases/workspace/DeleteWorkspaceUseCase';
 import {
@@ -59,7 +60,7 @@ export class WorkspaceApplicationService {
    * Helper method to get raw persistence data for an owner
    * This is needed to preserve metadata (like segments) that's not in the domain entity
    */
-  private async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>> {
+  private async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: Segment[] }>> {
     if (this.deps.workspaceRepository.getRawPersistenceForOwner) {
       return await this.deps.workspaceRepository.getRawPersistenceForOwner(ownerId);
     }
@@ -71,7 +72,7 @@ export class WorkspaceApplicationService {
    * Helper method to get raw persistence data for a specific workspace
    * This is needed to preserve metadata (like segments) that's not in the domain entity
    */
-  private async getRawPersistenceForWorkspace(workspaceId: string): Promise<{ segments?: unknown } | null> {
+  private async getRawPersistenceForWorkspace(workspaceId: string): Promise<{ segments?: Segment[] } | null> {
     // Get the workspace entity to find its owner
     const workspace = await this.deps.workspaceRepository.findById(workspaceId);
     if (!workspace) return null;
@@ -167,13 +168,10 @@ export class WorkspaceApplicationService {
     
     // Update segments in persistence for workspaces that have them
     // This is needed because segments are metadata not in the domain entity
-    if (workspacesWithSegments.size > 0) {
-      // Use the repository's updateSegments method if available, otherwise update directly
+    if (workspacesWithSegments.size > 0 && this.deps.workspaceRepository.updateSegments) {
+      // Use the repository's updateSegments method if available
       for (const [workspaceId, segments] of workspacesWithSegments) {
-        if ('updateSegments' in this.deps.workspaceRepository && 
-            typeof (this.deps.workspaceRepository as any).updateSegments === 'function') {
-          await (this.deps.workspaceRepository as any).updateSegments(workspaceId, segments);
-        }
+        await this.deps.workspaceRepository.updateSegments(workspaceId, segments);
       }
     }
   }

@@ -1,4 +1,5 @@
 import { Workspace } from '../../entities/Workspace';
+import type { Segment } from '../../../types/Segment';
 
 /**
  * Repository interface for Workspace persistence
@@ -39,6 +40,12 @@ export interface WorkspaceRepository {
    * Get raw persistence data for an owner (includes metadata like segments)
    * This is needed to preserve metadata that's not part of the domain entity
    */
-  getRawPersistenceForOwner?(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>>;
+  getRawPersistenceForOwner?(ownerId: string): Promise<Array<{ id: string; segments?: Segment[] }>>;
+
+  /**
+   * Update segments for a workspace directly in persistence
+   * This is needed because segments are metadata not in the domain entity
+   */
+  updateSegments?(workspaceId: string, segments: Segment[] | undefined): Promise<void>;
 }
 

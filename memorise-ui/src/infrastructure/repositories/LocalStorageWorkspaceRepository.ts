@@ -7,6 +7,7 @@ import {
   type WorkspacePersistence,
 } from "../../core/entities/mappers";
 import type { Workspace as WorkspaceDTO, Translation } from "../../types/Workspace";
+import type { Segment } from "../../types/Segment";
 import { errorHandlingService } from "../services/ErrorHandlingService";
 
 const STORAGE_KEY = "memorise.workspaces";
@@ -222,7 +223,7 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
     return workspaceFromDto(workspace);
   }
 
-  async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: unknown }>> {
+  async getRawPersistenceForOwner(ownerId: string): Promise<Array<{ id: string; segments?: Segment[] }>> {
     return errorHandlingService.withRepositoryError(
       {
         operation: "get raw persistence",
@@ -251,7 +252,7 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
    * Update segments for a workspace directly in persistence
    * This is needed because segments are metadata not in the domain entity
    */
-  async updateSegments(workspaceId: string, segments: unknown): Promise<void> {
+  async updateSegments(workspaceId: string, segments: Segment[] | undefined): Promise<void> {
     return errorHandlingService.withRepositoryError(
       {
         operation: "update segments",
@@ -265,7 +266,7 @@ export class LocalStorageWorkspaceRepository implements WorkspaceRepository {
         if (index >= 0) {
           workspaces[index] = {
             ...workspaces[index],
-            segments,
+            segments: segments !== undefined ? segments : undefined,
           };
           this.writeAll(workspaces);
         }

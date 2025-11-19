@@ -60,7 +60,6 @@ const EditorArea: React.FC<Props> = ({
   placeholder,
   onSpansAdjusted,
   onSegmentsAdjusted,
-  onSave,
 }) => {
   return (
     <Box
@@ -81,7 +80,7 @@ const EditorArea: React.FC<Props> = ({
         segments={segments}
         activeSegmentId={viewMode === "document" ? activeSegmentId : undefined}
         selectedSegmentId={viewMode === "segments" ? selectedSegmentId : undefined}
-        activeTab={activeTab}
+        activeTab={activeTab ?? undefined}
         highlightedCategories={highlightedCategories}
         onSelectionChange={onSelectionChange}
         deletableKeys={deletableKeys}

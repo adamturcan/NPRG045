@@ -61,20 +61,6 @@ const SegmentTranslationView: React.FC<Props> = ({
   isTranslating = false,
   translatingSegmentId = null,
 }) => {
-  const [expandedSegments, setExpandedSegments] = useState<Set<string>>(new Set());
-
-  const toggleExpand = (segmentId: string) => {
-    setExpandedSegments((prev) => {
-      const next = new Set(prev);
-      if (next.has(segmentId)) {
-        next.delete(segmentId);
-      } else {
-        next.add(segmentId);
-      }
-      return next;
-    });
-  };
-
   const isTranslated = (segmentId: string) => {
     return segmentTranslations[segmentId] !== undefined;
   };
@@ -132,7 +118,6 @@ const SegmentTranslationView: React.FC<Props> = ({
       {sortedSegments.map((segment, index) => {
         const translated = isTranslated(segment.id);
         const isCurrentlyTranslating = translatingSegmentId === segment.id;
-        const isExpanded = expandedSegments.has(segment.id);
         const translatedText = getTranslatedText(segment.id);
 
         return (
