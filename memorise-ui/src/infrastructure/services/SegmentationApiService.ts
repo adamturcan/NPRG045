@@ -152,14 +152,16 @@ export class SegmentationApiService {
       // Segment end is at the end of the segment text (before border space)
       const segmentEnd = newText.length;
       
-      // Add border space after every segment (including last one)
-      // This ensures consistency if new segments are added later
+      // Add border space after every segment EXCEPT the last one
+      // This prevents a trailing space at the end of the document
       // Border space is at position segmentEnd in the new text
-      newText += ' ';
+      if (i < sortedSegments.length - 1) {
+        newText += ' ';
+      }
       // Next segment will start at segmentEnd + 1 (after the border space)
       
       // Create adjusted segment with new indices
-      // Note: segment.end points to the end of segment text, border space is at segment.end
+      // Note: segment.end points to the end of segment text, border space is at segment.end (if present)
       adjustedSegments.push({
         ...segment,
         start: segmentStart,
