@@ -36,7 +36,8 @@ export class SyncWorkspaceTranslationsUseCase {
 
     const translations = (request.translations ?? []).map((translation) => {
       requireTranslationLanguage(translation.language, OPERATION);
-      return WorkspaceTranslation.create(translation);
+      // Use fromDto to properly handle Translation DTO with segmentTranslations
+      return WorkspaceTranslation.fromDto(translation);
     });
 
     const updated = workspace.withTranslations(translations);

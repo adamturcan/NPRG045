@@ -12,6 +12,9 @@ export interface WorkspaceTranslationInput {
   userSpans?: NerSpan[];
   apiSpans?: NerSpan[];
   deletedApiKeys?: string[];
+  segmentTranslations?: {
+    [segmentId: string]: string;
+  };
 }
 
 export interface WorkspaceTranslationProps {
@@ -23,6 +26,9 @@ export interface WorkspaceTranslationProps {
   userSpans: readonly NerSpan[];
   apiSpans: readonly NerSpan[];
   deletedApiKeys: readonly string[];
+  segmentTranslations?: {
+    [segmentId: string]: string;
+  };
 }
 
 export class WorkspaceTranslation {
@@ -34,6 +40,7 @@ export class WorkspaceTranslation {
       userSpans: Object.freeze([...props.userSpans]),
       apiSpans: Object.freeze([...props.apiSpans]),
       deletedApiKeys: Object.freeze([...props.deletedApiKeys]),
+      segmentTranslations: props.segmentTranslations ? { ...props.segmentTranslations } : undefined,
     };
     Object.freeze(this.props);
   }
@@ -54,6 +61,7 @@ export class WorkspaceTranslation {
       userSpans: Array.isArray(input.userSpans) ? [...input.userSpans] : [],
       apiSpans: Array.isArray(input.apiSpans) ? [...input.apiSpans] : [],
       deletedApiKeys: Array.isArray(input.deletedApiKeys) ? [...input.deletedApiKeys] : [],
+      segmentTranslations: input.segmentTranslations ? { ...input.segmentTranslations } : undefined,
     });
   }
 
@@ -67,7 +75,7 @@ export class WorkspaceTranslation {
       userSpans: dto.userSpans,
       apiSpans: dto.apiSpans,
       deletedApiKeys: dto.deletedApiKeys,
-      // segmentTranslations are metadata, not part of entity
+      segmentTranslations: dto.segmentTranslations,
     });
   }
 
@@ -101,6 +109,10 @@ export class WorkspaceTranslation {
 
   get deletedApiKeys(): readonly string[] {
     return this.props.deletedApiKeys;
+  }
+
+  get segmentTranslations(): { [segmentId: string]: string } | undefined {
+    return this.props.segmentTranslations;
   }
 
   withText(text: string): WorkspaceTranslation {
@@ -145,8 +157,8 @@ export class WorkspaceTranslation {
       userSpans: [...this.userSpans],
       apiSpans: [...this.apiSpans],
       deletedApiKeys: [...this.deletedApiKeys],
-      // Preserve segmentTranslations from existing DTO if provided (metadata not in entity)
-      segmentTranslations: existingDto?.segmentTranslations,
+      // Use segmentTranslations from entity, fallback to existingDto for backward compatibility
+      segmentTranslations: this.segmentTranslations ?? existingDto?.segmentTranslations,
     };
   }
 
@@ -160,6 +172,9 @@ export class WorkspaceTranslation {
       userSpans: overrides.userSpans ?? [...this.userSpans],
       apiSpans: overrides.apiSpans ?? [...this.apiSpans],
       deletedApiKeys: overrides.deletedApiKeys ?? [...this.deletedApiKeys],
+      segmentTranslations: overrides.segmentTranslations !== undefined 
+        ? overrides.segmentTranslations 
+        : this.segmentTranslations ? { ...this.segmentTranslations } : undefined,
     });
   }
 }
@@ -231,6 +246,7 @@ export class Workspace {
           source: tag.source,
           label: 'label' in tag ? tag.label : undefined,
           parentId: 'parentId' in tag ? tag.parentId : undefined,
+          segmentId: 'segmentId' in tag ? tag.segmentId : undefined,
         });
       }
       const tagProps = tag as TagProps;

@@ -20,8 +20,8 @@ interface SegmentNavBarProps {
   selectedSegmentId?: string;
   viewMode?: "document" | "segments";
   onSegmentClick?: (segment: Segment) => void;
-  onJoinSegments?: (segment1: Segment, segment2: Segment) => void;
-  onSplitSegment?: (segment: Segment) => void;
+  onJoinSegments?: (segmentId1: string, segmentId2: string) => void;
+  onSplitSegment?: (segmentId: string) => void;
   text?: string; // Full text to derive segment text from indices
 }
 
@@ -40,22 +40,6 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
       onSegmentClick?.(segment);
     },
     [onSegmentClick]
-  );
-
-  const handleJoinSegments = useCallback(
-    (segment1: Segment, segment2: Segment, event: React.MouseEvent) => {
-      event.stopPropagation(); // Prevent triggering segment click
-      onJoinSegments?.(segment1, segment2);
-    },
-    [onJoinSegments]
-  );
-
-  const handleSplitSegment = useCallback(
-    (segment: Segment, event: React.MouseEvent) => {
-      event.stopPropagation(); // Prevent triggering segment click
-      onSplitSegment?.(segment);
-    },
-    [onSplitSegment]
   );
 
   // Empty state
@@ -81,17 +65,6 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
       </Box>
     );
   }
-
-  // Sort segments by start position (or order) to ensure correct sequence
-  // Use the sorted array index for numbering, not the API's order field
-  const sortedSegments = [...segments].sort((a, b) => {
-    // First try sorting by start position
-    if (a.start !== b.start) {
-      return a.start - b.start;
-    }
-    // If start positions are equal, fall back to order
-    return a.order - b.order;
-  });
 
   return (
     <Box
@@ -123,7 +96,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
           },
         }}
       >
-        {sortedSegments.map((segment, index) => {
+        {segments.map((segment, index) => {
           // In document view, use activeSegmentId for highlighting
           // In segment view, use selectedSegmentId for highlighting
           const isActive = viewMode === "document" 
@@ -133,135 +106,153 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
           const preview = segmentText.length > 50 
             ? `${segmentText.substring(0, 50)}...` 
             : segmentText;
-          const nextSegment = sortedSegments[index + 1];
-          const showJoinButton = onJoinSegments && nextSegment !== undefined;
+
+          const nextSegment = index < segments.length - 1 ? segments[index + 1] : null;
 
           return (
-            <React.Fragment key={segment.id}>
-              <ListItem
-                disablePadding
+            <ListItem
+              key={segment.id}
+              disablePadding
+              sx={{
+                position: "relative",
+                borderBottom: "1px solid #F1F5F9",
+              }}
+            >
+              <ListItemButton
+                onClick={() => handleSegmentClick(segment)}
                 sx={{
-                  borderBottom: "1px solid #F1F5F9",
-                  position: "relative",
+                  py: 1.5,
+                  px: 2,
+                  pr: onSplitSegment ? 5 : 2, // Add right padding if split button is present
+                  backgroundColor: isActive ? "#EFF6FF" : "transparent",
+                  "&:hover": {
+                    backgroundColor: isActive ? "#DBEAFE" : "#F8FAFC",
+                  },
+                  transition: "background-color 0.2s",
                 }}
               >
-                <ListItemButton
-                  onClick={() => handleSegmentClick(segment)}
-                  sx={{
-                    py: 1.5,
-                    px: 2,
-                    backgroundColor: isActive ? "#EFF6FF" : "transparent",
-                    "&:hover": {
-                      backgroundColor: isActive ? "#DBEAFE" : "#F8FAFC",
-                    },
-                    transition: "background-color 0.2s",
-                  }}
-                >
-                  <Box sx={{ width: "100%" }}>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        mb: 0.5,
-                      }}
-                    >
-                      <Paper
-                        elevation={0}
-                        sx={{
-                          px: 1,
-                          py: 0.25,
-                          borderRadius: 1,
-                          backgroundColor: isActive ? "#3B82F6" : "#E2E8F0",
-                          color: isActive ? "white" : "#64748B",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                          minWidth: "24px",
-                          textAlign: "center",
-                        }}
-                      >
-                        {index + 1}
-                      </Paper>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "#64748B",
-                          fontWeight: 500,
-                        }}
-                      >
-                        Segment {index + 1}
-                      </Typography>
-                      {/* Split button - only show in segment view mode */}
-                      {viewMode === "segments" && onSplitSegment && (
-                        <Tooltip title="Split segment" arrow>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => handleSplitSegment(segment, e)}
-                            sx={{
-                              ml: "auto",
-                              backgroundColor: "rgba(139, 195, 74, 0.1)",
-                              color: "#689F38",
-                              "&:hover": {
-                                backgroundColor: "rgba(139, 195, 74, 0.2)",
-                              },
-                              width: 20,
-                              height: 20,
-                            }}
-                          >
-                            <CallSplitIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                    </Box>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: "#0F172A",
-                        fontSize: "0.875rem",
-                        lineHeight: 1.5,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {preview}
-                    </Typography>
-                  </Box>
-                </ListItemButton>
-                {/* Join button always visible between segments */}
-                {showJoinButton && (
+                <Box sx={{ width: "100%" }}>
                   <Box
                     sx={{
-                      position: "absolute",
-                      bottom: -12,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      zIndex: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 0.5,
                     }}
                   >
-                    <Tooltip title="Join segments" arrow>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleJoinSegments(segment, nextSegment, e)}
-                        sx={{
-                          backgroundColor: "#3B82F6",
-                          color: "white",
-                          "&:hover": {
-                            backgroundColor: "#2563EB",
-                          },
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                          width: 24,
-                          height: 24,
-                        }}
-                      >
-                        <MergeTypeIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Tooltip>
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                        backgroundColor: isActive ? "#3B82F6" : "#E2E8F0",
+                        color: isActive ? "white" : "#64748B",
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        minWidth: "24px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {segment.order + 1}
+                    </Paper>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "#64748B",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Segment {segment.order + 1}
+                    </Typography>
                   </Box>
-                )}
-              </ListItem>
-            </React.Fragment>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "#0F172A",
+                      fontSize: "0.875rem",
+                      lineHeight: 1.5,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {preview}
+                  </Typography>
+                </Box>
+              </ListItemButton>
+              
+              {/* Split button positioned at top-right of segment */}
+              {onSplitSegment && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    zIndex: 10,
+                  }}
+                >
+                  <Tooltip title="Split segment">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSplitSegment(segment.id);
+                      }}
+                      sx={{
+                        backgroundColor: "rgba(139, 195, 74, 0.1)",
+                        color: "#8BC34A",
+                        "&:hover": {
+                          backgroundColor: "rgba(139, 195, 74, 0.2)",
+                        },
+                        width: 24,
+                        height: 24,
+                      }}
+                    >
+                      <CallSplitIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+              
+              {/* Join button positioned at the border between segments */}
+              {nextSegment && onJoinSegments && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    bottom: -12, // Half the button height (24px / 2 = 12px)
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    zIndex: 10, // Ensure button appears above borders
+                  }}
+                >
+                  <Tooltip title="Join with next segment">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onJoinSegments(segment.id, nextSegment.id);
+                      }}
+                      sx={{
+                        backgroundColor: "rgba(59, 130, 246, 0.1)",
+                        color: "#3B82F6",
+                        border: "2px solid white", // White border to stand out from background
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                        "&:hover": {
+                          backgroundColor: "rgba(59, 130, 246, 0.2)",
+                          boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                        },
+                        width: 24,
+                        height: 24,
+                      }}
+                    >
+                      <MergeTypeIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+            </ListItem>
           );
         })}
       </List>

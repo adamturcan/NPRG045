@@ -5,6 +5,7 @@ export interface TagProps {
   source: TagSource;
   label?: number;
   parentId?: number;
+  segmentId?: string;
 }
 
 /**
@@ -18,7 +19,7 @@ export class Tag {
   }
 
   static create(props: TagProps): Tag {
-    const { name, source, label, parentId } = props;
+    const { name, source, label, parentId, segmentId } = props;
 
     if (!name || name.trim().length === 0) {
       throw new Error('Tag name is required');
@@ -29,6 +30,7 @@ export class Tag {
       source,
       label,
       parentId,
+      segmentId,
     });
   }
 
@@ -38,6 +40,7 @@ export class Tag {
       source: item.source,
       label: item.label,
       parentId: item.parentId,
+      segmentId: item.segmentId,
     });
   }
 
@@ -57,12 +60,17 @@ export class Tag {
     return this.props.parentId;
   }
 
+  get segmentId(): string | undefined {
+    return this.props.segmentId;
+  }
+
   equals(other: Tag): boolean {
     return (
       this.name === other.name &&
       this.source === other.source &&
       this.label === other.label &&
-      this.parentId === other.parentId
+      this.parentId === other.parentId &&
+      this.segmentId === other.segmentId
     );
   }
 
@@ -72,6 +80,7 @@ export class Tag {
       source: this.source,
       label: this.label,
       parentId: this.parentId,
+      segmentId: this.segmentId,
     };
   }
 }

@@ -52,6 +52,7 @@ export class CreateWorkspaceUseCase {
             source: tag.source,
             label: tag.label,
             parentId: tag.parentId,
+            segmentId: tag.segmentId,
           })
         ),
         translations: request.translations?.map((translation) =>

@@ -144,16 +144,16 @@ interface Props {
   onSegmentClick?: (segment: Segment) => void;
 
   /**
-   * Callback when user joins two segments
-   * Merges two consecutive segments into one
+   * Callback when user clicks to join two segments
+   * Joins segmentId1 with segmentId2 (segmentId1 is kept, segmentId2 is removed)
    */
-  onJoinSegments?: (segment1: Segment, segment2: Segment) => void;
+  onJoinSegments?: (segmentId1: string, segmentId2: string) => void;
 
   /**
-   * Callback when user splits a segment
-   * Splits segment at cursor position (if valid) or shows options
+   * Callback when user clicks to split a segment
+   * Opens split dialog to choose where to split the segment
    */
-  onSplitSegment?: (segment: Segment) => void;
+  onSplitSegment?: (segmentId: string) => void;
 
   /**
    * Currently active segment ID (for highlighting in document mode)
@@ -175,12 +175,6 @@ interface Props {
    * Full text to derive segment text from indices
    */
   text?: string;
-
-  /**
-   * Active translation tab ("original" or translation language code)
-   * Used to hide/disable segments when in translation view
-   */
-  activeTab?: string;
 }
 
 /**
@@ -208,12 +202,10 @@ const RightPanel: React.FC<Props> = ({
   viewMode = "document",
   onViewModeChange,
   text = "",
-  activeTab = "original",
 }) => {
   // Auto-switch to segments tab when view mode is segments and segments exist
-  // Allow segments in translation tabs when in segment view, but disable in document view
-  const shouldShowSegments = segments.length > 0 && (activeTab === "original" || viewMode === "segments");
-  const [panelActiveTab, setPanelActiveTab] = useState<"tags" | "segments">(
+  const shouldShowSegments = segments.length > 0;
+  const [activeTab, setActiveTab] = useState<"tags" | "segments">(
     shouldShowSegments && viewMode === "segments" ? "segments" : "tags"
   );
   
@@ -225,18 +217,10 @@ const RightPanel: React.FC<Props> = ({
   useEffect(() => {
     const prevViewMode = prevViewModeRef.current;
     if (prevViewMode === "document" && viewMode === "segments" && shouldShowSegments) {
-      setPanelActiveTab("segments");
+      setActiveTab("segments");
     }
     prevViewModeRef.current = viewMode;
   }, [viewMode, shouldShowSegments]);
-  
-  // If we switch to translation tab in document view, force switch to tags tab
-  // But allow segments tab in translation tabs when in segment view
-  useEffect(() => {
-    if (activeTab !== "original" && viewMode === "document" && panelActiveTab === "segments") {
-      setPanelActiveTab("tags");
-    }
-  }, [activeTab, viewMode, panelActiveTab]);
   const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number; top: number; height: number }>({
     left: 0,
     width: 0,
@@ -250,7 +234,7 @@ const RightPanel: React.FC<Props> = ({
   // Update indicator position when tab changes
   useEffect(() => {
     const updateIndicator = () => {
-      const activeButton = panelActiveTab === "tags" ? tagsButtonRef.current : segmentsButtonRef.current;
+      const activeButton = activeTab === "tags" ? tagsButtonRef.current : segmentsButtonRef.current;
       const container = containerRef.current;
       
       if (activeButton && container) {
@@ -273,14 +257,14 @@ const RightPanel: React.FC<Props> = ({
     const timeout = setTimeout(updateIndicator, 10);
     
     return () => clearTimeout(timeout);
-  }, [panelActiveTab]);
+  }, [activeTab]);
 
   const handleTabChange = (
     _event: React.MouseEvent<HTMLElement>,
     newTab: "tags" | "segments" | null
   ) => {
     if (newTab !== null) {
-      setPanelActiveTab(newTab);
+      setActiveTab(newTab);
     }
   };
 
@@ -337,7 +321,7 @@ const RightPanel: React.FC<Props> = ({
           />
           
           <ToggleButtonGroup
-            value={panelActiveTab}
+            value={activeTab}
             exclusive
             onChange={handleTabChange}
             aria-label="panel tabs"
@@ -386,7 +370,6 @@ const RightPanel: React.FC<Props> = ({
               ref={segmentsButtonRef}
               value="segments" 
               aria-label="segments tab"
-              disabled={activeTab !== "original" && viewMode === "document"}
             >
               <ViewListIcon sx={{ fontSize: 18, mr: 0.75 }} />
               Segments
@@ -433,7 +416,7 @@ const RightPanel: React.FC<Props> = ({
             }}
           >
             {/* Tags tab with fade animation */}
-            {panelActiveTab === "tags" && (
+            {activeTab === "tags" && (
               <Fade in={true} timeout={300}>
                 <Box
                   sx={{
@@ -499,8 +482,8 @@ const RightPanel: React.FC<Props> = ({
               </Fade>
             )}
 
-            {/* Segments tab with fade animation - show in original tab or in segment view */}
-            {panelActiveTab === "segments" && (activeTab === "original" || viewMode === "segments") && (
+            {/* Segments tab with fade animation */}
+            {activeTab === "segments" && (
               <Fade in={true} timeout={300}>
                 <Box
                   sx={{

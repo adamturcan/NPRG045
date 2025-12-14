@@ -405,12 +405,30 @@ export function useSemanticTags(opts?: Options) {
 
   /**
    * ============================================================================
+   * ALL TAGS: Get all tags regardless of segmentId filter
+   * ============================================================================
+   * 
+   * This is used for saving - we need to save ALL tags, not just the filtered
+   * combinedTags which only shows tags for the current segment view.
+   */
+  const allTags: TagItem[] = useMemo(() => {
+    const key = (t: TagItem) => `${t.source}:${t.name.toLowerCase()}:${t.label || ''}:${t.parentId || ''}:${t.segmentId || ''}`;
+    const map = new Map<string, TagItem>();
+    
+    // Include ALL tags (both user and API, all segments)
+    [...userTags, ...apiTags].forEach((t) => map.set(key(t), t));
+    return Array.from(map.values());
+  }, [userTags, apiTags]);
+
+  /**
+   * ============================================================================
    * HOOK RETURN: Expose all state and actions
    * ============================================================================
    */
   return {
     // Tag management
-    combinedTags,          // Merged user + API tags
+    combinedTags,          // Merged user + API tags (filtered by segmentId for display)
+    allTags,               // All tags regardless of segmentId (for saving)
     addCustomTag,          // Add user tag
     deleteTag,             // Delete any tag
     replaceAllTags,        // Replace all tags (for loading)

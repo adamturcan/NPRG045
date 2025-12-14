@@ -23,8 +23,11 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
+import DownloadIcon from "@mui/icons-material/Download";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import type { TransitionProps } from "@mui/material/transitions";
 import type { Workspace } from "../../types/Workspace";
+import { PdfExportService } from "../../infrastructure/services/PdfExportService";
 
 interface Props {
   workspaces: Workspace[];
@@ -98,6 +101,54 @@ const ManageWorkspacesPage: React.FC<Props> = ({
     );
     setEditingId(null);
     setDraftName("");
+  };
+
+  // Export function to download workspace as JSON
+  const handleExport = (workspace: Workspace) => {
+    // Create export object with all metadata
+    const exportData = {
+      id: workspace.id,
+      name: workspace.name,
+      owner: workspace.owner,
+      text: workspace.text,
+      isTemporary: workspace.isTemporary,
+      updatedAt: workspace.updatedAt,
+      userSpans: workspace.userSpans,
+      apiSpans: workspace.apiSpans,
+      deletedApiKeys: workspace.deletedApiKeys,
+      tags: workspace.tags,
+      translations: workspace.translations,
+      segments: workspace.segments,
+      // Add export metadata
+      exportedAt: Date.now(),
+      exportVersion: "1.0",
+    };
+
+    // Convert to JSON string with pretty formatting
+    const jsonString = JSON.stringify(exportData, null, 2);
+    
+    // Create blob and download
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    // Sanitize filename: replace non-alphanumeric chars with underscores
+    const sanitizedName = workspace.name.replace(/[^a-z0-9]/gi, "_");
+    link.download = `${sanitizedName}_${workspace.id}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export function to download workspace as PDF
+  const handleExportPdf = async (workspace: Workspace) => {
+    try {
+      await PdfExportService.exportWorkspace(workspace);
+    } catch (error) {
+      console.error("Failed to export PDF:", error);
+      // You could add a notification here if you have a notification system
+    }
   };
 
   return (
@@ -268,6 +319,30 @@ const ManageWorkspacesPage: React.FC<Props> = ({
                     >
                       Open
                     </Button>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleExport(ws)}
+                      sx={{ 
+                        color: COLORS.brand,
+                        mr: 1,
+                      }}
+                      aria-label="Export JSON"
+                      title="Export workspace as JSON"
+                    >
+                      <DownloadIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleExportPdf(ws)}
+                      sx={{ 
+                        color: "#B91C1C",
+                        mr: 1,
+                      }}
+                      aria-label="Export PDF"
+                      title="Export workspace as PDF"
+                    >
+                      <PictureAsPdfIcon />
+                    </IconButton>
                     <IconButton
                       size="small"
                       onClick={() => openDeleteDialog(ws.id, ws.name)}

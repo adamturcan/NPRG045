@@ -79,6 +79,7 @@ export class UpdateWorkspaceUseCase {
               source: item.source,
               label: item.label,
               parentId: item.parentId,
+              segmentId: item.segmentId,
             })
           )
         );
