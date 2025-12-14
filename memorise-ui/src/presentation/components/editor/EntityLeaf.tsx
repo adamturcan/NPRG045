@@ -26,8 +26,8 @@ const EntityLeaf: React.FC<EntityLeafProps> = ({
   // Check if this leaf is part of a segment
   const isSegment = leaf.segment === true;
   const isActiveSegment = leaf.segmentActive === true;
-  // Check if this is a border space (segmentStart or segmentEnd)
-  const isSegmentBorder = leaf.segmentStart === true || leaf.segmentEnd === true;
+  // Check if this is a border space (segmentBorder decoration from useDecorations)
+  const isSegmentBorder = leaf.segmentBorder === true;
   
   // Check if this leaf is part of an annotated entity span
   if (leaf.underline) {

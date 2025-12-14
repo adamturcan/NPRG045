@@ -10,6 +10,8 @@ export const EditorPlaceholder: React.FC<any> = (props) => (
       opacity: 0.55,
       color: "#5A6A7A",
       fontFamily: "DM Mono, monospace",
+      display: "inline",
+      whiteSpace: "nowrap",
     }}
   >
     {props.children}

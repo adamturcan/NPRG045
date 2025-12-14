@@ -12,6 +12,8 @@ import type { NerSpan } from "../../../types/NotationEditor";
 import type { Notice, NoticeOptions } from "../../../types/Notice";
 import type { Segment } from "../../../types/Segment";
 import { getSegmentText } from "../../../types/Segment";
+import { validateSplitPosition, isPunctuation } from "../../../shared/utils/segmentSplitValidation";
+import SegmentSplitDialog from "../segmentation/SegmentSplitDialog";
 
 import RightPanel, { type TagRow } from "../right/RightPanel";
 import { NotificationSnackbar } from "../shared/NotificationSnackbar";
@@ -87,6 +89,11 @@ const WorkspaceContainer: React.FC = () => {
   const [activeSegmentId, setActiveSegmentId] = useState<string | undefined>(undefined);
   const [translationViewMode, setTranslationViewMode] = useState<"document" | "segments">("document");
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  // Track current editor selection for split operations
+  const [currentSelection, setCurrentSelection] = useState<{ start: number; end: number } | null>(null);
+  // Track split dialog state
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [segmentToSplit, setSegmentToSplit] = useState<Segment | null>(null);
   // Track if segment click handler is currently processing (to prevent effect from interfering)
   const isSegmentClickProcessingRef = useRef<boolean>(false);
   // Track the last selected segment ID to avoid unnecessary updates
@@ -603,6 +610,379 @@ const WorkspaceContainer: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationViewMode]);
+
+  // Join two consecutive segments into one
+  const handleJoinSegments = useCallback((segment1: Segment, segment2: Segment) => {
+    if (!currentId) return;
+    
+    // Get latest workspace state
+    const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+    const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+    if (!latestWs || !latestWs.segments) return;
+    
+    // Find the segments in the current array (they might have been updated)
+    const seg1 = latestWs.segments.find(s => s.id === segment1.id);
+    const seg2 = latestWs.segments.find(s => s.id === segment2.id);
+    if (!seg1 || !seg2) return;
+    
+    // Verify segments are consecutive (seg2 should start right after seg1 ends, possibly with a border space)
+    // Border space is at seg1.end, so seg2.start should be seg1.end + 1 (or seg1.end if no border space)
+    const areConsecutive = seg2.start === seg1.end || seg2.start === seg1.end + 1;
+    if (!areConsecutive) {
+      console.warn("[WorkspaceContainer] Cannot join non-consecutive segments", {
+        seg1: { id: seg1.id, start: seg1.start, end: seg1.end },
+        seg2: { id: seg2.id, start: seg2.start, end: seg2.end },
+      });
+      return;
+    }
+    
+    // Get full document text for merging
+    const docTextForMerge = translations.activeTab === "original"
+      ? latestWs?.text || ""
+      : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+    
+    // Get segment texts
+    const seg1Text = seg1.text ?? getSegmentText(seg1, docTextForMerge);
+    const seg2Text = seg2.text ?? getSegmentText(seg2, docTextForMerge);
+    
+    // Merge segments: combine indices
+    const mergedSegment: Segment = {
+      id: seg1.id, // Keep first segment's ID
+      start: seg1.start,
+      end: seg2.end,
+      order: seg1.order, // Keep first segment's order
+      text: `${seg1Text} ${seg2Text}`.trim(), // Merge text with space
+      // Merge translations if they exist (concatenate with space)
+      translations: seg1.translations || seg2.translations 
+        ? (() => {
+            const merged: Record<string, string> = {};
+            const allLanguages = new Set([
+              ...Object.keys(seg1.translations || {}),
+              ...Object.keys(seg2.translations || {}),
+            ]);
+            for (const lang of allLanguages) {
+              const trans1 = seg1.translations?.[lang] || "";
+              const trans2 = seg2.translations?.[lang] || "";
+              // Concatenate translations with space (or just use the one that exists)
+              merged[lang] = trans1 && trans2 
+                ? `${trans1} ${trans2}`.trim()
+                : trans1 || trans2;
+            }
+            return Object.keys(merged).length > 0 ? merged : undefined;
+          })()
+        : undefined,
+    };
+    
+    // Create updated segments array: remove seg2, replace seg1 with merged segment
+    const updatedSegments = latestWs.segments
+      .filter(s => s.id !== seg1.id && s.id !== seg2.id);
+    
+    // Add merged segment
+    updatedSegments.push(mergedSegment);
+    
+    // Sort by start position (same as how SegmentNavBar displays them)
+    updatedSegments.sort((a, b) => {
+      if (a.start !== b.start) {
+        return a.start - b.start;
+      }
+      // Fallback to order if start positions are equal
+      return a.order - b.order;
+    });
+    
+    // Update workspace
+    setWorkspaces((prev) =>
+      prev.map((ws) =>
+        ws.id === currentId
+          ? { ...ws, segments: updatedSegments, updatedAt: Date.now() }
+          : ws
+      )
+    );
+    
+    // If the joined segment was selected, keep it selected
+    // If seg2 was selected, switch to the merged segment
+    const wasSeg1Selected = selectedSegmentId === seg1.id;
+    const wasSeg2Selected = selectedSegmentId === seg2.id;
+    const wasEitherSelected = wasSeg1Selected || wasSeg2Selected;
+    
+    if (wasSeg2Selected) {
+      setSelectedSegmentId(seg1.id);
+    }
+    // If seg1 was selected, it remains selected (same ID)
+    
+    // Clear activeSegmentId if it was one of the joined segments
+    if (activeSegmentId === seg1.id || activeSegmentId === seg2.id) {
+      setActiveSegmentId(seg1.id);
+    }
+    
+    // If we're in segment view mode and either segment was selected, refresh editor with merged segment text
+    if (translationViewMode === "segments" && wasEitherSelected) {
+      // Use the mergedSegment we just created (don't need to read from workspace)
+      // Determine which text to load based on active tab
+      let segmentTextToLoad: string;
+      if (translations.activeTab === "original") {
+        // Get full document text to derive segment text
+        const docText = latestWs.text || "";
+        segmentTextToLoad = mergedSegment.text ?? getSegmentText(mergedSegment, docText);
+      } else {
+        // Load translation from segment.translations[languageCode]
+        segmentTextToLoad = mergedSegment.translations?.[translations.activeTab] || "";
+      }
+      
+      setText(segmentTextToLoad);
+      // Force editor remount to show new content
+      setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+    }
+    
+    console.debug("[WorkspaceContainer] Segments joined", {
+      seg1Id: seg1.id,
+      seg2Id: seg2.id,
+      mergedId: mergedSegment.id,
+      mergedStart: mergedSegment.start,
+      mergedEnd: mergedSegment.end,
+      remainingSegments: updatedSegments.length,
+    });
+  }, [currentId, setWorkspaces, selectedSegmentId, activeSegmentId, translationViewMode, translations.activeTab]);
+
+  // Split a segment at cursor position (with validation)
+  const handleSplitSegment = useCallback((segment: Segment) => {
+    if (!currentId) return;
+    
+    // Get latest workspace state
+    const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+    const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+    if (!latestWs || !latestWs.segments) return;
+    
+    // Find the segment in the current array
+    const seg = latestWs.segments.find(s => s.id === segment.id);
+    if (!seg) return;
+    
+    // Get full document text for this operation
+    const docText = translations.activeTab === "original"
+      ? latestWs?.text || ""
+      : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+    
+    // Get segment text
+    const segmentText = seg.text ?? getSegmentText(seg, docText);
+    
+    // Get current cursor/selection position
+    // In segment view mode, the editor shows only the segment text, so selection is segment-relative
+    // In document view, selection is document-relative
+    const selection = currentSelection;
+    let splitPosition: number;
+    
+    if (selection) {
+      if (translationViewMode === "segments") {
+        // In segment view, selection is relative to the segment (0-based within segment)
+        // Convert to document coordinates
+        splitPosition = seg.start + selection.start;
+      } else {
+        // Document view - selection is document-relative
+        splitPosition = selection.start;
+      }
+    } else {
+      // No selection - show dialog with valid options
+      setSegmentToSplit(seg);
+      setSplitDialogOpen(true);
+      return;
+    }
+    
+    // Ensure split position is within segment bounds
+    if (splitPosition < seg.start || splitPosition >= seg.end) {
+      // Position is outside segment - show dialog with valid options
+      setSegmentToSplit(seg);
+      setSplitDialogOpen(true);
+      return;
+    }
+    
+    // Validate split position
+    const validation = validateSplitPosition(splitPosition, segmentText, seg.start);
+    
+    if (validation.isValid) {
+      // Split at validated position (refresh editor if in segment view mode)
+      performSplit(seg, splitPosition, latestWs, docText, true);
+    } else {
+      // Position is not near punctuation - show dialog with options
+      setSegmentToSplit(seg);
+      setSplitDialogOpen(true);
+    }
+  }, [currentId, currentSelection, translationViewMode, translations.activeTab]);
+
+  // Perform the actual split operation
+  const performSplit = useCallback((
+    segment: Segment,
+    splitPosition: number,
+    workspace: typeof currentWs,
+    docText?: string,
+    refreshEditor: boolean = false
+  ) => {
+    if (!currentId || !workspace) return;
+    
+    // Use provided docText or get it from workspace/ref
+    let textToUse = docText;
+    if (!textToUse) {
+      // Fall back to workspace text if docText not provided
+      textToUse = translations.activeTab === "original"
+        ? workspace.text || ""
+        : workspace.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+    }
+    
+    // Get segment text
+    const segmentText = segment.text ?? getSegmentText(segment, textToUse);
+    
+    // Ensure split position is within segment bounds
+    if (splitPosition < segment.start || splitPosition >= segment.end) {
+      console.warn("[WorkspaceContainer] Split position outside segment bounds", {
+        segmentId: segment.id,
+        splitPosition,
+        segmentStart: segment.start,
+        segmentEnd: segment.end,
+      });
+      return;
+    }
+    
+    // Calculate segment-relative split position
+    const segmentRelativePos = splitPosition - segment.start;
+    
+    // Check if split position is at punctuation - if so, keep punctuation in first segment
+    // After splitting, the punctuation should end the first segment, and second segment starts after it
+    const charAtSplit = segmentText[segmentRelativePos];
+    const isAtPunctuation = charAtSplit && isPunctuation(charAtSplit);
+    
+    // If splitting at punctuation, include it in first segment (end after punctuation)
+    // Otherwise, split exactly at the position
+    const firstSegmentEnd = isAtPunctuation 
+      ? splitPosition + 1  // Include the punctuation character
+      : splitPosition;      // Split exactly at position
+    
+    const firstSegmentEndRelative = isAtPunctuation
+      ? segmentRelativePos + 1  // Include the punctuation character
+      : segmentRelativePos;      // Split exactly at position
+    
+    const secondSegmentStart = firstSegmentEnd;
+    const secondSegmentStartRelative = firstSegmentEndRelative;
+    
+    // Create two new segments
+    const firstSegment: Segment = {
+      id: segment.id, // Keep original ID for first segment
+      start: segment.start,
+      end: firstSegmentEnd,
+      order: segment.order,
+      text: segmentText.substring(0, firstSegmentEndRelative),
+      translations: segment.translations ? (() => {
+        // Split translations proportionally (simple approach: split at same position)
+        const splitTranslations: Record<string, string> = {};
+        for (const [lang, trans] of Object.entries(segment.translations)) {
+          // Calculate split point based on the first segment end (which includes punctuation if applicable)
+          const transLength = trans.length;
+          const splitPoint = Math.floor((firstSegmentEndRelative / segmentText.length) * transLength);
+          splitTranslations[lang] = trans.substring(0, splitPoint);
+        }
+        return Object.keys(splitTranslations).length > 0 ? splitTranslations : undefined;
+      })() : undefined,
+    };
+    
+    const secondSegment: Segment = {
+      id: `seg-${Date.now()}`, // Generate new ID for second segment
+      start: secondSegmentStart,
+      end: segment.end,
+      order: segment.order + 1, // Increment order
+      text: segmentText.substring(secondSegmentStartRelative),
+      translations: segment.translations ? (() => {
+        // Split translations proportionally
+        const splitTranslations: Record<string, string> = {};
+        for (const [lang, trans] of Object.entries(segment.translations)) {
+          // Calculate split point based on the second segment start (after punctuation if applicable)
+          const transLength = trans.length;
+          const splitPoint = Math.floor((secondSegmentStartRelative / segmentText.length) * transLength);
+          splitTranslations[lang] = trans.substring(splitPoint);
+        }
+        return Object.keys(splitTranslations).length > 0 ? splitTranslations : undefined;
+      })() : undefined,
+    };
+    
+    // Update segments array: remove old segment, add two new segments
+    const updatedSegments = workspace.segments
+      .filter(s => s.id !== segment.id);
+    
+    updatedSegments.push(firstSegment, secondSegment);
+    
+    // Sort by start position
+    updatedSegments.sort((a, b) => {
+      if (a.start !== b.start) {
+        return a.start - b.start;
+      }
+      return a.order - b.order;
+    });
+    
+    // Adjust order for segments that came after the original segment
+    updatedSegments.forEach(s => {
+      if (s.order > segment.order && s.id !== firstSegment.id && s.id !== secondSegment.id) {
+        s.order += 1;
+      }
+    });
+    
+    // Update workspace
+    setWorkspaces((prev) =>
+      prev.map((ws) =>
+        ws.id === currentId
+          ? { ...ws, segments: updatedSegments, updatedAt: Date.now() }
+          : ws
+      )
+    );
+    
+    // Update selected segment to the first part
+    const wasSelected = selectedSegmentId === segment.id;
+    if (wasSelected) {
+      setSelectedSegmentId(firstSegment.id);
+    }
+    
+    // If we're in segment view mode and this segment was selected, refresh editor with first segment text
+    if (refreshEditor && wasSelected && translationViewMode === "segments") {
+      // Use the firstSegment we just created (don't need to read from workspace)
+      // Determine which text to load based on active tab
+      let segmentTextToLoad: string;
+      if (translations.activeTab === "original") {
+        // Use the text we already calculated for firstSegment
+        segmentTextToLoad = firstSegment.text || "";
+      } else {
+        // Load translation from segment.translations[languageCode]
+        segmentTextToLoad = firstSegment.translations?.[translations.activeTab] || "";
+      }
+      
+      setText(segmentTextToLoad);
+      // Force editor remount to show new content
+      setEditorInstanceKey(`${currentId ?? "new"}:${translations.activeTab}:${Date.now()}`);
+    }
+    
+    console.debug("[WorkspaceContainer] Segment split", {
+      originalId: segment.id,
+      splitPosition,
+      firstSegmentId: firstSegment.id,
+      secondSegmentId: secondSegment.id,
+      totalSegments: updatedSegments.length,
+    });
+  }, [currentId, setWorkspaces, selectedSegmentId, translationViewMode, translations.activeTab]);
+
+  // Handle split at specific position (from dialog)
+  const handleSplitAtPosition = useCallback((position: number) => {
+    if (!segmentToSplit || !currentId) return;
+    
+    const latestWorkspaces = useWorkspaceStore.getState().workspaces;
+    const latestWs = latestWorkspaces.find(ws => ws.id === currentId);
+    if (!latestWs) return;
+    
+    // Find the segment again (in case it was updated)
+    const seg = latestWs.segments?.find(s => s.id === segmentToSplit.id);
+    if (!seg) return;
+    
+    // Get full document text
+    const docText = translations.activeTab === "original"
+      ? latestWs?.text || ""
+      : latestWs?.translations?.find((t) => t.language === translations.activeTab)?.text || "";
+    
+    // Refresh editor after split (true flag)
+    performSplit(seg, position, latestWs, docText, true);
+  }, [segmentToSplit, currentId, performSplit, translations.activeTab]);
 
   // Segment navigation: load segment into editor (segment mode) or highlight/scroll (document mode)
   const handleSegmentClick = useCallback((segment: Segment) => {
@@ -1220,6 +1600,7 @@ const WorkspaceContainer: React.FC = () => {
           onDeleteSpan={annotations.deleteSpan}
           onAddSpan={annotations.addSpan}
           onSave={handleSave}
+          onSelectionChange={setCurrentSelection}
           onSpansAdjusted={(next) => {
             // Preserve provenance by using the known combined ordering:
             // combinedSpans = filteredApiSpans + userSpans
@@ -1334,6 +1715,8 @@ const WorkspaceContainer: React.FC = () => {
           activeSegmentId={activeSegmentId}
           selectedSegmentId={selectedSegmentId}
           onSegmentClick={handleSegmentClick}
+          onJoinSegments={handleJoinSegments}
+          onSplitSegment={handleSplitSegment}
           viewMode={translationViewMode}
           onViewModeChange={setTranslationViewMode}
           text={fullDocumentText}
@@ -1356,6 +1739,18 @@ const WorkspaceContainer: React.FC = () => {
         tone={notice?.tone}
         persistent={notice?.persistent}
         onClose={handleCloseNotice}
+      />
+
+      {/* Split dialog */}
+      <SegmentSplitDialog
+        open={splitDialogOpen}
+        segment={segmentToSplit}
+        text={fullDocumentText}
+        onClose={() => {
+          setSplitDialogOpen(false);
+          setSegmentToSplit(null);
+        }}
+        onSplitAtPosition={handleSplitAtPosition}
       />
     </Box>
   );

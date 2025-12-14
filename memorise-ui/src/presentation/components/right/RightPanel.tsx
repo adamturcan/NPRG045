@@ -144,6 +144,18 @@ interface Props {
   onSegmentClick?: (segment: Segment) => void;
 
   /**
+   * Callback when user joins two segments
+   * Merges two consecutive segments into one
+   */
+  onJoinSegments?: (segment1: Segment, segment2: Segment) => void;
+
+  /**
+   * Callback when user splits a segment
+   * Splits segment at cursor position (if valid) or shows options
+   */
+  onSplitSegment?: (segment: Segment) => void;
+
+  /**
    * Currently active segment ID (for highlighting in document mode)
    */
   activeSegmentId?: string;
@@ -189,6 +201,8 @@ const RightPanel: React.FC<Props> = ({
   thesaurusIndex,
   segments = [],
   onSegmentClick,
+  onJoinSegments,
+  onSplitSegment,
   activeSegmentId,
   selectedSegmentId,
   viewMode = "document",
@@ -583,6 +597,8 @@ const RightPanel: React.FC<Props> = ({
                     selectedSegmentId={selectedSegmentId ?? undefined}
                     viewMode={viewMode}
                     onSegmentClick={onSegmentClick}
+                    onJoinSegments={onJoinSegments}
+                    onSplitSegment={onSplitSegment}
                     text={text}
                   />
                 </Box>

@@ -37,7 +37,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import type { Descendant } from "slate";
+import type { Descendant, Path } from "slate";
 import { createEditor, Range } from "slate";
 import { withHistory } from "slate-history";
 import { Editable, ReactEditor, Slate, withReact } from "slate-react";
@@ -103,38 +103,39 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     toInitialValue(value)
   );
 
-  // Track the currently clicked/active annotation span
+  // Track the currently clicked/active annotation span (in document coordinates)
   const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
   
   // Find the selected segment when in segment view mode
   const selectedSegment = selectedSegmentId 
     ? segments.find(s => s.id === selectedSegmentId)
     : null;
-
-  // Adjust spans for segment view: filter and offset-adjust spans within the segment
-  // In document view, use spans as-is. In segment view, filter to segment range
-  // and adjust offsets to be relative to segment start (0-based)
-  const adjustedSpans = useMemo(() => {
-    if (!selectedSegment || !selectedSegmentId) {
-      // Document view: use spans as-is
-      return spans;
-    }
-
-    // Segment view: filter spans within segment range and adjust offsets
-    return spans
-      .filter(span => span.start >= selectedSegment.start && span.end <= selectedSegment.end)
-      .map(span => ({
-        ...span,
-        start: span.start - selectedSegment.start,
-        end: span.end - selectedSegment.start,
-      }));
-  }, [spans, selectedSegment, selectedSegmentId]);
   
-  // Local copy of spans for optimistic UI updates (uses adjusted spans)
-  const [localSpans, setLocalSpans] = useState<NerSpan[]>(adjustedSpans);
+  // Wrapper for setActiveSpan that converts segment-relative to document coordinates in segment mode
+  const setActiveSpanDocument = useCallback((span: NerSpan | null) => {
+    if (!span) {
+      setActiveSpan(null);
+      return;
+    }
+    if (selectedSegment && selectedSegmentId) {
+      // Convert from segment-relative to document coordinates
+      setActiveSpan({
+        ...span,
+        start: span.start + selectedSegment.start,
+        end: span.end + selectedSegment.start,
+      });
+    } else {
+      setActiveSpan(span);
+    }
+  }, [selectedSegment, selectedSegmentId]);
+
+  // Keep ALL spans in document coordinates (no filtering)
+  // We need to adjust all spans when typing, not just those in the segment
+  // Filtering for display is handled in decorations (which skip non-overlapping spans)
+  const [localSpans, setLocalSpans] = useState<NerSpan[]>(spans);
   useEffect(() => {
-    setLocalSpans(adjustedSpans);
-  }, [adjustedSpans]);
+    setLocalSpans(spans);
+  }, [spans]);
 
   // Local copy of segments for optimistic UI updates
   const [localSegments, setLocalSegments] = useState<typeof segments>(segments);
@@ -188,28 +189,13 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     setActiveSpan(null);
   }, [value]);
 
-  // Span adjustments are reported synchronously from useSpanAutoAdjust's onAdjusted
-  // When in segment view, convert adjusted spans back to document offsets before reporting
-  const handleSpansAdjusted = useCallback((adjustedSpans: NerSpan[]) => {
-    if (!selectedSegment || !selectedSegmentId || !onSpansAdjusted) {
-      // Document view or no callback: pass through
-      onSpansAdjusted?.(adjustedSpans);
-      return;
-    }
-
-    // Segment view: convert segment-relative offsets back to document offsets
-    const documentSpans = adjustedSpans.map(span => ({
-      ...span,
-      start: span.start + selectedSegment.start,
-      end: span.end + selectedSegment.start,
-    }));
-    onSpansAdjusted(documentSpans);
-  }, [selectedSegment, selectedSegmentId, onSpansAdjusted]);
+  // Span adjustments are already in document coordinates (no conversion needed)
+  // All spans are kept in document coordinates, and pointToGlobal is wrapped to return document coordinates
 
   // Wrapper for onAddSpan: convert segment-relative offsets to document offsets in segment view
   const handleAddSpan = useCallback((span: NerSpan) => {
     if (selectedSegment && selectedSegmentId) {
-      // Convert segment-relative offsets back to document offsets
+      // Span comes in segment-relative coordinates, convert to document coordinates
       const documentSpan = {
         ...span,
         start: span.start + selectedSegment.start,
@@ -217,6 +203,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       };
       onAddSpan?.(documentSpan);
     } else {
+      // Already in document coordinates
       onAddSpan?.(span);
     }
   }, [onAddSpan, selectedSegment, selectedSegmentId]);
@@ -224,7 +211,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
   // Wrapper for onDeleteSpan: convert segment-relative offsets to document offsets in segment view
   const handleDeleteSpan = useCallback((span: NerSpan) => {
     if (selectedSegment && selectedSegmentId) {
-      // Convert segment-relative offsets back to document offsets
+      // Span comes in segment-relative coordinates, convert to document coordinates
       const documentSpan = {
         ...span,
         start: span.start + selectedSegment.start,
@@ -232,6 +219,7 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
       };
       onDeleteSpan?.(documentSpan);
     } else {
+      // Already in document coordinates
       onDeleteSpan?.(span);
     }
   }, [onDeleteSpan, selectedSegment, selectedSegmentId]);
@@ -280,12 +268,24 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
    */
   const {  indexByPath, pointToGlobal, globalToPoint } =
   useGlobalCoordinates(editor, slateValue);
+  
+  // Wrap pointToGlobal to convert segment-relative to document coordinates in segment mode
+  // This ensures all spans are adjusted using document coordinates, even when in segment view
+  const documentPointToGlobal = useCallback((path: Path, offset: number): number => {
+    const segmentRelative = pointToGlobal(path, offset);
+    if (selectedSegment && selectedSegmentId) {
+      // Convert segment-relative position to document position
+      return segmentRelative + selectedSegment.start;
+    }
+    return segmentRelative;
+  }, [pointToGlobal, selectedSegment, selectedSegmentId]);
+  
   const { applyPendingOps } = useSpanAutoAdjust({
     editor: editor as unknown as ReactEditor,
-    pointToGlobal,
-    getSpans: () => localSpans,
+    pointToGlobal: documentPointToGlobal, // Use wrapped version that returns document coordinates
+    getSpans: () => localSpans, // All spans in document coordinates
     setSpans: setLocalSpans,
-    onAdjusted: handleSpansAdjusted,
+    onAdjusted: onSpansAdjusted, // Spans already in document coordinates, no conversion needed
     getSegments: segments.length > 0 ? () => localSegments : undefined,
     setSegments: segments.length > 0 ? setLocalSegments : undefined,
     onSegmentsAdjusted: segments.length > 0 ? (next: typeof segments) => {
@@ -343,12 +343,32 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
    * visual properties (decorations) should be applied. We use this to add:
    * - Underline/entity properties to text that falls within annotation spans
    * - Segment markers to show segment boundaries
+   * 
+   * For segment view: convert spans to segment-relative coordinates for display
+   * (decorations will automatically skip spans that don't overlap with text)
    */
+  
+  // Convert spans to segment-relative coordinates for display only
+  const displaySpans = useMemo(() => {
+    if (!selectedSegment || !selectedSegmentId) {
+      return localSpans;
+    }
+    // Convert to segment-relative for display (decorations will skip non-overlapping spans)
+    return localSpans.map(span => ({
+      ...span,
+      start: span.start - selectedSegment.start,
+      end: span.end - selectedSegment.start,
+    }));
+  }, [localSpans, selectedSegment, selectedSegmentId]);
  
   const { decorate } = useDecorations({
     indexByPath,
-    localSpans,
-    activeSpan,
+    localSpans: displaySpans, // Use segment-relative spans for display
+    activeSpan: activeSpan ? (selectedSegment && selectedSegmentId ? {
+      ...activeSpan,
+      start: activeSpan.start - selectedSegment.start,
+      end: activeSpan.end - selectedSegment.start,
+    } : activeSpan) : null, // Convert to segment-relative for comparison with displaySpans
     highlightedCategories,
     segments: localSegments,
     activeSegmentId,
@@ -365,8 +385,12 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
     globalToPoint,
     posFromDomRange,
     containerRef: containerRef as React.RefObject<HTMLDivElement>,
-    activeSpan,
-    setActiveSpan,
+    activeSpan: activeSpan ? (selectedSegment && selectedSegmentId ? {
+      ...activeSpan,
+      start: activeSpan.start - selectedSegment.start,
+      end: activeSpan.end - selectedSegment.start,
+    } : activeSpan) : null,
+    setActiveSpan: setActiveSpanDocument,
     setSelBox,
     setSpanBox,
   });
@@ -549,6 +573,13 @@ const NotationEditor: React.FC<NotationEditorProps> = ({
               caretColor: COLORS.text,
               position: "relative",
             }}
+            renderElement={useCallback((props: import("slate-react").RenderElementProps) => {
+              return (
+                <p {...props.attributes} style={{ display: "block", margin: 0 }}>
+                  {props.children}
+                </p>
+              );
+            }, [])}
             renderPlaceholder={(props) => <EditorPlaceholder {...props} />}
           />
 

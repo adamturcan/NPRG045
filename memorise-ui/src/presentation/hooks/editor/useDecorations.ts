@@ -72,8 +72,8 @@ export function useDecorations(params: {
       
       // Mark border space after segment (space at segment.end position)
       // Border space is the character immediately after segment.end
-      // Only show borders in original tab, not in translation view
-      if (activeTab === "original") {
+      // Only show borders in document view (not segment view) and in original tab (not translation view)
+      if (!selectedSegmentId && activeTab === "original") {
         const borderSpacePos = segment.end;
         if (borderSpacePos >= nodeStart && borderSpacePos < nodeEnd) {
           const offset = borderSpacePos - nodeStart;

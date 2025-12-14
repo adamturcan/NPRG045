@@ -288,7 +288,9 @@ export function useSemanticTags(opts?: Options) {
     // Transform API response into TagItem array
     // API returns 'label' field which is the KeywordID from thesaurus
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiResults: any[] = Array.isArray(data?.results)
+    const apiResults: any[] = Array.isArray(data?.result)
+      ? (data?.result as any[])
+      : Array.isArray(data?.results)
       ? (data?.results as any[])
       : [];
     
