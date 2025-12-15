@@ -23,8 +23,9 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
-import DownloadIcon from "@mui/icons-material/Download";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import CodeIcon from "@mui/icons-material/Code";
 import type { TransitionProps } from "@mui/material/transitions";
 import type { Workspace } from "../../types/Workspace";
 import { PdfExportService } from "../../infrastructure/services/PdfExportService";
@@ -65,6 +66,11 @@ const ManageWorkspacesPage: React.FC<Props> = ({
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toDelete, setToDelete] = useState<{ id: string; name: string } | null>(
+    null
+  );
+
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [workspaceToExport, setWorkspaceToExport] = useState<Workspace | null>(
     null
   );
 
@@ -149,6 +155,30 @@ const ManageWorkspacesPage: React.FC<Props> = ({
       console.error("Failed to export PDF:", error);
       // You could add a notification here if you have a notification system
     }
+  };
+
+  // Open export dialog
+  const openExportDialog = (workspace: Workspace) => {
+    setWorkspaceToExport(workspace);
+    setExportDialogOpen(true);
+  };
+
+  const closeExportDialog = () => {
+    setExportDialogOpen(false);
+    setWorkspaceToExport(null);
+  };
+
+  // Handle export type selection
+  const handleExportType = (type: "json" | "pdf") => {
+    if (!workspaceToExport) return;
+    
+    if (type === "json") {
+      handleExport(workspaceToExport);
+    } else {
+      void handleExportPdf(workspaceToExport);
+    }
+    
+    closeExportDialog();
   };
 
   return (
@@ -321,27 +351,15 @@ const ManageWorkspacesPage: React.FC<Props> = ({
                     </Button>
                     <IconButton
                       size="small"
-                      onClick={() => handleExport(ws)}
+                      onClick={() => openExportDialog(ws)}
                       sx={{ 
                         color: COLORS.brand,
                         mr: 1,
                       }}
-                      aria-label="Export JSON"
-                      title="Export workspace as JSON"
+                      aria-label="Export"
+                      title="Export workspace"
                     >
-                      <DownloadIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleExportPdf(ws)}
-                      sx={{ 
-                        color: "#B91C1C",
-                        mr: 1,
-                      }}
-                      aria-label="Export PDF"
-                      title="Export workspace as PDF"
-                    >
-                      <PictureAsPdfIcon />
+                      <FileDownloadIcon />
                     </IconButton>
                     <IconButton
                       size="small"
@@ -358,6 +376,113 @@ const ManageWorkspacesPage: React.FC<Props> = ({
           </Table>
         </Box>
       </TableContainer>
+
+      {/* Export Type Selection Dialog */}
+      <Dialog
+        open={exportDialogOpen}
+        TransitionComponent={Transition}
+        keepMounted
+        onClose={closeExportDialog}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            border: `1px solid ${COLORS.border}`,
+            background: "#FFFFFF",
+            boxShadow:
+              "0 2px 4px rgba(15,23,42,0.06), 0 20px 48px rgba(15,23,42,0.22)",
+            maxWidth: "400px",
+            width: "100%",
+          },
+        }}
+      >
+        <DialogTitle 
+          sx={{ 
+            color: COLORS.text, 
+            fontWeight: 900,
+            pb: 1,
+          }}
+        >
+          Export Workspace
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2 }}>
+          {workspaceToExport ? (
+            <Box>
+              <Typography
+                variant="body2"
+                sx={{ 
+                  color: COLORS.textSub, 
+                  mb: 3,
+                  fontWeight: 500,
+                }}
+              >
+                {workspaceToExport.name}
+              </Typography>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => handleExportType("json")}
+                  startIcon={<CodeIcon />}
+                  sx={{
+                    justifyContent: "flex-start",
+                    color: COLORS.text,
+                    borderColor: COLORS.borderSoft,
+                    textTransform: "none",
+                    fontWeight: 600,
+                    py: 1.5,
+                    px: 2,
+                    borderRadius: 2,
+                    "&:hover": {
+                      backgroundColor: COLORS.hover,
+                      borderColor: COLORS.brand,
+                      color: COLORS.brand,
+                    },
+                  }}
+                >
+                  Export as JSON
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => handleExportType("pdf")}
+                  startIcon={<PictureAsPdfIcon />}
+                  sx={{
+                    justifyContent: "flex-start",
+                    color: COLORS.text,
+                    borderColor: COLORS.borderSoft,
+                    textTransform: "none",
+                    fontWeight: 600,
+                    py: 1.5,
+                    px: 2,
+                    borderRadius: 2,
+                    "&:hover": {
+                      backgroundColor: COLORS.hover,
+                      borderColor: "#B91C1C",
+                      color: "#B91C1C",
+                    },
+                  }}
+                >
+                  Export as PDF
+                </Button>
+              </Box>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button
+            onClick={closeExportDialog}
+            variant="text"
+            sx={{
+              color: COLORS.textSub,
+              textTransform: "none",
+              fontWeight: 600,
+              "&:hover": {
+                backgroundColor: COLORS.hover,
+              },
+            }}
+          >
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <Dialog
@@ -384,7 +509,7 @@ const ManageWorkspacesPage: React.FC<Props> = ({
           {toDelete ? (
             <Box sx={{ mt: 0.5 }}>
               <Typography variant="body1" sx={{ mb: 0.5 }}>
-                You’re about to delete:
+                You're about to delete:
               </Typography>
               <Typography
                 variant="subtitle1"
@@ -396,7 +521,7 @@ const ManageWorkspacesPage: React.FC<Props> = ({
                 ID: {toDelete.id}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1.5 }}>
-                This action can’t be undone.
+                This action can't be undone.
               </Typography>
             </Box>
           ) : null}
