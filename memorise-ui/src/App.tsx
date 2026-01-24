@@ -1,4 +1,6 @@
+// Import React hooks and components for state management, routing, and lazy loading
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
+// Import Material-UI components for theming and layout
 import {
   CssBaseline,
   ThemeProvider,
@@ -6,6 +8,7 @@ import {
   Box,
   responsiveFontSizes,
 } from "@mui/material";
+// Import React Router components for navigation and routing
 import {
   Routes,
   Route,
@@ -13,6 +16,7 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
+// Import custom components, stores, services, and utilities
 import BubbleSidebar from "./presentation/components/sidebar/BubbleSidebar";
 import { useWorkspaceStore } from "./presentation/stores/workspaceStore";
 import { getWorkspaceApplicationService } from "./infrastructure/providers/workspaceProvider";
@@ -25,12 +29,13 @@ import { errorHandlingService } from "./infrastructure/services/ErrorHandlingSer
 import { presentError } from "./application/errors/errorPresenter";
 import { useErrorLogger } from "./presentation/hooks/useErrorLogger";
 
-// Lazy load pages for code splitting
+// Lazy load pages for code splitting to reduce initial bundle size
 const AccountPage = lazy(() => import("./presentation/pages/AccoutPage"));
 const WorkspacePage = lazy(() => import("./presentation/pages/WorkspacePage"));
 const ManageWorkspacesPage = lazy(() => import("./presentation/pages/ManageWorkspacesPage"));
 const LoginPage = lazy(() => import("./presentation/pages/LoginPage"));
 
+// Create and configure the Material-UI theme with custom colors, fonts, and typography
 let theme = createTheme({
   palette: {
     mode: "light",
@@ -48,11 +53,14 @@ let theme = createTheme({
     body2: { fontSize: "0.875rem", lineHeight: 1.5 },
   },
 });
+// Make theme responsive by scaling font sizes based on screen size
 theme = responsiveFontSizes(theme);
 
+// Storage key for persisting the current user's username in localStorage
 const USER_KEY = "memorise.user.v1";
 
 /* --- helper route for /workspace/new: create + redirect --- */
+// Component that creates a new workspace and redirects to it or manage page on mount
 const NewWorkspaceRedirect: React.FC<{
   onCreate: () => Workspace;
 }> = ({ onCreate }) => {
@@ -72,18 +80,20 @@ const NewWorkspaceRedirect: React.FC<{
 /* ---------------- App ---------------- */
 
 const App: React.FC = () => {
+  // Get current route location and navigation function from React Router
   const location = useLocation();
   const navigate = useNavigate();
 
-  // hydrate username synchronously from localStorage (no flicker)
+  // Initialize username from localStorage to prevent flicker on page load
   const [username, setUsername] = useState<string | null>(() =>
     localStorage.getItem(USER_KEY)
   );
 
+  // Track if app has finished loading user's workspaces and sidebar open state
   const [booted, setBooted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Zustand store
+  // Access Zustand store state and actions for workspace management
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const saveError = useWorkspaceStore((state) => state.saveError);
   const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
@@ -91,29 +101,29 @@ const App: React.FC = () => {
   const markSaveSuccess = useWorkspaceStore.getState().markSaveSuccess;
   const markSaveFailed = useWorkspaceStore.getState().markSaveFailed;
   const rollbackToLastSaved = useWorkspaceStore.getState().rollbackToLastSaved;
+  // Memoize workspace application service to prevent recreating on each render
   const workspaceApplicationService = useMemo(
     () => getWorkspaceApplicationService(),
     []
   );
   
-  // Notification system
+  // Initialize notification system for showing user messages
   const { notice, showNotice, clearNotice } = useNotification();
   
-  // Error logging
+  // Initialize error logging hook for tracking save operation errors
   const logError = useErrorLogger({ hook: "App", operation: "save workspaces" });
 
 
-  // Wrapper function to update workspaces array (for compatibility with old setWorkspaces API)
-  // Memoize to prevent infinite loops in child components
+  // Wrapper callback to update workspaces array, memoized to prevent infinite loops in child components
   const setWorkspaces = useCallback((updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
     const currentWorkspaces = useWorkspaceStore.getState().workspaces;
     const newWorkspaces = typeof updater === 'function' 
       ? updater(currentWorkspaces)
       : updater;
     useWorkspaceStore.setState({ workspaces: newWorkspaces });
-  }, []); // Empty deps - function is stable
+  }, []); 
 
-  // Boot: load user's workspaces exactly once after username is known
+  // Load user's workspaces from storage when username is available and mark app as booted
   useEffect(() => {
     if (!username) {
       setBooted(true);
@@ -125,7 +135,7 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
-  // Save function with error handling
+  // Save workspaces to backend with error handling, notifications, and automatic rollback on failure
   const saveWorkspaces = useCallback(async (saveUsername: string, saveWorkspaces: Workspace[]) => {
     useWorkspaceStore.setState({ isSaving: true, saveError: null });
     const hadPreviousError = useWorkspaceStore.getState().saveError !== null;
@@ -173,25 +183,25 @@ const App: React.FC = () => {
     }
   }, [workspaceApplicationService, markSaveSuccess, markSaveFailed, rollbackToLastSaved, showNotice, logError]);
 
-  // Create debounced save function
+  // Create debounced version of save function to batch rapid workspace changes with 1 second delay
   const debouncedSave = useMemo(() => {
     return debounceAsync(saveWorkspaces, 1000); // 1 second delay
   }, [saveWorkspaces]);
 
-  // Persist whenever workspaces change — but only after boot (debounced)
+  // Auto-save workspaces to backend when they change, but only after app has booted
   useEffect(() => {
     if (!booted || !username) return;
     void debouncedSave(username, workspaces);
   }, [booted, username, workspaces, debouncedSave]);
 
-  // Retry save handler
+  // Handler to retry saving workspaces after a failed save attempt
   const handleRetrySave = useCallback(() => {
     if (!username) return;
     clearNotice();
     void saveWorkspaces(username, workspaces);
   }, [username, workspaces, saveWorkspaces, clearNotice]);
 
-  // Login / logout
+  // Save username to localStorage, reset boot state, and navigate to workspaces page
   const handleLogin = (name: string) => {
     localStorage.setItem(USER_KEY, name);
     setBooted(false); // force reload of correct bucket
@@ -199,6 +209,7 @@ const App: React.FC = () => {
     navigate("/manage-workspaces");
   };
 
+  // Clear user data from localStorage and store, then navigate to login page
   const handleLogout = () => {
     localStorage.removeItem(USER_KEY);
     setUsername(null);
@@ -207,7 +218,7 @@ const App: React.FC = () => {
     navigate("/login");
   };
 
-  // Create new workspace
+  // Create a new workspace draft with auto-incremented name and add it to the store
   const handleAddWorkspace = () => {
     if (!username) return { id: "", name: "", isTemporary: true } as Workspace;
     const newCount = workspaces.filter((w) =>
@@ -221,7 +232,7 @@ const App: React.FC = () => {
     return ws;
   };
 
-  // Keep "recent" 3 by moving opened one to the front
+  // Move the opened workspace to the front of the list to maintain recent workspaces order
   const bumpWorkspaceToFront = (id: string) => {
     const currentWorkspaces = useWorkspaceStore.getState().workspaces;
     const idx = currentWorkspaces.findIndex((w) => w.id === id);
@@ -233,6 +244,7 @@ const App: React.FC = () => {
     useWorkspaceStore.setState({ workspaces: next });
   };
 
+  // Bump workspace to front of list when navigating to a workspace route
   useEffect(() => {
     const m = location.pathname.match(/^\/workspace\/([^/]+)$/);
     if (!m) return;
@@ -242,6 +254,7 @@ const App: React.FC = () => {
 
   /* --------- Routing --------- */
 
+  // Render login page and routes when user is not authenticated
   if (!username) {
     return (
       <ThemeProvider theme={theme}>
@@ -272,6 +285,7 @@ const App: React.FC = () => {
     );
   }
 
+  // Show loading screen while workspaces are being loaded from storage
   if (!booted) {
     return (
       <ThemeProvider theme={theme}>
@@ -295,6 +309,7 @@ const App: React.FC = () => {
     );
   }
 
+  // Render main application with sidebar, routes, and notification system
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -306,28 +321,8 @@ const App: React.FC = () => {
           overflow: "clip",
           background: "linear-gradient(135deg, #2f3e34 0%, #8d7f57 100%)",
         }}
-      >
-        {/* Top-left pill logo
-        <Box
-          sx={{
-            position: "fixed",
-            top: 15,
-            left: -20,
-            zIndex: 1400,
-            display: { xs: "none", sm: "block" },
-          }}
         >
-          <Box
-            sx={{ backgroundColor: "black", p: 1.5, borderRadius: 50, px: 4.5 }}
-          >
-            <img
-              src={import.meta.env.BASE_URL + "memorise.png"}
-              alt="Memorise"
-              style={{ height: 26, objectFit: "contain" }}
-            />
-          </Box>
-        </Box> */}
-        {/* Sidebar */}
+        {/* Render sidebar component with workspace list and navigation controls */}
         <BubbleSidebar
           onLogout={handleLogout}
           open={sidebarOpen}
@@ -335,7 +330,7 @@ const App: React.FC = () => {
           workspaces={workspaces}
           onAddWorkspace={handleAddWorkspace}
         />
-        {/* Pages */}
+        {/* Render main content area with routes for all authenticated pages */}
         <Box
           sx={{
             flexGrow: 1,
@@ -393,7 +388,7 @@ const App: React.FC = () => {
             </Routes>
           </Suspense>
         </Box>
-        {/* Notifications */}
+        {/* Render notification snackbar with retry button if save error exists */}
         {notice && (
           <NotificationSnackbar
             message={notice.message}

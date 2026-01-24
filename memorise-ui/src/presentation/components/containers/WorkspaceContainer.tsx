@@ -104,7 +104,7 @@ const WorkspaceContainer: React.FC = () => {
         persistent: options?.persistent,
       });
     },
-    []
+    [] 
   );
   const handleCloseNotice = useCallback(() => setNotice(null), []);
 
