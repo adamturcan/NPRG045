@@ -1,11 +1,8 @@
-import type { NerSpan } from '../../types/NotationEditor';
-import type { TagItem } from '../../types/Tag';
 import type { Translation as TranslationDTO, Workspace as WorkspaceDTO } from '../../types/Workspace';
-import { Annotation } from './Annotation';
 import { Tag } from './Tag';
 import { Workspace, WorkspaceTranslation } from './Workspace';
 
-export interface WorkspaceMapperOptions {
+interface WorkspaceMapperOptions {
   ownerFallback?: string;
 }
 
@@ -83,21 +80,6 @@ export function workspaceToPersistence(
   };
 }
 
-export function annotationFromSpan(span: NerSpan): Annotation {
-  return Annotation.fromSpan(span);
-}
-
-export function annotationToSpan(annotation: Annotation): NerSpan {
-  return annotation.toSpan();
-}
-
-export function tagFromItem(item: TagItem): Tag {
-  return Tag.fromTagItem(item);
-}
-
-export function tagToItem(tag: Tag): TagItem {
-  return tag.toTagItem();
-}
 
 
 
