@@ -1,174 +1,176 @@
-workspace "Memorise UI Actual Architecture" "Architectural state as of October 2023 - Based on Code Analysis" {
+workspace "Memorise UI (Target Client-Only Architecture)" "Refactor direction based on discussion (boot sync, session working set, debounced persistence)" {
 
-    model {
-        externalApi = softwareSystem "External APIs" "External ML and translation APIs (Segmentation, Classification, NER, Translation)" "External System"
+      model {
+        properties {
+             "structurizr.groupSeparator" "/"
+        }
         
-        browserStorage = softwareSystem "Browser Storage" "LocalStorage API" "External System"
-        browserConsole = softwareSystem "Browser Console" "Standard Output / DevTools" "External System"
+      
+    externalApi = softwareSystem "External APIs" "External ML and translation APIs (Segmentation, Classification, NER, Translation)" "External System"
+    Storage = softwareSystem "Storage" "Storage API, either local by default or based on supported adapters for MSSQL etc." "External System" 
+    LogConsumer = softwareSystem "Log consumer" "Log consumer, could by file system, or console or any other logging system" "External System"
 
-        system = softwareSystem "Memorise UI" "React-based annotation platform" {
+    system = softwareSystem "Memorise UI" "React-based annotation platform" {
+
+        thesaurusWorker = container "Thesaurus Worker" "Background Web Worker for thesaurus indexing/search" "Web Worker" "Web Worker"
+
+        webApp = container "Web Application" "The React frontend" "TypeScript/React" {
+
+            group "Presentation Layer" {
+                appOrchestrator = component "App Orchestrator" "Routes + global layout + mounts synchronizer + renders global snackbar." "React Component"
+                group "Stores" {
+                    presentationWorkspaceStore = component "WorkspaceStore" "Identity (username) + workspace metadata list + currentWorkspaceId." "State Store" "State Store" 
+                    presentationSessionStore = component "SessionStore" "Active workspace working set (text/spans/tags/translations) + dirty/lastChangedAt." "State Store" "State Store"
+                    presentationNotificationStore = component "NotificationStore" "Central notification queue/state." "State Store" "State Store"
+                }
+                presentationSynchronizer = component "StateSynchronizer" "Boot sync + route sync + debounced persistence (SessionStore -> storage)." "React Component"
+
+                presentationEditorContainer = component "EditorContainer" "Editor area container (buttons trigger classify/NER/segmentation; updates SessionStore)." "React Component"
+                presentationBookmarkContainer = component "BookmarkContainer" "Bookmark/translation container." "React Component"
+                presentationPanelContainer = component "PanelContainer" "Right panel container (thesaurus search + tags/segments UI)." "React Component"
+
+                presentationNotification = component "NotificationSnackbar" "Global notification renderer." "React Component"
+               
             
-            thesaurusWorker = container "Thesaurus Worker" "Background Web Worker for search indexing (Fuse.js)" "Web Worker"
-
-            webApp = container "Web Application" "The React frontend" "TypeScript/React" {
-
-                # SHARED KERNEL
-                group "Shared Kernel" {
-                    sharedApiUtils = component "Shared API Utils" "Direct fetch wrappers (api.ts, translation.ts)." "Shared Utility"
-                    # sharedDomainConstants = component "Shared Domain Constants" "Entity colors, categories (constants/notationEditor.ts)." "Shared Utility"
-                    sharedPdfHelpers = component "Shared PDF Helpers" "Text processing for PDF (pdfHelpers.ts)." "Shared Utility"
-                    sharedPresentationUtils = component "Shared UI Utils" "DOM calculation logic (editorDom.ts)." "Shared Utility"
-                    sharedThesaurusHelpers = component "Shared Thesaurus Helpers" "Hierarchy building logic (thesaurusHelpers.ts)." "Shared Utility"
-                    # sharedWebVitals = component "Web Vitals" "Performance metrics reporting (webVitals.ts)." "Shared Utility"
+                group "Pages" {
+                    loginPage = component "LoginPage" "Sets username into WorkspaceStore." "React Component" "Page"
+                    workspacePage = component "WorkspacePage" "Composes editor containers; provides notify() to editor subtree." "React Component" "Page"
+                    manageWorkspacesPage = component "ManageWorkspacesPage" "Workspace management UI + export actions." "React Component" "Page"
+                    accountPage = component "AccountPage" "Account UI." "React Component" "Page"
                 }
-
-                # PRESENTATION LAYER
-                group "Presentation Layer" {
-                    appOrchestrator = component "App Orchestrator" "Top-level app orchestrator (main.tsx/App.tsx). Configures ErrorBoundary and WebVitals." "React Component"
-                    presentationWorkspaceStore = component "WorkspaceStore" "Zustand store. USES SERVICE LOCATOR to get AppService." "State Store"
-                    presentationSessionStore = component "SessionStore" "Zustand store. USES SERVICE LOCATOR to get AppService." "State Store"
-                    
-                    presentationEditorContainer = component "EditorContainer" "Main editor container."
-                    presentationBookmarkContainer = component "BookmarkContainer" "editors translation bookmark panel container."
-                    presentationPanelContainer = component "PanelContainer" "Main editors right panel container."
-                    
-                    # Explicit Components
-                    presentationSidebar = component "BubbleSidebar" "Sidebar navigation." "React Component"
-                    presentationNotification = component "NotificationSnackbar" "Notification display." "React Component"
-                    presentationErrorBoundary = component "ErrorBoundary" "React error boundary. Catches render errors, logs to console, and delegates to handler." "React Component"
-                    presentationSynchronizer = component "StateSynchronizer" "runtime unit that synchronizes session and global state" "React component"
-                    
-                    # Pages
-                    loginPage = component "LoginPage" "User authentication page." "React Component"
-                    workspacePage = component "WorkspacePage" "Workspace editing page wrapper." "React Component"
-                    manageWorkspacesPage = component "ManageWorkspacesPage" "Workspace management page." "React Component"
-                    accountPage = component "AccountPage" "User account page." "React Component"
-                }
-
-                # APPLICATION LAYER
-                group "Application Layer" {
-                    applicationWorkspaceService = component "WorkspaceApplicationService" "Orchestrates Use Cases. Handles complex merging of 'Segments' metadata." "Application Service"
-                    applicationAPIService = component "APIApplicationService" "Orchestrates Use Cases. Handles complex merging of 'Segments' metadata." "Application Service"
-                    applicationErrorPresenter = component "ErrorPresenter" "Transforms AppErrors for UI." "Application Service"
-                }
-
-                # CORE LAYER
-                group "Core Layer" {
-                    coreEntities = component "Entities" "Rich Domain Models (Workspace, Tag, Annotation)." "Entity"
-                    coreMappers = component "Data Mappers" "Translates between Rich Entities and Anemic DTOs." "Mapper"
-                    coreUseCases = component "Workspace Use Cases" "CRUD and Sync logic." "Use Case"
-                    coreDomainServices = component "Domain Services" "Pure domain logic (resolveApiSpanConflicts.ts)." "Domain Service"
-                }
-
-                # INFRASTRUCTURE LAYER
-                group "Infrastructure Layer" {
-                    infrastructureProviders = component "Service Providers" "Service Locator pattern (workspaceProvider.ts, apiProvider.ts)." "Provider"
-                    infrastructureRepository = component "LocalStorageWorkspaceRepository" "Persistence implementation." "Repository"
-                    infrastructureApiService = component "ApiServices" "Facade/Adapter for API calls." "Infrastructure Service"
-                    infrastructureErrorHandler = component "ErrorHandlingService" "Centralized error handling. Normalizes errors and Logs to Console." "Infrastructure Service"
-                    infrastructurePdfExport = component "PdfExportService" "PDF generation." "Infrastructure Service"
-                }
-
-                # RELATIONSHIPS
-
-                # Orchestrator to Pages & UI
-                appOrchestrator -> loginPage "Routes to"
-                appOrchestrator -> workspacePage "Routes to"
-                appOrchestrator -> manageWorkspacesPage "Routes to"
-                appOrchestrator -> accountPage "Routes to"
-                appOrchestrator -> presentationSidebar "Renders"
-                appOrchestrator -> presentationNotification "Renders (Global)"
-                appOrchestrator -> presentationSynchronizer "Calls debounced"
-                presentationErrorBoundary -> appOrchestrator "Handles render errors from"
-                
-                loginPage -> presentationWorkspaceStore "locates user workspaces"
-                accountPage -> presentationWorkspaceStore "loads user workspaceCount"
-                manageWorkspacesPage -> presentationWorkspaceStore "reads and updates workspaces"
-                
-                
-                # Global Error Handling & Vitals in Orchestrator (main.tsx)
-                # appOrchestrator -> sharedWebVitals "Initializes"
-                presentationSynchronizer -> applicationWorkspaceService "saves  and loads workspace through"   
-                
-                
-                presentationSynchronizer -> presentationSessionStore "loads session state"
-                presentationSynchronizer -> presentationWorkspaceStore "updates workspace store"
-
-                # Pages wiring
-                workspacePage -> presentationEditorContainer "Delegates to"
-                workspacePage -> presentationBookmarkContainer "Delegates to"
-                workspacePage -> presentationPanelContainer "Delegates to"
-                workspacePage -> infrastructureProviders "locates api services"
-                
-                presentationEditorContainer -> presentationSessionStore "Manages state through"
-                presentationPanelContainer -> presentationSessionStore "Manages state through"
-                presentationBookmarkContainer -> presentationSessionStore "Manages state through"
-                
-                presentationEditorContainer -> applicationAPIService "calls segmentation,ner and tag"
-                presentationBookmarkContainer -> applicationAPIService "calls translation"
+            }   
                 
 
-                # Presentation Wiring
-                presentationSynchronizer -> infrastructureProviders "Locates WorkspaceAppService via"
-                
-                # Providers wiring
-                infrastructureProviders -> applicationWorkspaceService "Instantiates"
-                infrastructureProviders -> infrastructureRepository "Instantiates"
-                infrastructureProviders -> infrastructureApiService "Instantiates"
 
-                # Application Layer Logic
-                applicationWorkspaceService -> coreUseCases "Executes"
-                applicationWorkspaceService -> coreMappers "Uses for DTO conversions"
-                
-                # Error Presenter Flow (Logic -> Data, not Logic -> UI Component)
-                appOrchestrator -> applicationErrorPresenter "Uses to format errors"
-                
+            group "Application Layer" {
+                applicationStorageService = component "StorageApplicationService" "Load/seed workspace metadata; load/commit workspace aggregates." "Application Service" "Application Service" 
+                applicationWorkflowService = component "WorkflowApplicationService" "Orchestrates editor API calls like ner,segmentation and classify. Returns patches/deltas." "Application Service" "Application Service"
+                applicationThesaurusService = component "ThesaurusApplicationService" "Thesaurus query abstraction (worker now; server later)." "Application Service"  "Application Service"
+                applicationExportService = component "ExportApplicationService" "Orchestrates export (JSON/PDF) using infra export services." "Application Service" "Application Service"
+             
+            }
 
-                # Core Logic
-                coreUseCases -> infrastructureRepository "Persists data"
-                coreDomainServices -> coreEntities "Manipulates"
-                coreUseCases -> infrastructureErrorHandler "Creates AppErrors (Validation)"
-
-                # Data Persistence Flow
-                infrastructureRepository -> coreMappers "Uses for persistence mapping"
-                infrastructureRepository -> browserStorage "Reads/Writes JSON"
-                infrastructureRepository -> infrastructureErrorHandler "Wraps exceptions with"
-
-                # Infrastructure Implementation
-                infrastructureApiService -> sharedApiUtils "Delegates fetch calls to"
-                infrastructureApiService -> infrastructureErrorHandler "Reports errors to (returns/throws)"
-                infrastructureApiService -> externalApi "Makes HTTP requests to"
-                
-                infrastructurePdfExport -> sharedPdfHelpers "Uses for text layout"
-                # infrastructurePdfExport -> sharedDomainConstants "Uses for colors"
-                infrastructurePdfExport -> sharedThesaurusHelpers "Uses for hierarchy"
-                sharedApiUtils -> infrastructureErrorHandler "Normalizes and logs erros with"
-                
-                # ERROR HANDLING OUTPUT
-                infrastructureErrorHandler -> browserConsole "Logs errors to (console.error)"
-                
-                # Shared Kernel Output
-                # sharedWebVitals -> browserConsole "Logs metrics to"
-
-                # External Communication
-                sharedApiUtils -> externalApi "Makes HTTP requests to"
-                
-                # Worker Communication
+            group "Core Layer" {
+               
+                coreUseCases = component "Workspace Use Cases" "CRUD/sync operations over aggregates." "Use Case"
                
             }
+
+            group "Infrastructure Layer" {
+                infrastructureProviders = component "Service Providers" "Service locator for app services (used by Synchronizer; optionally pages)." "Provider" "Provider"
+                infrastructureRepository = component "StorageWorkspaceRepository" "Persistence implementation of predefined interface" "Repository"
+                infrastructureApiClient = component "ApiClient" "HTTP client(s) for external APIs (direct fetch) implemented based on predefined interface." "Infrastructure Service"
+                infrastructurePdfExport = component "PdfExportService" "PDF generation." "Infrastructure Service"
+                infrastructureJsonExport = component "JsonExportService" "JSON export/download (client-side)." "Infrastructure Service"
+                infrastructureErrorHandler = component "ErrorHandlingService" "Normalize/log infra errors; console output." "Infrastructure Service"
+                infrastructureThesaurusAdapter = component "ThesaurusAdapter"  "Provides search results from thesaurus worker or API"
+            }
+
+            # -------------------- RELATIONSHIPS --------------------
+
+            # Orchestrator / routing / UI shell
+            appOrchestrator -> presentationSynchronizer "Mounts / drives"
+            appOrchestrator -> loginPage "Routes to"
+            appOrchestrator -> workspacePage "Routes to"
+            appOrchestrator -> manageWorkspacesPage "Routes to"
+            appOrchestrator -> accountPage "Routes to"
+           
+            appOrchestrator -> presentationNotification "Renders (global)"
+
+            # Central notifications (one renderer, multiple producers)
+            presentationNotification -> presentationNotificationStore "Renders notifications from"
+            appOrchestrator -> presentationNotificationStore "Enqueues global notices (save/rollback/etc)"
+            workspacePage -> presentationNotificationStore "Enqueues editor notices (via notify())"
+            manageWorkspacesPage -> presentationNotificationStore "Enqueues export notices"
+
+            # Login + metadata pages
+            loginPage -> presentationWorkspaceStore "Sets username"
+            manageWorkspacesPage -> presentationWorkspaceStore "Reads/updates workspace list"
+            accountPage -> presentationWorkspaceStore "Reads workspace summaries/count"
+
+            # Export flow
+            manageWorkspacesPage -> applicationExportService "Exports (JSON/PDF) via"
+            applicationExportService -> infrastructurePdfExport "Delegates PDF export to"
+            applicationExportService -> infrastructureJsonExport "Delegates JSON export to"
+
+            # Synchronizer responsibilities
+            presentationSynchronizer -> presentationWorkspaceStore "Reads username + workspace metadata"
+            presentationSynchronizer -> presentationSessionStore "Loads active workspace working set"
+            presentationSynchronizer -> infrastructureProviders "Locates storage application services via"
+            presentationSynchronizer -> applicationStorageService "Loads/seeds metadata; loads workspace aggregates"
+           
+
+            # Workspace page composition
+            workspacePage -> presentationEditorContainer "Delegates to"
+            workspacePage -> presentationBookmarkContainer "Delegates to"
+            workspacePage -> presentationPanelContainer "Delegates to"
+            workspacePage -> infrastructureProviders "locates API application services through"
+
+            presentationEditorContainer -> presentationSessionStore "Reads/writes working set"
+            presentationBookmarkContainer -> presentationSessionStore "Reads/writes working set"
+            presentationPanelContainer -> presentationSessionStore "Reads/writes working set"
+
+            # Editing / API usage (UPDATED: panel does NOT call editor service)
+            presentationEditorContainer -> applicationWorkflowService "Requests classify/NER/segmentation + annotation/tag ops (returns patch)"
+            presentationBookmarkContainer -> applicationWorkflowService "Requests translation (returns patch)"
+
+            # Thesaurus search (via right panel)
+            presentationPanelContainer -> applicationThesaurusService "Searches thesaurus via"
+            applicationThesaurusService -> infrastructureThesaurusAdapter "Sends local thesaurus request messages "
+            infrastructureThesaurusAdapter -> infrastructureApiClient "Delegates remote search requests "
+            infrastructureThesaurusAdapter -> thesaurusWorker "Delegates local search requests to "
+
+            # Application/Core wiring
+            applicationStorageService -> coreUseCases "Executes"
+           
+
+            applicationWorkflowService -> infrastructureApiClient "Calls external APIs via"
+           
+
+            # Persistence wiring
+            coreUseCases -> infrastructureRepository "Persists/loads"
+           
+            infrastructureRepository -> Storage "Reads/writes data"
+            infrastructureRepository -> infrastructureErrorHandler "Wraps infra exceptions with"
+
+            # External API wiring
+            infrastructureApiClient -> externalApi "HTTP requests"
+            infrastructureApiClient -> infrastructureErrorHandler "Normalizes/reports failures"
+
+            # Error output (no boundary -> infra error service relationship)
+            infrastructureErrorHandler -> LogConsumer "Sends logs to "
         }
     }
+}
 
     views {
-        component webApp "ActualArchitecture" {
+        component webApp "TargetArchitecture" {
             include *
-            title "Memorise UI - Actual Architecture (Detailed)"
-            description "Detailed view including Pages, Web Worker, and Browser Storage."
+            title "Memorise UI - Target Architecture (Client-only, refactor direction)"
+            description "Adds AuthStore/SessionStore/Synchronizer + makes worker + persistence explicit."
         }
-        
+
         theme default
 
         styles {
+            
+            element "Group:Presentation Layer/Pages" {
+                color #ff0000
+                stroke #ff0000
+                strokeWidth 10
+            }
+            
+            element "Group:Presentation Layer/Stores" {
+                color Blue
+                stroke Blue
+                strokeWidth 10
+            }
+            
+            
+            element "Page" {
+              shape WebBrowser
+            }
+            
             element "Shared Utility" {
                 background #e0e0e0
                 shape RoundedBox
