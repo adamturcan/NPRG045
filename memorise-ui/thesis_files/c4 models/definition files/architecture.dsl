@@ -1,4 +1,4 @@
-workspace "Memorise UI Actual Architecture" "Architectural state as of October 2023 - Based on Code Analysis" {
+workspace "Memorise UI Actual Architecture" "Architectural state - Based on Code Analysis" {
 
     model {
         externalApi = softwareSystem "External APIs" "External ML and translation APIs (Segmentation, Classification, NER, Translation)" "External System"
