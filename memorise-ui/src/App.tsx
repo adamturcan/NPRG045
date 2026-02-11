@@ -1,5 +1,5 @@
 // Import React hooks and components for state management, routing, and lazy loading
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 // Import Material-UI components for theming and layout
 import {
   CssBaseline,
@@ -19,15 +19,10 @@ import {
 // Import custom components, stores, services, and utilities
 import BubbleSidebar from "./presentation/components/sidebar/BubbleSidebar";
 import { useWorkspaceStore } from "./presentation/stores/workspaceStore";
+import { useNotificationStore } from "./presentation/stores/notificationStore";
 import { getWorkspaceApplicationService } from "./infrastructure/providers/workspaceProvider";
 import type { Workspace } from "./types/Workspace";
-import { debounceAsync } from "./shared/utils/debounce";
-import { useNotification } from "./presentation/hooks/useNotification";
 import { NotificationSnackbar } from "./presentation/components/shared/NotificationSnackbar";
-import { Button } from "@mui/material";
-import { errorHandlingService } from "./infrastructure/services/ErrorHandlingService";
-import { presentError } from "./application/errors/errorPresenter";
-import { useErrorLogger } from "./presentation/hooks/useErrorLogger";
 import { StateSynchronizer } from "./presentation/components/shared/StateSynchronizer";
 
 // Lazy load pages for code splitting to reduce initial bundle size
@@ -90,135 +85,37 @@ const App: React.FC = () => {
     localStorage.getItem(USER_KEY)
   );
 
-  // Track if app has finished loading user's workspaces and sidebar open state
-  const [booted, setBooted] = useState(false);
+  // Track sidebar open state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Access Zustand store state and actions for workspace management
   // Use metadata for lightweight UI operations (listing, navigation)
   const workspaces = useWorkspaceStore((state) => state.workspaces);
-  // Use full workspaces for operations requiring complete data (save, export)
-  const fullWorkspaces = useWorkspaceStore((state) => state.fullWorkspaces);
-  const saveError = useWorkspaceStore((state) => state.saveError);
-  const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
-  const markSaveSuccess = useWorkspaceStore.getState().markSaveSuccess;
-  const markSaveFailed = useWorkspaceStore.getState().markSaveFailed;
-  const rollbackToLastSaved = useWorkspaceStore.getState().rollbackToLastSaved;
+  
+  // Access notification store for displaying global messages
+  const current = useNotificationStore((state) => state.current);
+  const dequeue = useNotificationStore.getState().dequeue;
+  
   // Memoize workspace application service to prevent recreating on each render
   const workspaceApplicationService = useMemo(
     () => getWorkspaceApplicationService(),
     []
   );
-  
-  // Initialize notification system for showing user messages
-  const { notice, showNotice, clearNotice } = useNotification();
-  
-  // Initialize error logging hook for tracking save operation errors
-  const logError = useErrorLogger({ hook: "App", operation: "save workspaces" });
 
-
-  // Wrapper callback to update full workspaces array, memoized to prevent infinite loops in child components
-  const setWorkspaces = useCallback((updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
-    const currentFullWorkspaces = useWorkspaceStore.getState().fullWorkspaces;
-    const newFullWorkspaces = typeof updater === 'function' 
-      ? updater(currentFullWorkspaces)
-      : updater;
-    useWorkspaceStore.setState({ fullWorkspaces: newFullWorkspaces });
-  }, []); 
-
-  // Load user's workspaces from storage when username is available and mark app as booted
-  useEffect(() => {
-    if (!username) {
-      setBooted(true);
-      return;
-    }
-    loadWorkspaces(username).then(() => {
-      setBooted(true);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username]);
-
-  // Save workspaces to backend with error handling, notifications, and automatic rollback on failure
-  const saveWorkspaces = useCallback(async (saveUsername: string, saveWorkspaces: Workspace[]) => {
-    useWorkspaceStore.setState({ isSaving: true, saveError: null });
-    const hadPreviousError = useWorkspaceStore.getState().saveError !== null;
-    try {
-      await workspaceApplicationService.replaceAllForOwner(saveUsername, saveWorkspaces);
-      markSaveSuccess();
-      // Only show success notification if we had a previous error (to avoid spam)
-      if (hadPreviousError) {
-        showNotice("Workspace saved successfully", { tone: "success" });
-      }
-    } catch (error) {
-      // Use errorHandlingService to normalize the error
-      const appError = errorHandlingService.isAppError(error)
-        ? error
-        : errorHandlingService.wrapRepositoryError(error, {
-            operation: "save workspaces",
-            ownerId: saveUsername,
-          });
-      
-      // Log the error
-      logError(appError, { ownerId: saveUsername });
-      
-      // Store the AppError
-      markSaveFailed(appError);
-      
-      // Present user-friendly error message
-      const presented = presentError(appError, {
-        persistent: true,
-      });
-      // Append rollback info to the message
-      const messageWithRollback = `${presented.message} Auto-rollback in 5 seconds.`;
-      showNotice(messageWithRollback, {
-        tone: presented.tone,
-        persistent: presented.persistent,
-      });
-      
-      // Auto-rollback after 5 seconds
-      setTimeout(() => {
-        const currentSaveError = useWorkspaceStore.getState().saveError;
-        if (currentSaveError) {
-          rollbackToLastSaved();
-          showNotice("Changes rolled back to last saved state", { tone: "warning" });
-        }
-      }, 5000);
-    }
-  }, [workspaceApplicationService, markSaveSuccess, markSaveFailed, rollbackToLastSaved, showNotice, logError]);
-
-  // Create debounced version of save function to batch rapid workspace changes with 1 second delay
-  const debouncedSave = useMemo(() => {
-    return debounceAsync(saveWorkspaces, 1000); // 1 second delay
-  }, [saveWorkspaces]);
-
-  // Auto-save workspaces to backend when they change, but only after app has booted
-  useEffect(() => {
-    if (!booted || !username) return;
-    void debouncedSave(username, fullWorkspaces);
-  }, [booted, username, fullWorkspaces, debouncedSave]);
-
-  // Handler to retry saving workspaces after a failed save attempt
-  const handleRetrySave = useCallback(() => {
-    if (!username) return;
-    clearNotice();
-    void saveWorkspaces(username, fullWorkspaces);
-  }, [username, fullWorkspaces, saveWorkspaces, clearNotice]);
-
-  // Save username to localStorage, reset boot state, and navigate to workspaces page
+  // Save username to localStorage and navigate to workspaces page
+  // StateSynchronizer will react to the username change
   const handleLogin = (name: string) => {
     localStorage.setItem(USER_KEY, name);
-    setBooted(false); // force reload of correct bucket
     setUsername(name);
     navigate("/manage-workspaces");
   };
 
-  // Clear user data from localStorage and store, then navigate to login page
+  // Clear user data from localStorage and navigate to login page
+  // StateSynchronizer will react to the username change
   const handleLogout = () => {
     localStorage.removeItem(USER_KEY);
     setUsername(null);
-    useWorkspaceStore.setState({ workspaces: [], fullWorkspaces: [] });
-    setBooted(true);
     navigate("/login");
   };
 
@@ -232,7 +129,7 @@ const App: React.FC = () => {
       username,
       `New Workspace #${newCount + 1}`
     );
-    createWorkspaceAction(ws);
+    void createWorkspaceAction(ws);
     return ws;
   };
 
@@ -285,30 +182,6 @@ const App: React.FC = () => {
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Suspense>
-      </ThemeProvider>
-    );
-  }
-
-  // Show loading screen while workspaces are being loaded from storage
-  if (!booted) {
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Box
-          sx={{
-            position: "fixed",
-            inset: 0,
-            display: "grid",
-            placeItems: "center",
-            backgroundColor: "background.default",
-          }}
-        >
-          <img
-            src={import.meta.env.BASE_URL + "memorise.png"}
-            alt="Memorise"
-            style={{ height: 36, opacity: 0.7 }}
-          />
-        </Box>
       </ThemeProvider>
     );
   }
@@ -383,7 +256,7 @@ const App: React.FC = () => {
               <Route
                 path="/manage-workspaces"
                 element={
-                  <ManageWorkspacesPage workspaces={fullWorkspaces} setWorkspaces={setWorkspaces} />
+                  <ManageWorkspacesPage />
                 }
               />
               <Route
@@ -393,25 +266,13 @@ const App: React.FC = () => {
             </Routes>
           </Suspense>
         </Box>
-        {/* Render notification snackbar with retry button if save error exists */}
-        {notice && (
+        {/* Render notification snackbar for global messages */}
+        {current && (
           <NotificationSnackbar
-            message={notice.message}
-            onClose={clearNotice}
-            tone={notice.tone}
-            persistent={notice.persistent}
-            action={
-              saveError ? (
-                <Button
-                  color="inherit"
-                  size="small"
-                  onClick={handleRetrySave}
-                  sx={{ textTransform: "none" }}
-                >
-                  Retry
-                </Button>
-              ) : undefined
-            }
+            message={current.message}
+            onClose={dequeue}
+            tone={current.tone}
+            persistent={current.persistent}
           />
         )}
         </Box>

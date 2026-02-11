@@ -12,6 +12,9 @@ export interface WorkspaceStore {
   // Full workspaces cache for backward compatibility
   fullWorkspaces: Workspace[];
   
+  // Owner of the currently loaded workspaces
+  owner: string | null;
+  
   currentWorkspaceId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -21,12 +24,12 @@ export interface WorkspaceStore {
   isSaving: boolean;
   saveError: AppError | null;
 
-  // Actions
+  // Smart Actions (Thunks) - handle both state updates and persistence
   loadWorkspaces: (username: string) => Promise<void>;
   setWorkspaces: (list: WorkspaceMetadata[]) => void;
-  createWorkspace: (workspace: Workspace) => void;
-  updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
-  deleteWorkspace: (id: string) => void;
+  createWorkspace: (workspace: Workspace) => Promise<void>;
+  updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;
+  deleteWorkspace: (id: string) => Promise<void>;
   setCurrentWorkspace: (id: string) => void;
   clearError: () => void;
   
@@ -44,6 +47,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     (set, get) => ({
       workspaces: [],
       fullWorkspaces: [],
+      owner: null,
       currentWorkspaceId: null,
       isLoading: false,
       error: null,
@@ -68,6 +72,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             set({ 
               workspaces: metadata,
               fullWorkspaces: loaded,
+              owner: username,
               isLoading: false,
               lastSavedState: loaded, // Mark loaded state as saved
             });
@@ -83,6 +88,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             set({ 
               workspaces: metadata,
               fullWorkspaces: seeded,
+              owner: username,
               isLoading: false,
               lastSavedState: seeded, // Mark seeded state as saved
             });
@@ -100,7 +106,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         set({ workspaces: list });
       },
 
-      createWorkspace: (workspace) => {
+      createWorkspace: async (workspace) => {
+        const owner = get().owner;
+        if (!owner) {
+          set({ error: 'No owner set. Please log in first.' });
+          return;
+        }
+
         const now = Date.now();
         const normalisedWorkspace: Workspace = {
           userSpans: [],
@@ -110,25 +122,67 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           tags: [],
           updatedAt: now,
           ...workspace,
+          owner, // Ensure owner is set
         };
         
         const metadata: WorkspaceMetadata = {
           id: normalisedWorkspace.id,
           name: normalisedWorkspace.name,
-          owner: normalisedWorkspace.owner ?? '',
+          owner: normalisedWorkspace.owner ?? owner,
           updatedAt: normalisedWorkspace.updatedAt ?? now,
+        };
+        
+        // OPTIMISTIC UPDATE: Update state immediately for snappy UI
+        const previousState = {
+          workspaces: get().workspaces,
+          fullWorkspaces: get().fullWorkspaces,
         };
         
         set((state) => ({
           workspaces: [metadata, ...state.workspaces],
           fullWorkspaces: [normalisedWorkspace, ...state.fullWorkspaces],
+          saveError: null,
         }));
+
+        // PERSISTENCE: Async save to backend
+        try {
+          const service = getWorkspaceApplicationService();
+          await service.createWorkspace({
+            ownerId: owner,
+            workspaceId: normalisedWorkspace.id,
+            name: normalisedWorkspace.name,
+            text: normalisedWorkspace.text,
+            isTemporary: normalisedWorkspace.isTemporary,
+            userSpans: normalisedWorkspace.userSpans,
+            apiSpans: normalisedWorkspace.apiSpans,
+            deletedApiKeys: normalisedWorkspace.deletedApiKeys,
+            tags: normalisedWorkspace.tags,
+            translations: normalisedWorkspace.translations,
+            updatedAt: normalisedWorkspace.updatedAt,
+          });
+        } catch (error) {
+          // ROLLBACK: Revert to previous state on error
+          set({
+            workspaces: previousState.workspaces,
+            fullWorkspaces: previousState.fullWorkspaces,
+            error: error instanceof Error ? error.message : 'Failed to create workspace',
+            saveError: error as AppError,
+          });
+          console.error('Failed to persist workspace creation:', error);
+        }
       },
 
-      updateWorkspace: (id, updates) => {
+      updateWorkspace: async (id, updates) => {
         const now = Date.now();
         const updatesWithTimestamp = { ...updates, updatedAt: now };
         
+        // OPTIMISTIC UPDATE: Save previous state for potential rollback
+        const previousState = {
+          workspaces: get().workspaces,
+          fullWorkspaces: get().fullWorkspaces,
+        };
+        
+        // Update state immediately for snappy UI
         set((state) => {
           // Update full workspaces
           const updatedFullWorkspaces = state.fullWorkspaces.map((w) =>
@@ -150,15 +204,57 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           return {
             workspaces: updatedMetadata,
             fullWorkspaces: updatedFullWorkspaces,
+            saveError: null,
           };
         });
+
+        // PERSISTENCE: Async save to backend
+        try {
+          const service = getWorkspaceApplicationService();
+          await service.updateWorkspace({
+            workspaceId: id,
+            patch: updatesWithTimestamp,
+          });
+        } catch (error) {
+          // ROLLBACK: Revert to previous state on error
+          set({
+            workspaces: previousState.workspaces,
+            fullWorkspaces: previousState.fullWorkspaces,
+            error: error instanceof Error ? error.message : 'Failed to update workspace',
+            saveError: error as AppError,
+          });
+          console.error('Failed to persist workspace update:', error);
+        }
       },
 
-      deleteWorkspace: (id) => {
+      deleteWorkspace: async (id) => {
+        // OPTIMISTIC UPDATE: Save previous state for potential rollback
+        const previousState = {
+          workspaces: get().workspaces,
+          fullWorkspaces: get().fullWorkspaces,
+        };
+        
+        // Update state immediately for snappy UI
         set((state) => ({
           workspaces: state.workspaces.filter((w) => w.id !== id),
           fullWorkspaces: state.fullWorkspaces.filter((w) => w.id !== id),
+          saveError: null,
         }));
+
+        // PERSISTENCE: Async delete from backend
+        try {
+          const service = getWorkspaceApplicationService();
+          await service.deleteWorkspace(id);
+        } catch (error) {
+          // ROLLBACK: Revert to previous state on error
+          set({
+            workspaces: previousState.workspaces,
+            fullWorkspaces: previousState.fullWorkspaces,
+            error: error instanceof Error ? error.message : 'Failed to delete workspace',
+            saveError: error as AppError,
+          });
+          console.error('Failed to persist workspace deletion:', error);
+        }
       },
 
       setCurrentWorkspace: (id) => {

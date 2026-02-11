@@ -27,13 +27,9 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import CodeIcon from "@mui/icons-material/Code";
 import type { TransitionProps } from "@mui/material/transitions";
-import type { Workspace } from "../../types/Workspace";
+import type { WorkspaceMetadata } from "../../core/entities/Workspace";
 import { PdfExportService } from "../../infrastructure/services/PdfExportService";
-
-interface Props {
-  workspaces: Workspace[];
-  setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
-}
+import { useWorkspaceStore } from "../stores/workspaceStore";
 
 const COLORS = {
   text: "#0F172A",
@@ -55,11 +51,12 @@ const Transition = React.forwardRef(function Transition(
   return <Slide direction="up" ref={ref} {...props} />;
 });
 
-const ManageWorkspacesPage: React.FC<Props> = ({
-  workspaces,
-  setWorkspaces,
-}) => {
+const ManageWorkspacesPage: React.FC = () => {
   const navigate = useNavigate();
+  
+  // Access workspace data from the central store
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const fullWorkspaces = useWorkspaceStore((state) => state.fullWorkspaces);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -70,7 +67,7 @@ const ManageWorkspacesPage: React.FC<Props> = ({
   );
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [workspaceToExport, setWorkspaceToExport] = useState<Workspace | null>(
+  const [workspaceToExport, setWorkspaceToExport] = useState<WorkspaceMetadata | null>(
     null
   );
 
@@ -86,11 +83,11 @@ const ManageWorkspacesPage: React.FC<Props> = ({
   };
   const confirmDelete = () => {
     if (!toDelete) return;
-    setWorkspaces((prev) => prev.filter((w) => w.id !== toDelete.id));
+    void useWorkspaceStore.getState().deleteWorkspace(toDelete.id);
     closeDeleteDialog();
   };
 
-  const startEdit = (ws: Workspace) => {
+  const startEdit = (ws: WorkspaceMetadata) => {
     setEditingId(ws.id);
     setDraftName(ws.name);
   };
@@ -102,29 +99,34 @@ const ManageWorkspacesPage: React.FC<Props> = ({
     if (!editingId) return;
     const name = draftName.trim();
     if (!name) return;
-    setWorkspaces((prev) =>
-      prev.map((w) => (w.id === editingId ? { ...w, name } : w))
-    );
+    void useWorkspaceStore.getState().updateWorkspace(editingId, { name });
     setEditingId(null);
     setDraftName("");
   };
 
   // Export function to download workspace as JSON
-  const handleExport = (workspace: Workspace) => {
+  const handleExport = (metadata: WorkspaceMetadata) => {
+    // Get full workspace data from store
+    const fullWorkspace = fullWorkspaces.find(w => w.id === metadata.id);
+    if (!fullWorkspace) {
+      console.error(`Full workspace data not found for ID: ${metadata.id}`);
+      return;
+    }
+    
     // Create export object with all metadata
     const exportData = {
-      id: workspace.id,
-      name: workspace.name,
-      owner: workspace.owner,
-      text: workspace.text,
-      isTemporary: workspace.isTemporary,
-      updatedAt: workspace.updatedAt,
-      userSpans: workspace.userSpans,
-      apiSpans: workspace.apiSpans,
-      deletedApiKeys: workspace.deletedApiKeys,
-      tags: workspace.tags,
-      translations: workspace.translations,
-      segments: workspace.segments,
+      id: fullWorkspace.id,
+      name: fullWorkspace.name,
+      owner: fullWorkspace.owner,
+      text: fullWorkspace.text,
+      isTemporary: fullWorkspace.isTemporary,
+      updatedAt: fullWorkspace.updatedAt,
+      userSpans: fullWorkspace.userSpans,
+      apiSpans: fullWorkspace.apiSpans,
+      deletedApiKeys: fullWorkspace.deletedApiKeys,
+      tags: fullWorkspace.tags,
+      translations: fullWorkspace.translations,
+      segments: fullWorkspace.segments,
       // Add export metadata
       exportedAt: Date.now(),
       exportVersion: "1.0",
@@ -139,8 +141,8 @@ const ManageWorkspacesPage: React.FC<Props> = ({
     const link = document.createElement("a");
     link.href = url;
     // Sanitize filename: replace non-alphanumeric chars with underscores
-    const sanitizedName = workspace.name.replace(/[^a-z0-9]/gi, "_");
-    link.download = `${sanitizedName}_${workspace.id}.json`;
+    const sanitizedName = fullWorkspace.name.replace(/[^a-z0-9]/gi, "_");
+    link.download = `${sanitizedName}_${fullWorkspace.id}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -148,9 +150,15 @@ const ManageWorkspacesPage: React.FC<Props> = ({
   };
 
   // Export function to download workspace as PDF
-  const handleExportPdf = async (workspace: Workspace) => {
+  const handleExportPdf = async (metadata: WorkspaceMetadata) => {
     try {
-      await PdfExportService.exportWorkspace(workspace);
+      // Get full workspace data from store
+      const fullWorkspace = fullWorkspaces.find(w => w.id === metadata.id);
+      if (!fullWorkspace) {
+        console.error(`Full workspace data not found for ID: ${metadata.id}`);
+        return;
+      }
+      await PdfExportService.exportWorkspace(fullWorkspace);
     } catch (error) {
       console.error("Failed to export PDF:", error);
       // You could add a notification here if you have a notification system
@@ -158,7 +166,7 @@ const ManageWorkspacesPage: React.FC<Props> = ({
   };
 
   // Open export dialog
-  const openExportDialog = (workspace: Workspace) => {
+  const openExportDialog = (workspace: WorkspaceMetadata) => {
     setWorkspaceToExport(workspace);
     setExportDialogOpen(true);
   };
@@ -254,73 +262,78 @@ const ManageWorkspacesPage: React.FC<Props> = ({
             </TableHead>
 
             <TableBody>
-              {workspaces.map((ws) => (
-                <TableRow
-                  key={ws.id}
-                  hover
-                  sx={{
-                    "&:hover": { backgroundColor: COLORS.hover },
-                    "& .MuiTableCell-root": {
-                      borderBottom: `1px solid ${COLORS.border}`,
-                    },
-                  }}
-                >
-                  <TableCell sx={{ width: "40%", color: COLORS.text }}>
-                    {editingId === ws.id ? (
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <TextField
-                          size="small"
-                          value={draftName}
-                          onChange={(e) => setDraftName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              saveEdit();
-                            }
-                          }}
-                          autoFocus
-                        />
-                        <IconButton
-                          size="small"
-                          onClick={saveEdit}
-                          sx={{ color: COLORS.brand }}
+              {workspaces.map((ws) => {
+                // Check if this workspace is temporary by looking up full workspace data
+                const fullWs = fullWorkspaces.find(fw => fw.id === ws.id);
+                const isTemporary = fullWs?.isTemporary ?? false;
+                
+                return (
+                  <TableRow
+                    key={ws.id}
+                    hover
+                    sx={{
+                      "&:hover": { backgroundColor: COLORS.hover },
+                      "& .MuiTableCell-root": {
+                        borderBottom: `1px solid ${COLORS.border}`,
+                      },
+                    }}
+                  >
+                    <TableCell sx={{ width: "40%", color: COLORS.text }}>
+                      {editingId === ws.id ? (
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
                         >
-                          <CheckIcon />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={cancelEdit}
-                          sx={{ color: COLORS.textSub }}
+                          <TextField
+                            size="small"
+                            value={draftName}
+                            onChange={(e) => setDraftName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                saveEdit();
+                              }
+                            }}
+                            autoFocus
+                          />
+                          <IconButton
+                            size="small"
+                            onClick={saveEdit}
+                            sx={{ color: COLORS.brand }}
+                          >
+                            <CheckIcon />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={cancelEdit}
+                            sx={{ color: COLORS.textSub }}
+                          >
+                            <CloseIcon />
+                          </IconButton>
+                        </Box>
+                      ) : (
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
                         >
-                          <CloseIcon />
-                        </IconButton>
-                      </Box>
-                    ) : (
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <Typography
-                          sx={{
-                            color: COLORS.text,
-                            fontWeight: ws.isTemporary ? 600 : 800,
-                            fontStyle: ws.isTemporary ? "italic" : "normal",
-                          }}
-                        >
-                          {ws.name}
-                        </Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => startEdit(ws)}
-                          sx={{ color: COLORS.brand }}
-                          aria-label="Rename"
-                        >
-                          <EditNoteIcon />
-                        </IconButton>
-                      </Box>
-                    )}
-                  </TableCell>
+                          <Typography
+                            sx={{
+                              color: COLORS.text,
+                              fontWeight: isTemporary ? 600 : 800,
+                              fontStyle: isTemporary ? "italic" : "normal",
+                            }}
+                          >
+                            {ws.name}
+                          </Typography>
+                          <IconButton
+                            size="small"
+                            onClick={() => startEdit(ws)}
+                            sx={{ color: COLORS.brand }}
+                            aria-label="Rename"
+                          >
+                            <EditNoteIcon />
+                          </IconButton>
+                        </Box>
+                      )}
+                    </TableCell>
 
                   <TableCell sx={{ color: COLORS.textSub }}>{ws.id}</TableCell>
 
@@ -371,7 +384,8 @@ const ManageWorkspacesPage: React.FC<Props> = ({
                     </IconButton>
                   </TableCell>
                 </TableRow>
-              ))}
+              );
+              })}
             </TableBody>
           </Table>
         </Box>
