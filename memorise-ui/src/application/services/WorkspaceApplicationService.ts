@@ -56,6 +56,16 @@ export class WorkspaceApplicationService {
     });
   }
 
+  async getWorkspaceById(workspaceId: string): Promise<WorkspaceDTO | null> {
+    const workspace = await this.deps.workspaceRepository.findById(workspaceId);
+    if (!workspace) return null;
+    
+    // Preserve segments from stored data
+    const rawPersistence = await this.getRawPersistenceForWorkspace(workspaceId);
+    const existingDto = rawPersistence ? { segments: rawPersistence.segments } : undefined;
+    return workspaceToDto(workspace, existingDto);
+  }
+
   /**
    * Helper method to get raw persistence data for an owner
    * This is needed to preserve metadata (like segments) that's not in the domain entity

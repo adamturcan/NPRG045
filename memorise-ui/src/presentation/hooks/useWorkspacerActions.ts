@@ -25,7 +25,7 @@ export const useWorkspaceActions = () => {
   
       try {
         await workspaceService.updateWorkspace({ workspaceId: workingSet.workspaceId, patch });
-        setDirty(false); // Success! Reset the dirty flag
+        setDirty(false); 
         enqueueNotification({ message: 'Saved successfully', tone: 'success' });
       } catch (error) {
         console.log(error)
