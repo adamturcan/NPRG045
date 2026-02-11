@@ -29,8 +29,8 @@ export function useWorkspaceSync() {
   return useMemo(
     () => {
       return (updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
-        // Always get fresh state from Zustand
-        const currentWorkspaces = getWorkspaces().workspaces;
+        // Always get fresh state from Zustand (use fullWorkspaces for backward compatibility)
+        const currentWorkspaces = getWorkspaces().fullWorkspaces;
         const newWorkspaces = typeof updater === 'function' 
           ? updater(currentWorkspaces)
           : updater;

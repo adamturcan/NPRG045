@@ -28,6 +28,7 @@ import { Button } from "@mui/material";
 import { errorHandlingService } from "./infrastructure/services/ErrorHandlingService";
 import { presentError } from "./application/errors/errorPresenter";
 import { useErrorLogger } from "./presentation/hooks/useErrorLogger";
+import { StateSynchronizer } from "./presentation/components/shared/StateSynchronizer";
 
 // Lazy load pages for code splitting to reduce initial bundle size
 const AccountPage = lazy(() => import("./presentation/pages/AccoutPage"));
@@ -94,7 +95,10 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Access Zustand store state and actions for workspace management
+  // Use metadata for lightweight UI operations (listing, navigation)
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  // Use full workspaces for operations requiring complete data (save, export)
+  const fullWorkspaces = useWorkspaceStore((state) => state.fullWorkspaces);
   const saveError = useWorkspaceStore((state) => state.saveError);
   const loadWorkspaces = useWorkspaceStore.getState().loadWorkspaces;
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
@@ -114,13 +118,13 @@ const App: React.FC = () => {
   const logError = useErrorLogger({ hook: "App", operation: "save workspaces" });
 
 
-  // Wrapper callback to update workspaces array, memoized to prevent infinite loops in child components
+  // Wrapper callback to update full workspaces array, memoized to prevent infinite loops in child components
   const setWorkspaces = useCallback((updater: Workspace[] | ((prev: Workspace[]) => Workspace[])) => {
-    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
-    const newWorkspaces = typeof updater === 'function' 
-      ? updater(currentWorkspaces)
+    const currentFullWorkspaces = useWorkspaceStore.getState().fullWorkspaces;
+    const newFullWorkspaces = typeof updater === 'function' 
+      ? updater(currentFullWorkspaces)
       : updater;
-    useWorkspaceStore.setState({ workspaces: newWorkspaces });
+    useWorkspaceStore.setState({ fullWorkspaces: newFullWorkspaces });
   }, []); 
 
   // Load user's workspaces from storage when username is available and mark app as booted
@@ -191,15 +195,15 @@ const App: React.FC = () => {
   // Auto-save workspaces to backend when they change, but only after app has booted
   useEffect(() => {
     if (!booted || !username) return;
-    void debouncedSave(username, workspaces);
-  }, [booted, username, workspaces, debouncedSave]);
+    void debouncedSave(username, fullWorkspaces);
+  }, [booted, username, fullWorkspaces, debouncedSave]);
 
   // Handler to retry saving workspaces after a failed save attempt
   const handleRetrySave = useCallback(() => {
     if (!username) return;
     clearNotice();
-    void saveWorkspaces(username, workspaces);
-  }, [username, workspaces, saveWorkspaces, clearNotice]);
+    void saveWorkspaces(username, fullWorkspaces);
+  }, [username, fullWorkspaces, saveWorkspaces, clearNotice]);
 
   // Save username to localStorage, reset boot state, and navigate to workspaces page
   const handleLogin = (name: string) => {
@@ -213,7 +217,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem(USER_KEY);
     setUsername(null);
-    useWorkspaceStore.setState({ workspaces: [] });
+    useWorkspaceStore.setState({ workspaces: [], fullWorkspaces: [] });
     setBooted(true);
     navigate("/login");
   };
@@ -313,15 +317,16 @@ const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box
-        sx={{
-          position: "fixed",
-          inset: 0,
-          width: "100vw",
-          overflow: "clip",
-          background: "linear-gradient(135deg, #2f3e34 0%, #8d7f57 100%)",
-        }}
-        >
+      <StateSynchronizer username={username}>
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            overflow: "clip",
+            background: "linear-gradient(135deg, #2f3e34 0%, #8d7f57 100%)",
+          }}
+          >
         {/* Render sidebar component with workspace list and navigation controls */}
         <BubbleSidebar
           onLogout={handleLogout}
@@ -378,7 +383,7 @@ const App: React.FC = () => {
               <Route
                 path="/manage-workspaces"
                 element={
-                  <ManageWorkspacesPage workspaces={workspaces} setWorkspaces={setWorkspaces} />
+                  <ManageWorkspacesPage workspaces={fullWorkspaces} setWorkspaces={setWorkspaces} />
                 }
               />
               <Route
@@ -409,7 +414,8 @@ const App: React.FC = () => {
             }
           />
         )}
-      </Box>
+        </Box>
+      </StateSynchronizer>
     </ThemeProvider>
   );
 };

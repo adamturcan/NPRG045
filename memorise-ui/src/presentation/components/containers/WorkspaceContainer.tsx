@@ -65,9 +65,10 @@ const WorkspaceContainer: React.FC = () => {
   // ============================================================================
   // STEP 1: WORKSPACE STATE & SELECTION
   // ============================================================================
-  // Get workspaces from Zustand store with shallow comparison to prevent re-renders
+  // Get full workspaces from Zustand store with shallow comparison to prevent re-renders
+  // Note: Using fullWorkspaces for backward compatibility during metadata-first migration
   const { workspaces } = useWorkspaceStore(
-    useShallow((state: WorkspaceStore) => ({ workspaces: state.workspaces }))
+    useShallow((state: WorkspaceStore) => ({ workspaces: state.fullWorkspaces }))
   );
   
   // Create setWorkspaces-compatible function for hooks

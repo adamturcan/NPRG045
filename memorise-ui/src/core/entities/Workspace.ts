@@ -3,6 +3,17 @@ import type { TagItem } from '../../types/Tag';
 import type { Translation as TranslationDTO } from '../../types/Workspace';
 import { Tag, type TagProps } from './Tag';
 
+/**
+ * Lightweight metadata for workspace listing and quick operations.
+ * Use this for list views, navigation, and when full workspace data is not needed.
+ */
+export interface WorkspaceMetadata {
+  id: string;
+  name: string;
+  owner: string;
+  updatedAt: number;
+}
+
 export interface WorkspaceTranslationInput {
   language: string;
   text?: string;
@@ -462,6 +473,19 @@ export class Workspace {
       return this;
     }
     return this.withTemporaryFlag(false);
+  }
+
+  /**
+   * Extracts lightweight metadata from the workspace.
+   * Use this when only basic workspace information is needed.
+   */
+  toMetadata(): WorkspaceMetadata {
+    return {
+      id: this.id,
+      name: this.name,
+      owner: this.owner,
+      updatedAt: this.updatedAt,
+    };
   }
 
   toJSON(): WorkspaceProps {
