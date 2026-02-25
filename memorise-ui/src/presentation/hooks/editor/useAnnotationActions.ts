@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import { Annotation } from "../../../core/entities/Annotation";
 import type { NerSpan } from "../../../types/NotationEditor";
 
+const generateId = () => Math.random().toString(36).substring(2, 15);
+
 export function useAnnotationActions(params: {
   activeSegmentId?: string | null;
   localSpans: NerSpan[];
@@ -38,16 +40,45 @@ export function useAnnotationActions(params: {
       if (!currentEntity && activeSegmentId) { closeAllUI(); return; }
       if (!currentEntity && selectionOverlapsExisting(start, end)) { closeAllUI(); return; }
       if (currentEntity && entity === currentEntity) { closeAllUI(); return; }
+      
+      let spanToDelete: NerSpan | undefined;
+      
+      if (currentEntity && onDeleteSpan) {
+        spanToDelete = localSpans.find(s => 
+          s.start === start && s.end === end && s.entity === currentEntity
+        );
+        
+        onDeleteSpan(spanToDelete || { start, end, entity: currentEntity });
+      }
 
-      if (currentEntity && onDeleteSpan) onDeleteSpan({ start, end, entity: currentEntity });
-      onAddSpan({ start, end, entity });
+      const newSpan: NerSpan = {
+        start,
+        end,
+        entity,
+        origin: 'user', 
+        id: generateId() 
+      };
+
+      onAddSpan(newSpan);
 
       setLocalSpans((prev) => {
-        const withoutOld = currentEntity
-          ? prev.filter(s => !(s.start === start && s.end === end && s.entity === currentEntity))
-          : prev.slice();
+        let withoutOld = prev;
+        
+        if (currentEntity) {
+             withoutOld = prev.filter(s => {
+                 if (spanToDelete?.id && s.id) return s.id !== spanToDelete.id;
+                 return !(s.start === start && s.end === end && s.entity === currentEntity);
+             });
+        } else {
+             withoutOld = prev.slice();
+        }
+        
         const exists = withoutOld.some(s => s.start === start && s.end === end && s.entity === entity);
-        return exists ? withoutOld : [...withoutOld, { start, end, entity }];
+        
+        if (exists) 
+          return withoutOld;
+
+        return [...withoutOld, newSpan].sort((a, b) => a.start - b.start);
       });
 
       closeAllUI();
@@ -55,5 +86,3 @@ export function useAnnotationActions(params: {
 
   return { selectionOverlapsExisting, findSpanAtCursor, findSpansInSelection, pickCategoryForRange };
 }
-
-

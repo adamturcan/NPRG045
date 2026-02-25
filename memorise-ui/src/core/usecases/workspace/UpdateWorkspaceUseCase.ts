@@ -6,6 +6,7 @@ import type { Translation } from '../../../types/Workspace';
 import type { NerSpan } from '../../../types/NotationEditor';
 import { errorHandlingService } from '../../../infrastructure/services/ErrorHandlingService';
 import { requireWorkspaceId } from '../shared/validators';
+import type { Segment } from '../../../types/Segment';
 
 const OPERATION = 'UpdateWorkspaceUseCase';
 
@@ -18,6 +19,7 @@ export interface UpdateWorkspacePatch {
   deletedApiKeys?: string[];
   tags?: TagItem[];
   translations?: Translation[];
+  segments?: Segment[];
   updatedAt?: number;
 }
 

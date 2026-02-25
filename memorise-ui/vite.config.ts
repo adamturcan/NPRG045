@@ -59,9 +59,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/semtag/, "/semtag"),
       },
       "/api/ner": {
-        target: "https://semtag-api.dev.memorise.sdu.dk",
+        target: "https://ner-api.dev.memorise.sdu.dk",  
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/ner/, "/ner"),
+        rewrite: (path) => path.replace(/^\/api\/ner/, ""),  
       },
       "/api/mt": {
         target: "https://quest.ms.mff.cuni.cz/dimbu",

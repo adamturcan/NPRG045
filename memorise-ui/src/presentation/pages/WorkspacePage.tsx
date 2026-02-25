@@ -1,33 +1,38 @@
-// src/pages/WorkspacePage.tsx
-/**
- * WorkspacePage - Thin wrapper component for workspace editing
- * 
- * This page component is a thin wrapper that delegates all logic to WorkspaceContainer.
- * 
- * Architecture:
- * - WorkspacePage: Route-level page component (thin wrapper)
- * - WorkspaceContainer: Container component with all business logic (uses Zustand directly)
- * - Presentational components: BookmarkBar, EditorArea, RightPanel (UI only)
- * 
- * This separation follows the container/presentational pattern:
- * - Page: Handles route-level concerns
- * - Container: Handles business logic and state management (via Zustand)
- * - Presentational: Handle UI rendering
- * 
- * Note: WorkspaceContainer now uses Zustand store directly instead of props.
- * This eliminates prop drilling and prepares for Phase 3 API integration.
- */
 import React from "react";
-import WorkspaceContainer from "../components/containers/WorkspaceContainer";
+import { Box } from "@mui/material";
+import { useLocation } from "react-router-dom";
+import EditorContainer from "../components/containers/EditorContainer";
+import { COLORS } from "../../shared/constants/ui";
+import { useSessionStore } from "../stores/sessionStore";
 
-/**
- * WorkspacePage - Main page component for workspace editing
- * 
- * This is a thin wrapper that delegates to WorkspaceContainer.
- * All logic and state management is handled by the container component using Zustand store.
- */
 const WorkspacePage: React.FC = () => {
-  return <WorkspaceContainer />;
+  const location = useLocation();
+  const currentSessionId = useSessionStore((state) => state.session?.id);
+  
+  const match = location.pathname.match(/^\/workspace\/([^/]+)/);
+  const urlId = match && match[1] !== 'new' ? match[1] : null;
+
+  const isDataReady = currentSessionId === urlId && currentSessionId !== undefined;
+
+  return (
+    <Box sx={{ display: "flex", height: "100vh", overflow: "visible", px: 4, color: COLORS.text }}>
+      <Box sx={{ flex: 1, display: "flex", flexDirection: "column", height: "88.5vh", pl: 4, minHeight: 0 }}>
+        {/* <BookmarkContainer /> */}
+        
+        {isDataReady ? (
+          <EditorContainer key={currentSessionId} />
+        ) : (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+            Loading workspace...
+          </Box>
+        )}
+        
+      </Box>
+      <Box sx={{ width: "300px", height: "86vh", display: "flex", flexDirection: "column", mt: 4, minHeight: 0, ml: 2, pr: 1 }}>
+        {/* <PanelContainer /> */}
+      </Box>
+    </Box>
+  );
 };
 
 export default WorkspacePage;

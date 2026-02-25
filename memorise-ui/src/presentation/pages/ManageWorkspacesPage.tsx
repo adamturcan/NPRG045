@@ -30,6 +30,7 @@ import type { TransitionProps } from "@mui/material/transitions";
 import type { WorkspaceMetadata } from "../../core/entities/Workspace";
 import { PdfExportService } from "../../infrastructure/services/PdfExportService";
 import { useWorkspaceStore } from "../stores/workspaceStore";
+import { getWorkspaceApplicationService } from "../../infrastructure/providers/workspaceProvider";
 
 const COLORS = {
   text: "#0F172A",
@@ -41,7 +42,7 @@ const COLORS = {
   brandHover: "#1E40AF",
   danger: "#DC2626",
   dangerHover: "#B91C1C",
-  titleGold: "#DDD1A0", // memorise gold
+  titleGold: "#DDD1A0", 
 };
 const Transition = React.forwardRef(function Transition(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,9 +55,7 @@ const Transition = React.forwardRef(function Transition(
 const ManageWorkspacesPage: React.FC = () => {
   const navigate = useNavigate();
   
-  // Access workspace data from the central store
   const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const fullWorkspaces = useWorkspaceStore((state) => state.fullWorkspaces);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -104,56 +103,55 @@ const ManageWorkspacesPage: React.FC = () => {
     setDraftName("");
   };
 
-  // Export function to download workspace as JSON
-  const handleExport = (metadata: WorkspaceMetadata) => {
-    // Get full workspace data from store
-    const fullWorkspace = fullWorkspaces.find(w => w.id === metadata.id);
-    if (!fullWorkspace) {
-      console.error(`Full workspace data not found for ID: ${metadata.id}`);
-      return;
-    }
-    
-    // Create export object with all metadata
-    const exportData = {
-      id: fullWorkspace.id,
-      name: fullWorkspace.name,
-      owner: fullWorkspace.owner,
-      text: fullWorkspace.text,
-      isTemporary: fullWorkspace.isTemporary,
-      updatedAt: fullWorkspace.updatedAt,
-      userSpans: fullWorkspace.userSpans,
-      apiSpans: fullWorkspace.apiSpans,
-      deletedApiKeys: fullWorkspace.deletedApiKeys,
-      tags: fullWorkspace.tags,
-      translations: fullWorkspace.translations,
-      segments: fullWorkspace.segments,
-      // Add export metadata
-      exportedAt: Date.now(),
-      exportVersion: "1.0",
-    };
+  const handleExport = async (metadata: WorkspaceMetadata) => {
+    try {
+      const service = getWorkspaceApplicationService();
+      const fullWorkspace = await service.getWorkspaceById(metadata.id);
+      
+      if (!fullWorkspace) {
+        console.error(`Full workspace data not found for ID: ${metadata.id}`);
+        return;
+      }
+      
+      const exportData = {
+        id: fullWorkspace.id,
+        name: fullWorkspace.name,
+        owner: fullWorkspace.owner,
+        text: fullWorkspace.text,
+        isTemporary: fullWorkspace.isTemporary,
+        updatedAt: fullWorkspace.updatedAt,
+        userSpans: fullWorkspace.userSpans,
+        apiSpans: fullWorkspace.apiSpans,
+        deletedApiKeys: fullWorkspace.deletedApiKeys,
+        tags: fullWorkspace.tags,
+        translations: fullWorkspace.translations,
+        segments: fullWorkspace.segments,
+        exportedAt: Date.now(),
+        exportVersion: "1.0",
+      };
 
-    // Convert to JSON string with pretty formatting
-    const jsonString = JSON.stringify(exportData, null, 2);
-    
-    // Create blob and download
-    const blob = new Blob([jsonString], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    // Sanitize filename: replace non-alphanumeric chars with underscores
-    const sanitizedName = fullWorkspace.name.replace(/[^a-z0-9]/gi, "_");
-    link.download = `${sanitizedName}_${fullWorkspace.id}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const jsonString = JSON.stringify(exportData, null, 2);
+      
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const sanitizedName = fullWorkspace.name.replace(/[^a-z0-9]/gi, "_");
+      link.download = `${sanitizedName}_${fullWorkspace.id}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export workspace:', error);
+    }
   };
 
-  // Export function to download workspace as PDF
   const handleExportPdf = async (metadata: WorkspaceMetadata) => {
     try {
-      // Get full workspace data from store
-      const fullWorkspace = fullWorkspaces.find(w => w.id === metadata.id);
+      const service = getWorkspaceApplicationService();
+      const fullWorkspace = await service.getWorkspaceById(metadata.id);
+      
       if (!fullWorkspace) {
         console.error(`Full workspace data not found for ID: ${metadata.id}`);
         return;
@@ -161,11 +159,9 @@ const ManageWorkspacesPage: React.FC = () => {
       await PdfExportService.exportWorkspace(fullWorkspace);
     } catch (error) {
       console.error("Failed to export PDF:", error);
-      // You could add a notification here if you have a notification system
     }
   };
 
-  // Open export dialog
   const openExportDialog = (workspace: WorkspaceMetadata) => {
     setWorkspaceToExport(workspace);
     setExportDialogOpen(true);
@@ -176,14 +172,13 @@ const ManageWorkspacesPage: React.FC = () => {
     setWorkspaceToExport(null);
   };
 
-  // Handle export type selection
-  const handleExportType = (type: "json" | "pdf") => {
+  const handleExportType = async (type: "json" | "pdf") => {
     if (!workspaceToExport) return;
     
     if (type === "json") {
-      handleExport(workspaceToExport);
+      await handleExport(workspaceToExport);
     } else {
-      void handleExportPdf(workspaceToExport);
+      await handleExportPdf(workspaceToExport);
     }
     
     closeExportDialog();
@@ -200,7 +195,6 @@ const ManageWorkspacesPage: React.FC = () => {
         fontFamily: "'DM Sans', sans-serif",
       }}
     >
-      {/* Title with gold color */}
       <Typography
         variant="h5"
         fontWeight={900}
@@ -225,8 +219,7 @@ const ManageWorkspacesPage: React.FC = () => {
           borderRadius: 3,
           border: `1px solid ${COLORS.border}`,
           background: "#FFFFFF",
-          backdropFilter: "blur(6px)",
-          // 💡 stronger shadow like login card
+          backdropFilter: "blur(6px)",      
           boxShadow: "0 14px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.25)",
         }}
       >
@@ -246,7 +239,7 @@ const ManageWorkspacesPage: React.FC = () => {
             <TableHead
               sx={{
                 "& .MuiTableCell-head": {
-                  backgroundColor: "#FFFFFF", // solid white (no translucency)
+                  backgroundColor: "#FFFFFF", 
                   color: COLORS.text,
                   fontWeight: 700,
                   borderBottom: `1px solid ${COLORS.border}`,
@@ -263,10 +256,6 @@ const ManageWorkspacesPage: React.FC = () => {
 
             <TableBody>
               {workspaces.map((ws) => {
-                // Check if this workspace is temporary by looking up full workspace data
-                const fullWs = fullWorkspaces.find(fw => fw.id === ws.id);
-                const isTemporary = fullWs?.isTemporary ?? false;
-                
                 return (
                   <TableRow
                     key={ws.id}
@@ -317,8 +306,7 @@ const ManageWorkspacesPage: React.FC = () => {
                           <Typography
                             sx={{
                               color: COLORS.text,
-                              fontWeight: isTemporary ? 600 : 800,
-                              fontStyle: isTemporary ? "italic" : "normal",
+                              fontWeight: 800,
                             }}
                           >
                             {ws.name}

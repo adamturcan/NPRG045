@@ -1,35 +1,32 @@
-// src/components/editor/SpanBubble.tsx
-/**
- * SpanBubble - Floating button that appears when an annotated span is clicked
- * 
- * This component displays a "..." button positioned at the end of an active
- * annotation span. When clicked, it opens the CategoryMenu with options to:
- * - Change the entity category
- * - Delete the annotation
- * 
- * Similar to SelectionBubble but for existing annotations instead of new selections.
- */
 import React from "react";
 import { IconButton, Tooltip } from "@mui/material";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import type { SpanBubbleProps } from "../../../types/NotationEditor";
 
-const SpanBubble: React.FC<SpanBubbleProps> = ({
-  spanBox,
+interface BubbleProps {
+  box: { top: number; left: number };
+  tooltip: string;
+  onMenuClick: (e: React.MouseEvent<HTMLElement>) => void;
+  onMouseDown: (e: React.MouseEvent<HTMLElement>) => void;
+} 
+
+// Bubble component used to display the "..." button for the span menu
+const Bubble: React.FC<BubbleProps> = ({
+  box,
+  tooltip,
   onMenuClick,
   onMouseDown,
 }) => {
   return (
-    <Tooltip title="Edit entity">
+    <Tooltip title={tooltip}>
       <IconButton
         size="small"
         disableRipple
-        onMouseDown={onMouseDown} // Prevents closing the bubble on mousedown
-        onClick={onMenuClick} // Opens the edit menu
+        onMouseDown={onMouseDown}
+        onClick={onMenuClick}
         sx={{
           position: "absolute",
-          top: spanBox.top - 4, // Position calculated from the span's DOM range
-          left: spanBox.left - 4,
+          top: box.top - 4,
+          left: box.left - 4,
           width: 30,
           height: 30,
           borderRadius: "999px",
@@ -54,7 +51,7 @@ const SpanBubble: React.FC<SpanBubbleProps> = ({
           },
           WebkitTapHighlightColor: "transparent",
           color: "#0F172A",
-          zIndex: 60, // Ensure it appears above editor content
+          zIndex: 60,
         }}
       >
         <MoreHorizIcon sx={{ fontSize: 20 }} />
@@ -63,4 +60,4 @@ const SpanBubble: React.FC<SpanBubbleProps> = ({
   );
 };
 
-export default SpanBubble;
+export default Bubble;

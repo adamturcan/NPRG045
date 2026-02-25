@@ -12,8 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 
-import type { NerSpan } from "../../../types/NotationEditor";
-import { ENTITY_COLORS, COLORS, hexToRgba } from "../../../shared/constants/notationEditor";
+import type { NerSpan } from "../../../../types/NotationEditor";
+import { ENTITY_COLORS, COLORS, hexToRgba } from "../../../../shared/constants/notationEditor";
 
 interface Props {
   open: boolean;

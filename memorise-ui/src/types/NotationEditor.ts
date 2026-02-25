@@ -1,5 +1,5 @@
 // src/types/NotationEditor.ts
-import type {  BaseEditor } from "slate";
+import type { BaseEditor } from "slate";
 import type { ReactEditor } from "slate-react";
 import type { HistoryEditor } from "slate-history";
 
@@ -15,7 +15,10 @@ declare module "slate" {
 }
 
 /** ---- Span type ---- */
-export type NerSpan = {
+export type NerSpan = {  
+  id?: string;
+  origin?: 'api' | 'user';
+  
   start: number;
   end: number;
   entity: string;
@@ -56,26 +59,18 @@ export interface NotationEditorProps {
   onDeleteSpan?: (span: NerSpan) => void;
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
-  /** Called whenever editor adjusts span indices due to text edits */
   onSpansAdjusted?: (next: NerSpan[]) => void;
-  /** Called whenever editor adjusts segment indices due to text edits */
   onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
-  /** keys: `${start}:${end}:${entity}` */
   deletableKeys?: Set<string>;
-  /** adding a span via selection "…" menu or change-category */
   onAddSpan?: (span: NerSpan) => void;
-  /** segments for visual markers */
   segments?: Array<{ id: string; start: number; end: number; order: number }>;
-  /** active segment ID for highlighting */
   activeSegmentId?: string;
-  /** selected segment ID in segment view mode - used to adjust annotation offsets */
   selectedSegmentId?: string;
-  /** active translation tab ("original" or translation language code) - used to hide segment borders in translation view */
   activeTab?: string;
 }
 
 export interface EntityLeafProps {
- // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   attributes: any;
   children: React.ReactNode;
   leaf: {

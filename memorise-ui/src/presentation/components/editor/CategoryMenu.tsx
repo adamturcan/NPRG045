@@ -1,17 +1,5 @@
-// src/components/editor/CategoryMenu.tsx
-/**
- * CategoryMenu - Dropdown menu for selecting entity categories
- * 
- * This component displays a popup menu with all available entity categories.
- * Each category is shown with its color indicator. The menu can be opened from:
- * - SelectionBubble (to annotate new text)
- * - SpanBubble (to edit existing annotations)
- * 
- * When editing an existing annotation (showDelete=true), a Delete option is
- * also displayed at the bottom of the menu.
- */
 import React from "react";
-import { Menu, MenuItem, Divider } from "@mui/material";
+import { Menu, MenuItem, Divider, Box } from "@mui/material";
 import { ENTITY_COLORS, CATEGORY_LIST } from "../../../shared/constants/notationEditor";
 import type { CategoryMenuProps } from "../../../types/NotationEditor";
 
@@ -19,49 +7,74 @@ const CategoryMenu: React.FC<CategoryMenuProps> = ({
   anchorEl,
   onClose,
   onCategorySelect,
-  onMouseDown,
   showDelete = false,
   onDelete,
 }) => {
+  
+  // Helper to handle click without losing editor focus
+  const handleItemClick = (e: React.MouseEvent, category: string) => {
+    e.preventDefault(); 
+    e.stopPropagation();
+    onCategorySelect(category);
+  };
+
+  // Helper for delete
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  
+    if (onDelete) onDelete();
+  };
+
+  // Helper to prevent focus loss during mouse down
+  const preventFocusLoss = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <Menu
       anchorEl={anchorEl}
       open={!!anchorEl}
       onClose={onClose}
+      
+      autoFocus={false} 
+      disableAutoFocus={true} 
+      disableEnforceFocus={true}
+      
+      
       MenuListProps={{
         dense: true,
-        onMouseDown, // Prevents menu from closing during interaction
-      }}
-      PaperProps={{
-        onMouseDown, // Prevents menu from closing during interaction
+        onMouseDown: preventFocusLoss, 
       }}
     >
-      {/* Render all available entity categories */}
       {CATEGORY_LIST.map((category: string) => (
         <MenuItem
-          key={category}
-          onClick={() => onCategorySelect(category)}
+          key={category}          
+          onMouseDown={preventFocusLoss}
+          onClick={(e) => handleItemClick(e, category)}
         >
-          {/* Color indicator dot */}
-          <span
-            style={{
+          <Box
+            component="span"
+            sx={{
               display: "inline-block",
               width: 10,
               height: 10,
               borderRadius: "50%",
-              background: ENTITY_COLORS[category] ?? "#64748B",
-              marginRight: 8,
+              bgcolor: ENTITY_COLORS[category] ?? "#64748B",
+              mr: 1,
             }}
           />
           {category}
         </MenuItem>
       ))}
-      {/* Show delete option when editing existing annotations */}
-      {showDelete && [
+
+      {showDelete && onDelete && [
         <Divider key="divider" />,
         <MenuItem
           key="delete"
-          onClick={onDelete}
+          onMouseDown={preventFocusLoss}
+          onClick={handleDeleteClick}
           sx={{ color: "#b91c1c", fontWeight: 600 }}
         >
           Delete

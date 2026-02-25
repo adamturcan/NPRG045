@@ -38,6 +38,7 @@
     "slate": "^0.118.0",
     "slate-history": "^0.113.1",
     "slate-react": "^0.117.4",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

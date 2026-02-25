@@ -1,6 +1,6 @@
-// Import React hooks and components for state management, routing, and lazy loading
+// React hooks and components for state management, routing, and lazy loading
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
-// Import Material-UI components for theming and layout
+// Material-UI components for theming and layout
 import {
   CssBaseline,
   ThemeProvider,
@@ -8,7 +8,7 @@ import {
   Box,
   responsiveFontSizes,
 } from "@mui/material";
-// Import React Router components for navigation and routing
+// React Router components for navigation and routing
 import {
   Routes,
   Route,
@@ -16,7 +16,7 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
-// Import custom components, stores, services, and utilities
+// Custom components, stores, services, and utilities
 import BubbleSidebar from "./presentation/components/sidebar/BubbleSidebar";
 import { useWorkspaceStore } from "./presentation/stores/workspaceStore";
 import { useNotificationStore } from "./presentation/stores/notificationStore";
@@ -25,13 +25,13 @@ import type { Workspace } from "./types/Workspace";
 import { NotificationSnackbar } from "./presentation/components/shared/NotificationSnackbar";
 import { StateSynchronizer } from "./presentation/components/shared/StateSynchronizer";
 
-// Lazy load pages for code splitting to reduce initial bundle size
+// Lazy load pages for code splitting
 const AccountPage = lazy(() => import("./presentation/pages/AccoutPage"));
 const WorkspacePage = lazy(() => import("./presentation/pages/WorkspacePage"));
 const ManageWorkspacesPage = lazy(() => import("./presentation/pages/ManageWorkspacesPage"));
 const LoginPage = lazy(() => import("./presentation/pages/LoginPage"));
 
-// Create and configure the Material-UI theme with custom colors, fonts, and typography
+// Create the Material-UI theme
 let theme = createTheme({
   palette: {
     mode: "light",
@@ -49,14 +49,14 @@ let theme = createTheme({
     body2: { fontSize: "0.875rem", lineHeight: 1.5 },
   },
 });
-// Make theme responsive by scaling font sizes based on screen size
+// Make theme responsive
 theme = responsiveFontSizes(theme);
 
-// Storage key for persisting the current user's username in localStorage
+// Storage key for persisting the current user's username
 const USER_KEY = "memorise.user.v1";
 
-/* --- helper route for /workspace/new: create + redirect --- */
-// Component that creates a new workspace and redirects to it or manage page on mount
+
+// Component that creates a new workspace and redirects to it or manage page
 const NewWorkspaceRedirect: React.FC<{
   onCreate: () => Workspace;
 }> = ({ onCreate }) => {
@@ -73,14 +73,13 @@ const NewWorkspaceRedirect: React.FC<{
   return null;
 };
 
-/* ---------------- App ---------------- */
-
+// App component
 const App: React.FC = () => {
-  // Get current route location and navigation function from React Router
+  // Get current route location and navigation function
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Initialize username from localStorage to prevent flicker on page load
+  // Initialize username from localStorage
   const [username, setUsername] = useState<string | null>(() =>
     localStorage.getItem(USER_KEY)
   );
@@ -89,22 +88,20 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Access Zustand store state and actions for workspace management
-  // Use metadata for lightweight UI operations (listing, navigation)
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
   
-  // Access notification store for displaying global messages
+  // Access notification store
   const current = useNotificationStore((state) => state.current);
   const dequeue = useNotificationStore.getState().dequeue;
   
-  // Memoize workspace application service to prevent recreating on each render
+  // Memoize workspace application service
   const workspaceApplicationService = useMemo(
     () => getWorkspaceApplicationService(),
     []
   );
 
-  // Save username to localStorage and navigate to workspaces page
-  // StateSynchronizer will react to the username change
+  // Save username to localStorage and navigate to workspaces
   const handleLogin = (name: string) => {
     localStorage.setItem(USER_KEY, name);
     setUsername(name);
@@ -112,14 +109,13 @@ const App: React.FC = () => {
   };
 
   // Clear user data from localStorage and navigate to login page
-  // StateSynchronizer will react to the username change
   const handleLogout = () => {
     localStorage.removeItem(USER_KEY);
     setUsername(null);
     navigate("/login");
   };
 
-  // Create a new workspace draft with auto-incremented name and add it to the store
+  // Create a new workspace draft with auto-incremented name
   const handleAddWorkspace = () => {
     if (!username) return { id: "", name: "", isTemporary: true } as Workspace;
     const newCount = workspaces.filter((w) =>
@@ -135,25 +131,25 @@ const App: React.FC = () => {
 
   // Move the opened workspace to the front of the list to maintain recent workspaces order
   const bumpWorkspaceToFront = (id: string) => {
-    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
+    
+    const currentWorkspaces = useWorkspaceStore.getState().workspaces;    
+
     const idx = currentWorkspaces.findIndex((w) => w.id === id);
     if (idx <= 0) return;
     const next = [...currentWorkspaces];
-    const [item] = next.splice(idx, 1);
+    const [item] = next.splice(idx, 1);    
     next.unshift(item);
-    // Use Zustand's setState to replace the entire array
+    
     useWorkspaceStore.setState({ workspaces: next });
   };
 
-  // Bump workspace to front of list when navigating to a workspace route
+  // Bump workspace to front of list when navigating to a workspace
   useEffect(() => {
     const m = location.pathname.match(/^\/workspace\/([^/]+)$/);
     if (!m) return;
     const id = decodeURIComponent(m[1]);
     if (id !== "new") bumpWorkspaceToFront(id);
   }, [location.pathname]);
-
-  /* --------- Routing --------- */
 
   // Render login page and routes when user is not authenticated
   if (!username) {
@@ -186,7 +182,7 @@ const App: React.FC = () => {
     );
   }
 
-  // Render main application with sidebar, routes, and notification system
+  // Render the main application
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -208,7 +204,7 @@ const App: React.FC = () => {
           workspaces={workspaces}
           onAddWorkspace={handleAddWorkspace}
         />
-        {/* Render main content area with routes for all authenticated pages */}
+        {/* Render the main content area */}
         <Box
           sx={{
             flexGrow: 1,
@@ -266,7 +262,7 @@ const App: React.FC = () => {
             </Routes>
           </Suspense>
         </Box>
-        {/* Render notification snackbar for global messages */}
+        {/* Render the notification snackbar */}
         {current && (
           <NotificationSnackbar
             message={current.message}

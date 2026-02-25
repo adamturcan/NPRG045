@@ -19,8 +19,8 @@ import {
   Paper,
 } from "@mui/material";
 
-import type { NerSpan } from "../../../types/NotationEditor";
-import { ENTITY_COLORS, COLORS } from "../../../shared/constants/notationEditor";
+import type { NerSpan } from "../../../../types/NotationEditor";
+import { ENTITY_COLORS, COLORS } from "../../../../shared/constants/notationEditor";
 
 interface Props {
   open: boolean;
@@ -34,7 +34,7 @@ const getEntityColor = (entity: string) => ENTITY_COLORS[entity] ?? COLORS.borde
 
 const keyOfSpan = (span: NerSpan): string => `${span.start}:${span.end}:${span.entity}`;
 
-const UndoAffectedSpansDialog: React.FC<Props> = ({
+const MultiDeletionDialog: React.FC<Props> = ({
   open,
   spans,
   spanTexts,
@@ -88,18 +88,18 @@ const UndoAffectedSpansDialog: React.FC<Props> = ({
           onCancel();
         }
       }}
-      aria-labelledby="undo-affected-spans-dialog-title"
-      aria-describedby="undo-affected-spans-dialog-description"
+      aria-labelledby="multi-deletion-dialog-title"
+      aria-describedby="multi-deletion-dialog-description"
       maxWidth="md"
       fullWidth
     >
-      <DialogTitle id="undo-affected-spans-dialog-title">
-        Undo will affect annotations
+      <DialogTitle id="multi-deletion-dialog-title">
+        Delete multiple annotations
       </DialogTitle>
       <DialogContent>
-        <DialogContentText id="undo-affected-spans-dialog-description" sx={{ mb: 2 }}>
-          Undoing this action will remove or modify text that contains {totalCount} annotation{totalCount !== 1 ? "s" : ""}.
-          These annotations will be deleted. You can choose which ones to keep before proceeding with undo.
+        <DialogContentText id="multi-deletion-dialog-description" sx={{ mb: 2 }}>
+          The selected text intersects {totalCount} annotation{totalCount !== 1 ? "s" : ""}. 
+          Select which annotations you want to delete. This action cannot be undone.
         </DialogContentText>
 
         <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
@@ -186,7 +186,7 @@ const UndoAffectedSpansDialog: React.FC<Props> = ({
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={onCancel} color="primary">
-          Cancel Undo
+          Cancel
         </Button>
         <Button
           onClick={handleConfirm}
@@ -194,12 +194,12 @@ const UndoAffectedSpansDialog: React.FC<Props> = ({
           variant="contained"
           disabled={selectedCount === 0}
         >
-          Undo {selectedCount > 0 && `(${selectedCount} annotation${selectedCount !== 1 ? "s" : ""} will be deleted)`}
+          Delete {selectedCount > 0 ? `(${selectedCount})` : ""}
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-export default UndoAffectedSpansDialog;
+export default MultiDeletionDialog;
 
