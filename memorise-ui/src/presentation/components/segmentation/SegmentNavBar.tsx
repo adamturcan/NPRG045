@@ -16,8 +16,7 @@ import { getSegmentText } from "../../../types/Segment";
 
 interface SegmentNavBarProps {
   segments: Segment[];
-  activeSegmentId?: string;
-  selectedSegmentId?: string;
+  activeSegmentId?: string;  
   viewMode?: "document" | "segments";
   onSegmentClick?: (segment: Segment) => void;
   onJoinSegments?: (segmentId1: string, segmentId2: string) => void;
@@ -28,7 +27,6 @@ interface SegmentNavBarProps {
 const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
   segments,
   activeSegmentId,
-  selectedSegmentId,
   viewMode = "document",
   onSegmentClick,
   onJoinSegments,
@@ -101,7 +99,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
           // In segment view, use selectedSegmentId for highlighting
           const isActive = viewMode === "document" 
             ? segment.id === activeSegmentId
-            : segment.id === selectedSegmentId;
+            : segment.id === activeSegmentId;
           const segmentText = segment.text ?? getSegmentText(segment, text);
           const preview = segmentText.length > 50 
             ? `${segmentText.substring(0, 50)}...` 

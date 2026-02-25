@@ -18,7 +18,7 @@ import { ENTITY_COLORS, COLORS, hexToRgba } from "../../../../shared/constants/n
 interface Props {
   open: boolean;
   span: NerSpan | null;
-  spanText?: string; // Optional text snippet to display
+  spanText?: string; 
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -74,7 +74,7 @@ const DeletionConfirmationDialog: React.FC<Props> = ({
               sx={{ 
                 fontFamily: "DM Mono, monospace", 
                 flexGrow: 1,
-                minWidth: 0, // Allow text to shrink if needed
+                minWidth: 0, 
               }}
             >
               {spanText ? `"${spanText}"` : "(text unavailable)"}

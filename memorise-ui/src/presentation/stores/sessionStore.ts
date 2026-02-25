@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware';
 import type { Workspace, Translation } from '../../types/Workspace';
 import type { NerSpan } from '../../types/NotationEditor';
 import type { Segment } from '../../types/Segment';
+import { populateSegmentText } from '../../types/Segment';
 
 // Equality check to prevent unnecessary re-renders & updates
 const areSpansEqual = (a: NerSpan[], b: NerSpan[]) => {
@@ -21,9 +22,10 @@ interface SessionStore {
   session: Workspace | null;      
   draftText: string;              
   activeTab: string;
-  translationViewMode: "document" | "segments";
-  selectedSegmentId: string | null;
+
+  viewMode: "document" | "segments";
   activeSegmentId: string | undefined;
+  
   
   isDirty: boolean;
   lastChangedAt: number;
@@ -31,6 +33,10 @@ interface SessionStore {
   loadSession: (workspace: Workspace) => void;
   resetSession: () => void;
   setLoading: () => void;
+
+
+  setViewMode: (mode: "document" | "segments") => void;
+
   
   setDraftText: (text: string) => void;
   updateUserSpans: (spans: NerSpan[]) => void;
@@ -40,7 +46,7 @@ interface SessionStore {
   updateTranslations: (translations: Translation[]) => void;
   
   setActiveTab: (tab: string) => void;
-  setTranslationViewMode: (mode: "document" | "segments") => void;
+  
   setSelectedSegmentId: (id: string | null) => void;
   setActiveSegmentId: (id: string | undefined) => void;
 }
@@ -60,6 +66,11 @@ export const useSessionStore = create<SessionStore>()(
       lastChangedAt: 0,
 
       loadSession: (workspace) => {
+        // Populate segment text fields if they're missing
+        const populatedSegments = workspace.segments 
+          ? populateSegmentText(workspace.segments, workspace.text || "")
+          : [];
+
         const normalized: Workspace = {
           ...workspace,
           userSpans: workspace.userSpans ?? [],
@@ -67,7 +78,7 @@ export const useSessionStore = create<SessionStore>()(
           deletedApiKeys: workspace.deletedApiKeys ?? [],
           tags: workspace.tags ?? [],
           translations: workspace.translations ?? [],
-          segments: workspace.segments ?? [],
+          segments: populatedSegments,
         };
 
         set({
@@ -76,8 +87,7 @@ export const useSessionStore = create<SessionStore>()(
           isDirty: false,
           lastChangedAt: 0,
           activeTab: "original",
-          translationViewMode: "document",
-          selectedSegmentId: null,
+          viewMode: "document",          
           activeSegmentId: undefined,
         });
       },
@@ -89,8 +99,7 @@ export const useSessionStore = create<SessionStore>()(
           isDirty: false,
           lastChangedAt: 0,
           activeTab: "original",
-          translationViewMode: "document",
-          selectedSegmentId: null,
+          viewMode: "document",
           activeSegmentId: undefined,
         });
       },
@@ -210,12 +219,10 @@ export const useSessionStore = create<SessionStore>()(
         set({ activeTab: tab });
       },
       
-      setTranslationViewMode: (mode) => {
-        set({ translationViewMode: mode, selectedSegmentId: null });
-      },
+
       
-      setSelectedSegmentId: (id) => {
-        set({ selectedSegmentId: id });
+      setViewMode: (mode) => {
+        set({ viewMode: mode });
       },
       
       setActiveSegmentId: (id) => {

@@ -4,52 +4,47 @@ import RightPanel, { type TagRow } from "../right/RightPanel";
 import SplitSegmentDialog from "../segmentation/SplitSegmentDialog";
 import type { ThesaurusItem } from "../tags/TagThesaurusInput";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useNotificationStore } from "../../stores/notificationStore";
 import { useThesaurusDisplay, useThesaurusWorker } from "../../hooks";
 import { useSegmentOperations } from "../../hooks/useSegmentOperations";
-import { presentError } from "../../../application/errors/errorPresenter";
-import { errorHandlingService } from "../../../infrastructure/services/ErrorHandlingService";
 import { workflowService } from "../../../application/services/WorkflowApplicationService";
+import { type Segment } from "../../../types/Segment";
 
 const PanelContainer: React.FC = () => {
   const { id: routeId } = useParams();
   
-  const enqueueNotification = useNotificationStore((state) => state.enqueue);
+  
 
   const session = useSessionStore((state) => state.session);
-  const segments = useSessionStore((state) => state.session?.segments ?? []);
+
+  // used for segment operations
+  const segments = useSessionStore((state) => state.session?.segments ?? []);  
+  //use for tag operations
   const tags = useSessionStore((state) => state.session?.tags ?? []);
-  const sessionText = useSessionStore((state) => state.session?.text ?? "");
-  const sessionTranslations = useSessionStore((state) => state.session?.translations ?? []);
+  
+  //this is the same thing most likely 
   const activeSegmentId = useSessionStore((state) => state.activeSegmentId);
-  const selectedSegmentId = useSessionStore((state) => state.selectedSegmentId);
-  const translationViewMode = useSessionStore((state) => state.translationViewMode);
-  const setTranslationViewMode = useSessionStore((state) => state.setTranslationViewMode);
-  const activeTab = useSessionStore((state) => state.activeTab);
+
+  // could be merged with the general view mode
+  const viewMode = useSessionStore((state) => state.viewMode);
+  const setViewMode = useSessionStore((state) => state.setViewMode);
+  
   const setDraftText = useSessionStore((state) => state.setDraftText);
   
   const currentId = routeId ?? session?.id ?? null;
 
-  const showNotice = useCallback((msg: string, opts?: { tone?: "success" | "error" | "info" | "default" | "warning"; persistent?: boolean }) => {
-    enqueueNotification({ message: msg, tone: opts?.tone, persistent: opts?.persistent });
-  }, [enqueueNotification]);
+ 
 
-  const handleError = useCallback((err: unknown) => {
-    const appError = errorHandlingService.isAppError(err) ? err : errorHandlingService.handleApiError(err);
-    const notice = presentError(appError);
-    showNotice(notice.message, { tone: notice.tone, persistent: notice.persistent });
-  }, [showNotice]);
-
-  const segmentOps = useSegmentOperations(currentId, session, showNotice);
+  const segmentOps = useSegmentOperations();
   const thesaurusWorker = useThesaurusWorker();
   const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
 
-  const currentSegmentId = translationViewMode === "segments" ? selectedSegmentId : undefined;
+  //filter tags based on the active segment 
   const filteredTags = useMemo(
-    () => !currentSegmentId ? tags.filter(t => !t.segmentId) : tags.filter(t => t.segmentId === currentSegmentId),
-    [tags, currentSegmentId]
+    () => activeSegmentId && viewMode === "segments" ? tags.filter(t => t.segmentId === activeSegmentId) : tags,
+    [tags, activeSegmentId, viewMode]
   );
 
+  //map tags to the structure used for rendering the table
   const tagRows = useMemo<TagRow[]>(
     () => filteredTags.map((t) => ({
       name: t.name,
@@ -60,26 +55,22 @@ const PanelContainer: React.FC = () => {
     [filteredTags]
   );
 
-  const fullDocumentText = useMemo(
-    () => activeTab === "original" 
-      ? sessionText
-      : sessionTranslations.find((t) => t.language === activeTab)?.text || "",
-    [sessionText, sessionTranslations, activeTab]
-  );
 
-  const addCustomTag = useCallback(async (name: string, keywordId?: number, parentId?: number) => {
-    try {
-      await workflowService.addCustomTag(name, { keywordId, parentId, segmentId: currentSegmentId ?? undefined });
-    } catch (err) {
-      handleError(err);
+  const addTag = useCallback(async (name: string, keywordId?: number, parentId?: number) => {
+    try {      
+      await workflowService.addCustomTag(name, { keywordId, parentId, segmentId: activeSegmentId });
+    } catch  {
+      //TODO: handle error
+      //
     }
-  }, [currentSegmentId, handleError]);
+  }, [activeSegmentId]);
 
   const deleteTag = useCallback(
     (name: string, keywordId?: number, parentId?: number) => workflowService.deleteTag(name, keywordId, parentId),
     []
   );
 
+  
   const fetchThesaurus = useCallback(async (q: string): Promise<ThesaurusItem[]> => {
     if (!q.trim() || !thesaurusWorker.ready) return [];
     try {
@@ -97,14 +88,13 @@ const PanelContainer: React.FC = () => {
   }, [thesaurusWorker]);
 
   const thesaurusConfig = useMemo(
-    () => ({
-      onAdd: addCustomTag,
+    () => ({      
       fetchSuggestions: fetchThesaurus,
       defaultRestrictToThesaurus: false,
       isThesaurusLoading: !thesaurusWorker.ready,
       resetKey: currentId ?? undefined
     }),
-    [addCustomTag, fetchThesaurus, thesaurusWorker.ready, currentId]
+    [fetchThesaurus, thesaurusWorker.ready, currentId]
   );
 
   return (
@@ -112,25 +102,31 @@ const PanelContainer: React.FC = () => {
       <RightPanel
         tags={tagRows}
         onDeleteTag={deleteTag}
+        onAddTag={addTag}
+
         thesaurus={thesaurusConfig}
         thesaurusIndex={thesaurusIndexForDisplay}
         segments={segments}
+        
         activeSegmentId={activeSegmentId}
-        selectedSegmentId={selectedSegmentId}
-        onSegmentClick={(seg) => segmentOps.handleSegmentClick(seg, setDraftText, () => {})}
-        onJoinSegments={segmentOps.handleJoinSegments}
-        onSplitSegment={segmentOps.handleSplitSegment}
-        viewMode={translationViewMode}
-        onViewModeChange={setTranslationViewMode}
-        text={fullDocumentText}
+
+
+        segmentOperations={{
+          handleSegmentClick: (segment: Segment) => segmentOps.handleSegmentClick(segment, setDraftText, () => {}),
+          handleJoinSegments: segmentOps.handleJoinSegments,
+          handleSplitSegment: segmentOps.handleSplitSegment,
+        }}
+        
+        
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+ 
       />
       <SplitSegmentDialog
         open={segmentOps.splitDialogOpen}
-        segment={segmentOps.segmentToSplit}
-        fullText={segmentOps.fullDocumentTextRef.current || session?.text || ""}
+        segment={segments.find(s => s.id === activeSegmentId) ?? null}        
         onClose={() => {
-          segmentOps.setSplitDialogOpen(false);
-          segmentOps.setSegmentToSplit(null);
+          segmentOps.setSplitDialogOpen(false);         
         }}
         onConfirm={segmentOps.handleConfirmSplit}
       />

@@ -25,7 +25,7 @@ import { ENTITY_COLORS, COLORS } from "../../../../shared/constants/notationEdit
 interface Props {
   open: boolean;
   spans: NerSpan[];
-  spanTexts: Map<string, string>; // Map of span key to text
+  spanTexts: Map<string, string>; 
   onConfirm: (selectedSpans: NerSpan[]) => void;
   onCancel: () => void;
 }
@@ -41,10 +41,8 @@ const MultiDeletionDialog: React.FC<Props> = ({
   onConfirm,
   onCancel,
 }) => {
-  // Track which spans are selected for deletion
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
-  // Initialize with all spans selected when dialog opens or spans change
   useEffect(() => {
     if (open && spans.length > 0) {
       setSelectedKeys(new Set(spans.map(keyOfSpan)));

@@ -24,10 +24,8 @@ const BookmarkContainer: React.FC = () => {
   const activeTab = useSessionStore((state) => state.activeTab);
   const setDraftText = useSessionStore((state) => state.setDraftText);
   
-  // Determine current workspace ID
   const currentId = routeId ?? session?.id ?? null;
 
-  // Read translation languages from session
   const translationLanguages = sessionTranslations.map(t => t.language);
 
   const showNotice = useCallback((msg: string, opts?: { tone?: "success" | "error" | "info" | "default" | "warning"; persistent?: boolean }) => {

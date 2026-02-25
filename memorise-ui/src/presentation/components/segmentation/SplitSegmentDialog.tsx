@@ -23,8 +23,7 @@ interface SplitOption {
 
 interface Props {
   open: boolean;
-  segment: Segment | null;
-  fullText: string;
+  segment: Segment | null;  
   onClose: () => void;
   onConfirm: (splitPosition: number) => void;
 }
@@ -41,7 +40,6 @@ const SEPARATORS = ['.', ',', ':', ';', '!', '?', '—', '–'];
 const SplitSegmentDialog: React.FC<Props> = ({
   open,
   segment,
-  fullText,
   onClose,
   onConfirm,
 }) => {
@@ -50,7 +48,7 @@ const SplitSegmentDialog: React.FC<Props> = ({
   const splitOptions = useMemo<SplitOption[]>(() => {
     if (!segment) return [];
     
-    const segmentText = segment.text ?? fullText.substring(segment.start, segment.end);
+    const segmentText = segment.text;
     const options: SplitOption[] = [];
     
     // Find all separator positions
@@ -70,7 +68,7 @@ const SplitSegmentDialog: React.FC<Props> = ({
     }
     
     return options;
-  }, [segment, fullText]);
+  }, [segment]);
 
   const handleConfirm = () => {
     if (selectedOption) {
@@ -92,8 +90,6 @@ const SplitSegmentDialog: React.FC<Props> = ({
   }, [open, segment]);
 
   if (!segment) return null;
-
-  const segmentText = segment.text ?? fullText.substring(segment.start, segment.end);
 
   return (
     <Dialog
@@ -128,7 +124,7 @@ const SplitSegmentDialog: React.FC<Props> = ({
                 fontSize: "0.875rem",
               }}
             >
-              {segmentText}
+              {segment.text}
             </Box>
 
             <Typography variant="subtitle2" gutterBottom>
