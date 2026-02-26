@@ -14,7 +14,6 @@ export type { TagRow };
 interface Props {
   data: TagRow[];
   onDelete: (name: string, keywordId?: number, parentId?: number) => void;
-  inputField?: React.ReactNode;
   thesaurus?: {
     onAdd: (name: string) => void;
     fetchSuggestions: (query: string) => Promise<ThesaurusItem[]>;
@@ -33,7 +32,7 @@ const styles = {
   paperBase: { height: "100%", display: "flex", flexDirection: "column", border: "1px solid #BFD0E8", borderRadius: "14px", background: "linear-gradient(180deg, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0.45) 100%)", backdropFilter: "blur(6px)", boxShadow: "0 1px 0 rgba(12, 24, 38, 0.04), 0 6px 16px rgba(12, 24, 38, 0.06)", overflow: "hidden" }
 };
 
-const TagTable: React.FC<Props> = ({ data, onDelete, inputField, thesaurus, thesaurusIndex }) => {
+const TagTable: React.FC<Props> = ({ data, onDelete, thesaurus, thesaurusIndex }) => {
   const [restrictOnly, setRestrictOnly] = useState(Boolean(thesaurus?.restrictToThesaurus ?? thesaurus?.defaultRestrictToThesaurus ?? false));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -79,11 +78,18 @@ const TagTable: React.FC<Props> = ({ data, onDelete, inputField, thesaurus, thes
       )}
 
       {/* Input section */}
-      <Box sx={{ px: 1, py: 0.75, borderBottom: "1px solid #E2E8F0", position: "sticky", top: thesaurus ? 41 : 0, zIndex: 1, background: "linear-gradient(180deg, rgba(255,255,255,0.80) 0%, rgba(255,255,255,0.55) 100%)" }}>
-        {inputField ?? (thesaurus && (
-          <TagThesaurusInput key={thesaurus.resetKey} onAdd={thesaurus.onAdd} fetchSuggestions={restrictOnly ? thesaurus.fetchSuggestions : emptySuggestions} restrictToThesaurus={restrictOnly} placeholder={thesaurus.placeholder} isThesaurusLoading={thesaurus.isThesaurusLoading} />
-        ))}
-      </Box>
+      {thesaurus && (
+        <Box sx={{ px: 1, py: 0.75, borderBottom: "1px solid #E2E8F0", position: "sticky", top: thesaurus ? 41 : 0, zIndex: 1, background: "linear-gradient(180deg, rgba(255,255,255,0.80) 0%, rgba(255,255,255,0.55) 100%)" }}>
+          <TagThesaurusInput 
+            key={thesaurus.resetKey} 
+            onAdd={thesaurus.onAdd} 
+            fetchSuggestions={restrictOnly ? thesaurus.fetchSuggestions : emptySuggestions} 
+            restrictToThesaurus={restrictOnly} 
+            placeholder={thesaurus.placeholder} 
+            isThesaurusLoading={thesaurus.isThesaurusLoading} 
+          />
+        </Box>
+      )}
       
      {/* Tag list */}
       <Box sx={{ flex: 1, overflowY: "auto", overflowX: "hidden", p: 1, display: "flex", flexDirection: "column", gap: 0.75 }}>

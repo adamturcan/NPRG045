@@ -38,9 +38,17 @@ const PanelContainer: React.FC = () => {
   const thesaurusWorker = useThesaurusWorker();
   const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
 
-  //filter tags based on the active segment 
+
   const filteredTags = useMemo(
-    () => activeSegmentId && viewMode === "segments" ? tags.filter(t => t.segmentId === activeSegmentId) : tags,
+    () => {
+      if (viewMode === "segments" && activeSegmentId) {
+        // Segment mode: show only tags for the active segment
+        return tags.filter(t => t.segmentId === activeSegmentId);
+      } else {
+        // Document mode: show only document-level tags (no segmentId)
+        return tags.filter(t => !t.segmentId);
+      }
+    },
     [tags, activeSegmentId, viewMode]
   );
 

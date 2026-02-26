@@ -18,8 +18,7 @@ const COLORS = { text: "#0F172A", border: "#E2E8F0", pillBg: "white" };
 interface Props {
   tags: TagRow[];
   onDeleteTag: (name: string, keywordId?: number, parentId?: number) => void;
-  onAddTag: (name: string, keywordId?: number, parentId?: number) => void;
-  tagInputField?: React.ReactNode;
+  onAddTag: (name: string, keywordId?: number, parentId?: number) => void;  
   thesaurus?: {
     fetchSuggestions: (query: string) => Promise<ThesaurusItem[]>;
     restrictToThesaurus?: boolean;
@@ -79,8 +78,7 @@ const RightPanel: React.FC<Props> = (props) => {
                 )}
                 <TagTable
                   data={props.tags}
-                  onDelete={props.onDeleteTag}
-                  inputField={props.tagInputField}
+                  onDelete={props.onDeleteTag}                  
                   thesaurus={props.thesaurus ? { ...props.thesaurus, onAdd: props.onAddTag } : undefined}
                   thesaurusIndex={props.thesaurusIndex}
                 />
