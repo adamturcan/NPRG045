@@ -12,13 +12,13 @@ import {
   ListItem,
   ListItemButton,
 } from "@mui/material";
-import type { Segment } from "../../../types/Segment";
+import type { Segment } from "../../../../types/Segment";
 
 interface SplitOption {
-  position: number; // Character position in segment text (absolute in full text)
-  separator: string; // The separator character
-  beforeText: string; // Text before separator (including separator)
-  afterText: string; // Text after separator
+  position: number; 
+  separator: string; 
+  beforeText: string; 
+  afterText: string; 
 }
 
 interface Props {
@@ -30,13 +30,6 @@ interface Props {
 
 const SEPARATORS = ['.', ',', ':', ';', '!', '?', '—', '–'];
 
-/**
- * SplitSegmentDialog - Modal for splitting a segment at a separator
- * 
- * Shows the segment text with all possible split points (separators)
- * and allows the user to choose where to split. The separator will
- * remain in the first segment.
- */
 const SplitSegmentDialog: React.FC<Props> = ({
   open,
   segment,
@@ -51,17 +44,14 @@ const SplitSegmentDialog: React.FC<Props> = ({
     const segmentText = segment.text;
     const options: SplitOption[] = [];
     
-    // Find all separator positions
     for (let i = 0; i < segmentText.length; i++) {
       const char = segmentText[i];
       if (SEPARATORS.includes(char)) {
-        // Position is absolute in full text: segment.start + i + 1
-        // +1 to include separator in first segment
         const absolutePosition = segment.start + i + 1;
         options.push({
           position: absolutePosition,
           separator: char,
-          beforeText: segmentText.substring(0, i + 1), // Include separator
+          beforeText: segmentText.substring(0, i + 1), 
           afterText: segmentText.substring(i + 1).trimStart(),
         });
       }
@@ -82,7 +72,6 @@ const SplitSegmentDialog: React.FC<Props> = ({
     onClose();
   };
 
-  // Reset selection when dialog opens/closes or segment changes
   React.useEffect(() => {
     if (open) {
       setSelectedOption(null);

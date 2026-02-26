@@ -1,12 +1,3 @@
-/**
- * SegmentNavBar - Navigation sidebar for text segments
- * 
- * Displays a scrollable list of segments with:
- * - Segment preview text (first 50 chars)
- * - Segment number/order
- * - Click to scroll to segment in editor
- * - Empty state message when no segments
- */
 import React, { useCallback } from "react";
 import { Box, Typography, Paper, List, ListItem, ListItemButton, IconButton, Tooltip } from "@mui/material";
 import MergeTypeIcon from "@mui/icons-material/MergeType";
@@ -21,8 +12,8 @@ interface SegmentNavBarProps {
   onSegmentClick?: (segment: Segment) => void;
   onJoinSegments?: (segmentId1: string, segmentId2: string) => void;
   onSplitSegment?: (segmentId: string) => void;
-  text?: string; // Full text to derive segment text from indices
-}
+  text?: string; 
+} 
 
 const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
   segments,
@@ -39,8 +30,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
     },
     [onSegmentClick]
   );
-
-  // Empty state
+// Empty state
   if (segments.length === 0) {
     return (
       <Box
@@ -95,8 +85,6 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
         }}
       >
         {segments.map((segment, index) => {
-          // In document view, use activeSegmentId for highlighting
-          // In segment view, use selectedSegmentId for highlighting
           const isActive = viewMode === "document" 
             ? segment.id === activeSegmentId
             : segment.id === activeSegmentId;
@@ -121,7 +109,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                 sx={{
                   py: 1.5,
                   px: 2,
-                  pr: onSplitSegment ? 5 : 2, // Add right padding if split button is present
+                  pr: onSplitSegment ? 5 : 2, 
                   backgroundColor: isActive ? "#EFF6FF" : "transparent",
                   "&:hover": {
                     backgroundColor: isActive ? "#DBEAFE" : "#F8FAFC",
@@ -219,11 +207,11 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                 <Box
                   sx={{
                     position: "absolute",
-                    bottom: -12, // Half the button height (24px / 2 = 12px)
+                    bottom: -12, 
                     left: "50%",
                     transform: "translateX(-50%)",
-                    zIndex: 10, // Ensure button appears above borders
-                  }}
+                    zIndex: 10, 
+                  }}  
                 >
                   <Tooltip title="Join with next segment">
                     <IconButton
@@ -235,7 +223,7 @@ const SegmentNavBar: React.FC<SegmentNavBarProps> = ({
                       sx={{
                         backgroundColor: "rgba(59, 130, 246, 0.1)",
                         color: "#3B82F6",
-                        border: "2px solid white", // White border to stand out from background
+                        border: "2px solid white", 
                         boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                         "&:hover": {
                           backgroundColor: "rgba(59, 130, 246, 0.2)",

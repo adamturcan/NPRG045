@@ -2,8 +2,8 @@ import React, { useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
-import EditorArea from "../workspace/EditorArea";
-import { WorkspaceDialogLayer } from "../workspace/layers/WorkspaceDialogLayer";
+import EditorArea from "../editor/EditorArea";
+import ConflictResolutionDialog from "../editor/dialogs/ConflictResolutionDialog";
 
 import type { NerSpan } from "../../../types/NotationEditor";
 
@@ -145,7 +145,13 @@ const EditorContainer: React.FC = () => {
         onDeleteSpan={onDeleteSpan}
         placeholder={translationViewMode === "segments" && !selectedSegmentId ? "Select a segment to edit" : undefined}
       />
-      <WorkspaceDialogLayer conflictResolution={conflictResolution} />
+      {conflictResolution.conflictPrompt && (
+        <ConflictResolutionDialog
+          prompt={conflictResolution.conflictPrompt}
+          onKeepExisting={() => conflictResolution.resolveConflictPrompt("existing")}
+          onKeepApi={() => conflictResolution.resolveConflictPrompt("api")}
+        />
+      )}
     </>
   );
 };

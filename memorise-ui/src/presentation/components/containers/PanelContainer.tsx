@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import RightPanel, { type TagRow } from "../right/RightPanel";
-import SplitSegmentDialog from "../segmentation/SplitSegmentDialog";
-import type { ThesaurusItem } from "../tags/TagThesaurusInput";
+import RightPanel, { type TagRow } from "../rightPanel/RightPanel";
+import SplitSegmentDialog from "../rightPanel/dialogs/SplitSegmentDialog";
+import type { ThesaurusItem } from "../rightPanel/inputs/TagThesaurusInput";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useThesaurusDisplay, useThesaurusWorker } from "../../hooks";
 import { useSegmentOperations } from "../../hooks/useSegmentOperations";

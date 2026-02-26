@@ -5,7 +5,7 @@ import SegmentIcon from "@mui/icons-material/ViewWeek";
 import { Box, IconButton, Tooltip } from "@mui/material";
 import type { NerSpan } from "../../../types/NotationEditor";
 import type { Segment } from "../../../types/Segment";
-import NotationEditorComposition from "../editor/NotationEditorComposition";
+import NotationEditorComposition from "./NotationEditorComposition";
 
 // --- Props Interface ---
 interface Props {

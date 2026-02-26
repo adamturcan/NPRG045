@@ -1,17 +1,13 @@
 import React, { useCallback } from "react";
 import { useParams } from "react-router-dom";
-import BookmarkBar from "../workspace/BookmarkBar";
+import BookmarkBar from "../translationPanel/BookmarkBar";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useTranslationOperations } from "../../hooks/useTranslationOperations";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { presentError } from "../../../application/errors/errorPresenter";
 import { errorHandlingService } from "../../../infrastructure/services/ErrorHandlingService";
 
-/**
- * BookmarkContainer - Autonomous container handling translation operations
- * Zero props - all state managed via Zustand stores
- */
+
 const BookmarkContainer: React.FC = () => {
   const { id: routeId } = useParams();
   
