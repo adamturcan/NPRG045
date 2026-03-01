@@ -1,18 +1,5 @@
-// src/types/NotationEditor.ts
-import type { BaseEditor } from "slate";
-import type { ReactEditor } from "slate-react";
-import type { HistoryEditor } from "slate-history";
+import type { Segment } from "./Segment";
 
-/** ---- Slate custom types ---- */
-type ParagraphElement = { type: "paragraph"; children: { text: string }[] };
-
-declare module "slate" {
-  interface CustomTypes {
-    Editor: BaseEditor & ReactEditor & HistoryEditor;
-    Element: ParagraphElement;
-    Text: { text: string };
-  }
-}
 
 /** ---- Span type ---- */
 export type NerSpan = {  
@@ -60,47 +47,16 @@ export interface NotationEditorProps {
   highlightedCategories?: string[];
   onSelectionChange?: (sel: { start: number; end: number } | null) => void;
   onSpansAdjusted?: (next: NerSpan[]) => void;
-  onSegmentsAdjusted?: (next: Array<{ id: string; start: number; end: number; order: number }>) => void;
+  onSegmentsAdjusted?: (next: Segment[]) => void;
   deletableKeys?: Set<string>;
   onAddSpan?: (span: NerSpan) => void;
-  segments?: Array<{ id: string; start: number; end: number; order: number }>;
+  segments?: Segment[];
   activeSegmentId?: string;
-  selectedSegmentId?: string;
-  activeTab?: string;
+
+  viewMode?: "document" | "segments";
 }
 
-export interface EntityLeafProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  attributes: any;
-  children: React.ReactNode;
-  leaf: {
-    underline?: boolean;
-    entity?: string;
-    spanStart?: number;
-    spanEnd?: number;
-    active?: boolean;
-    segment?: boolean;
-    segmentId?: string;
-    segmentOrder?: number;
-    segmentActive?: boolean;
-    segmentStart?: boolean;
-    segmentEnd?: boolean;
-  };
-  onSpanClick: (span: NerSpan) => void;
-  activeSpan: NerSpan | null;
-}
 
-export interface SelectionBubbleProps {
-  selectionBox: SelectionBox;
-  onMenuClick: (event: React.MouseEvent<HTMLElement>) => void;
-  onMouseDown: (event: React.MouseEvent<HTMLElement>) => void;
-}
-
-export interface SpanBubbleProps {
-  spanBox: SpanBox;
-  onMenuClick: (event: React.MouseEvent<HTMLElement>) => void;
-  onMouseDown: (event: React.MouseEvent<HTMLElement>) => void;
-}
 
 export interface CategoryMenuProps {
   anchorEl: HTMLElement | null;

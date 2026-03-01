@@ -20,23 +20,11 @@ export default defineConfig({
           // Vendor chunk for React and React DOM
           if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
             return "vendor-react";
-          }
-          
+          }          
           // Material-UI chunk (large library)
           if (id.includes("node_modules/@mui")) {
             return "vendor-mui";
-          }
-          
-          // Slate editor chunk
-          if (id.includes("node_modules/slate")) {
-            return "vendor-slate";
-          }
-          
-          // TipTap editor chunk
-          if (id.includes("node_modules/@tiptap")) {
-            return "vendor-tiptap";
-          }
-          
+          }                                 
           // Other large dependencies
           if (id.includes("node_modules/fuse.js")) {
             return "vendor-utils";

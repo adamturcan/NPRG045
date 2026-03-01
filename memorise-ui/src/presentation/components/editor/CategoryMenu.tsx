@@ -1,35 +1,51 @@
-import React from "react";
-import { Menu, MenuItem, Divider, Box } from "@mui/material";
+import React, { useState, useEffect } from "react";
+import { Menu, MenuItem, Divider, Box, TextField, InputAdornment, IconButton } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import { ENTITY_COLORS, CATEGORY_LIST } from "../../../shared/constants/notationEditor";
 import type { CategoryMenuProps } from "../../../types/NotationEditor";
 
-const CategoryMenu: React.FC<CategoryMenuProps> = ({
+// Add new props for text editing
+interface ExtendedMenuProps extends CategoryMenuProps {
+  spanText?: string;
+  onTextUpdate?: (newText: string) => void;
+}
+
+const CategoryMenu: React.FC<ExtendedMenuProps> = ({
   anchorEl,
   onClose,
   onCategorySelect,
   showDelete = false,
   onDelete,
+  spanText = "",
+  onTextUpdate,
 }) => {
-  
-  // Helper to handle click without losing editor focus
+  const [localText, setLocalText] = useState("");
+
+  // Sync local input with the selected span's text when the menu opens
+  useEffect(() => {
+    if (anchorEl) setLocalText(spanText);
+  }, [anchorEl, spanText]);
+
   const handleItemClick = (e: React.MouseEvent, category: string) => {
     e.preventDefault(); 
     e.stopPropagation();
     onCategorySelect(category);
   };
 
-  // Helper for delete
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  
     if (onDelete) onDelete();
   };
 
-  // Helper to prevent focus loss during mouse down
-  const preventFocusLoss = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const preventFocusLoss = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation(); // crucial so typing space/enter doesn't close the menu
+  };
+
+  const handleSaveText = () => {
+    if (onTextUpdate && localText !== spanText) {
+      onTextUpdate(localText);
+    }
   };
 
   return (
@@ -37,17 +53,55 @@ const CategoryMenu: React.FC<CategoryMenuProps> = ({
       anchorEl={anchorEl}
       open={!!anchorEl}
       onClose={onClose}
-      
       autoFocus={false} 
       disableAutoFocus={true} 
       disableEnforceFocus={true}
-      
-      
       MenuListProps={{
         dense: true,
         onMouseDown: preventFocusLoss, 
       }}
+      PaperProps={{
+        sx: { minWidth: 220 } 
+      }}
     >
+      {/* conditionally show text input ONLY if onTextUpdate is provided */}
+      {onTextUpdate && (
+        <Box sx={{ px: 2, py: 1.5 }} onKeyDown={preventFocusLoss}>
+          <TextField
+            size="small"
+            fullWidth
+            variant="outlined"
+            value={localText}
+            onChange={(e) => setLocalText(e.target.value)}
+            onClick={(e) => e.stopPropagation()} 
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                e.preventDefault(); 
+                setTimeout(() => {
+                  handleSaveText();
+                }, 0);
+              }
+            }}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton 
+                    size="small" 
+                    onClick={handleSaveText}
+                    disabled={localText === spanText}
+                    color="primary"
+                  >
+                    <CheckIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              )
+            }}
+          />
+        </Box>
+      )}
+
+      {/* --- EXISTING CATEGORIES --- */}
       {CATEGORY_LIST.map((category: string) => (
         <MenuItem
           key={category}          

@@ -33,19 +33,6 @@ interface Props {
 
 const DEBOUNCE_MS = 220;
 
-const styles = {
-  container: { display: "flex", alignItems: "center", gap: 1, width: "100%" },
-  addButton: {
-    backgroundColor: "rgba(33, 66, 108, 0.12)",
-    "&:hover": { backgroundColor: "rgba(33, 66, 108, 0.22)" },
-    color: "#21426C",
-    width: 32,
-    height: 32,
-    flexShrink: 0,
-  },
-  depthDot: { width: 4, height: 4, borderRadius: "50%", bgcolor: "#A0B8DD" },
-  aliasChip: { height: 18, fontSize: 10, bgcolor: "rgba(255, 152, 0, 0.15)", color: "#E65100" }
-};
 
 const ThesaurusOption = React.memo(({ liProps, option }: { liProps: React.HTMLAttributes<HTMLLIElement>, option: ThesaurusItem }) => {
   return (
@@ -221,6 +208,22 @@ const TagThesaurusInput: React.FC<Props> = ({
       )}
     </Box>
   );
+};
+
+
+
+const styles = {
+  container: { display: "flex", alignItems: "center", gap: 1, width: "100%" },
+  addButton: {
+    backgroundColor: "rgba(33, 66, 108, 0.12)",
+    "&:hover": { backgroundColor: "rgba(33, 66, 108, 0.22)" },
+    color: "#21426C",
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+  },
+  depthDot: { width: 4, height: 4, borderRadius: "50%", bgcolor: "#A0B8DD" },
+  aliasChip: { height: 18, fontSize: 10, bgcolor: "rgba(255, 152, 0, 0.15)", color: "#E65100" }
 };
 
 export default TagThesaurusInput;

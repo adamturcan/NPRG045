@@ -6,7 +6,7 @@
  */
 
 import type { ThesaurusIndexItem } from '../../types/Thesaurus';
-import type { TagRow } from '../../presentation/components/right/RightPanel';
+import type { TagRow } from '../../presentation/components/rightPanel/RightPanel';
 
 /**
  * Hierarchy node for tree structure
@@ -111,11 +111,22 @@ export function buildTagHierarchy(
   const rootMap = new Map<string, HierarchyNode>();
   
   for (const tag of tags) {
-    // Find tag in thesaurus (uses KeywordID if available, otherwise label)
-    const thesaurusEntry = findInThesaurus(tag, thesaurusIndex);
+    // Only look up in thesaurus if:
+    // 1. Tag has keywordId/parentId (explicitly from thesaurus input), OR
+    // 2. Tag is from API (source: "api")
+    // User tags without IDs should go to "Other" without thesaurus lookup
+    const shouldLookupThesaurus = 
+      tag.source === "api" || 
+      (tag.keywordId !== undefined);
+    
+    let thesaurusEntry: ThesaurusIndexItem | null = null;
+    
+    if (shouldLookupThesaurus) {
+      thesaurusEntry = findInThesaurus(tag, thesaurusIndex);
+    }
     
     if (!thesaurusEntry) {
-      // Tag not in thesaurus - put in "Other" category
+      // Tag not in thesaurus or shouldn't be looked up - put in "Other" category
       if (!rootMap.has('Other')) {
         rootMap.set('Other', {
           label: 'Other',

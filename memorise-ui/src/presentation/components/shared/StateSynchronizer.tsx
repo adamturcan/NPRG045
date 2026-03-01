@@ -74,7 +74,6 @@ export const StateSynchronizer: React.FC<StateSynchronizerProps> = ({ username, 
         loadSession(workspace);
 
         console.log(`[StateSynchronizer] Successfully hydrated session for workspace: ${workspace.name}`);
-        console.log("[workspace]", workspace);
       } catch (error) {
         console.error('[StateSynchronizer] Failed to load workspace session:', error);
         enqueueNotification({
@@ -87,7 +86,7 @@ export const StateSynchronizer: React.FC<StateSynchronizerProps> = ({ username, 
     void hydrateActiveSession();
   }, [workspaceId]);
 
-  // Guard to prevent navigation or close when unsaved
+  // guard to prevent navigation or close when unsaved
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {

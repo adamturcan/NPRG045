@@ -1,8 +1,3 @@
-// src/shared/constants/notationEditor.ts
-import type { Descendant } from "slate";
-import { Node } from "slate";
-
-export const NEWLINE = "\n";
 
 /** App palette */
 export const COLORS = {
@@ -27,13 +22,6 @@ export const ENTITY_COLORS: Record<string, string> = {
 /** fixed category list for the quick-add / edit menu */
 export const CATEGORY_LIST = ["PER", "LOC", "GHETTO", "DATE", "ORG", "CAMP"] as const;
 
-export const toInitialValue = (text: string): Descendant[] => [
-  { type: "paragraph", children: [{ text }] },
-];
-
-export const toPlainTextWithNewlines = (value: Descendant[]): string =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (value as Descendant[]).map((n) => Node.string(n as any)).join(NEWLINE);
 
 export const hexToRgba = (hex: string, alpha: number) => {
   const h = hex.replace("#", "");

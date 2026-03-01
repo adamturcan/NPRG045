@@ -19,6 +19,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.15",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@fontsource/dm-mono": "^5.2.5",
@@ -29,15 +31,11 @@
     "@mui/system": "^7.1.0",
     "@react-pdf/renderer": "^4.3.1",
     "@tailwindcss/vite": "^4.1.6",
-    "@tiptap/react": "^3.1.0",
-    "@tiptap/starter-kit": "^3.1.0",
+    "@uiw/react-codemirror": "^4.25.5",
     "fuse.js": "^7.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.0",
-    "slate": "^0.118.0",
-    "slate-history": "^0.113.1",
-    "slate-react": "^0.117.4",
+    "react-router-dom": "^7.6.0",   
     "uuid": "^13.0.0",
     "zustand": "^5.0.8"
   },

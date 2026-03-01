@@ -1,9 +1,11 @@
 import { useCallback, useRef } from "react";
 import type { NerSpan } from "../../types/NotationEditor";
-import { workflowService } from "../../application/services/WorkflowApplicationService";
+import { taggingWorkflowService } from "../../application/services/TaggingWorkflowSercice";
+import { annotationWorkflowService } from "../../application/services/AnnotationWorkflowService";
 import { SegmentationApiService } from "../../infrastructure/services/SegmentationApiService";
 import { useSessionStore } from "../stores/sessionStore";
 import { type ConflictPrompt } from "../../core/services/annotation/resolveApiSpanConflicts";
+import type { Segment } from "../../types/Segment";
 
 
 
@@ -17,8 +19,8 @@ export function useWorkspaceOperations(
   requestConflictResolution: (prompt: ConflictPrompt) => Promise<"api" | "existing">,
   fullDocumentTextRef: { current: string }
 ) {
-  const translationViewMode = useSessionStore((state) => state.translationViewMode);
-  const selectedSegmentId = useSessionStore((state) => state.selectedSegmentId);
+  const editorViewMode = useSessionStore((state) => state.viewMode);
+  const activeSegmentId = useSessionStore((state) => state.activeSegmentId);
   const updateSegments = useSessionStore((state) => state.updateSegments);
   const setDraftText = useSessionStore((state) => state.setDraftText);
   
@@ -26,12 +28,12 @@ export function useWorkspaceOperations(
   
   const latestAdjustedSpansRef = useRef<{ userSpans: NerSpan[]; apiSpans: NerSpan[] } | null>(null);
 
-  const currentSegmentId = translationViewMode === "segments" ? selectedSegmentId : undefined;
+  const currentSegmentId = editorViewMode === "segments" ? activeSegmentId : undefined;
 
   const handleRunClassify = useCallback(async () => {
     if (!text.trim()) return showNotice("Paste text first.");
     try {
-      await workflowService.runClassify(text, currentSegmentId ?? undefined);
+      await taggingWorkflowService.runClassify(text, currentSegmentId ?? undefined);
       showNotice("Classification completed.");
     } catch (err) {
       handleError(err);
@@ -40,10 +42,10 @@ export function useWorkspaceOperations(
 
   const handleRunNer = useCallback(async () => {
     if (!text.trim()) return showNotice("Paste text first.");
-    const seg = translationViewMode === "segments" && selectedSegmentId 
-      ? segments.find((s: any) => s.id === selectedSegmentId) : null;
+    const seg = editorViewMode === "segments" && activeSegmentId 
+      ? segments.find((s: Segment) => s.id === activeSegmentId) : null;
     try {
-      const { conflictsHandled } = await workflowService.runNer(text, {
+      const { conflictsHandled } = await annotationWorkflowService.runNer(text, {
         workspaceId: currentId ?? undefined,
         segmentOffset: seg?.start,
         fullDocumentText: fullDocumentTextRef.current || session?.text,
@@ -53,7 +55,7 @@ export function useWorkspaceOperations(
     } catch (err) {
       handleError(err);
     }
-  }, [text, currentId, requestConflictResolution, handleError, showNotice, translationViewMode, selectedSegmentId, segments, session?.text, fullDocumentTextRef]);
+  }, [text, currentId, requestConflictResolution, handleError, showNotice, editorViewMode, activeSegmentId, segments, session?.text, fullDocumentTextRef]);
 
   const handleRunSegment = useCallback(async (
     setText: (text: string) => void,

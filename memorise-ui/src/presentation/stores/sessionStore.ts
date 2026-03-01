@@ -5,7 +5,7 @@ import type { NerSpan } from '../../types/NotationEditor';
 import type { Segment } from '../../types/Segment';
 import { populateSegmentText } from '../../types/Segment';
 
-// Equality check to prevent unnecessary re-renders & updates
+
 const areSpansEqual = (a: NerSpan[], b: NerSpan[]) => {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -44,6 +44,7 @@ interface SessionStore {
   updateDeletedApiKeys: (keys: string[]) => void;
   updateSegments: (segments: Segment[]) => void;
   updateTranslations: (translations: Translation[]) => void;
+  updateSession: (updates: Partial<Workspace>) => void;
   
   setActiveTab: (tab: string) => void;
   
@@ -65,8 +66,7 @@ export const useSessionStore = create<SessionStore>()(
       isDirty: false,
       lastChangedAt: 0,
 
-      loadSession: (workspace) => {
-        // Populate segment text fields if they're missing
+      loadSession: (workspace) => {        
         const populatedSegments = workspace.segments 
           ? populateSegmentText(workspace.segments, workspace.text || "")
           : [];
@@ -210,6 +210,17 @@ export const useSessionStore = create<SessionStore>()(
 
         set({
           session: { ...state.session, translations: nextTranslations },
+          isDirty: true,
+          lastChangedAt: Date.now(),
+        });
+      },
+
+      updateSession: (updates) => {
+        const state = get();
+        if (!state.session) return;
+
+        set({
+          session: { ...state.session, ...updates },
           isDirty: true,
           lastChangedAt: Date.now(),
         });

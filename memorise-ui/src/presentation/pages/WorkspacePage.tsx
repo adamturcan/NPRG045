@@ -4,6 +4,8 @@ import { useLocation } from "react-router-dom";
 import EditorContainer from "../components/containers/EditorContainer";
 import { COLORS } from "../../shared/constants/ui";
 import { useSessionStore } from "../stores/sessionStore";
+import PanelContainer from "../components/containers/PanelContainer";
+import BookmarkContainer from "../components/containers/BookmarkContainer";
 
 const WorkspacePage: React.FC = () => {
   const location = useLocation();
@@ -17,7 +19,7 @@ const WorkspacePage: React.FC = () => {
   return (
     <Box sx={{ display: "flex", height: "100vh", overflow: "visible", px: 4, color: COLORS.text }}>
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", height: "88.5vh", pl: 4, minHeight: 0 }}>
-        {/* <BookmarkContainer /> */}
+        <BookmarkContainer />
         
         {isDataReady ? (
           <EditorContainer key={currentSessionId} />
@@ -29,7 +31,7 @@ const WorkspacePage: React.FC = () => {
         
       </Box>
       <Box sx={{ width: "300px", height: "86vh", display: "flex", flexDirection: "column", mt: 4, minHeight: 0, ml: 2, pr: 1 }}>
-        {/* <PanelContainer /> */}
+        <PanelContainer />
       </Box>
     </Box>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   Box,
   Button,
@@ -13,27 +13,28 @@ import {
   DialogActions,
   CircularProgress,
   TextField,
+  type Theme,
+  type SxProps,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { BOOKMARK_COLORS } from "../../../shared/constants/ui";
 
-interface Props {
+const BookmarkBar: React.FC<{
   translationLanguages: string[];
   activeTab: string;
-  onTabClick: (tabId: string) => void;
+  onTabClick: (tab: string) => void;
   onAddClick: (e: React.MouseEvent<HTMLElement>) => void;
   anchorEl: HTMLElement | null;
   onClose: () => void;
   onSelectLanguage: (lang: string) => void;
   onDeleteTranslation: (lang: string) => void;
   onUpdateTranslation: (lang: string) => void;
-  isUpdating?: boolean;
+  isUpdating: boolean;
+  isDisabled?: boolean;
   languageOptions: { code: string; label: string }[];
-  isLanguageListLoading?: boolean;
-}
-
-const BookmarkBar: React.FC<Props> = ({
+  isLanguageListLoading: boolean;
+}> = ({
   translationLanguages,
   activeTab,
   onTabClick,
@@ -44,110 +45,94 @@ const BookmarkBar: React.FC<Props> = ({
   onDeleteTranslation,
   onUpdateTranslation,
   isUpdating = false,
+  isDisabled = false,
   languageOptions,
   isLanguageListLoading = false,
 }) => {
-  // State for context menu on active translation tab
-  const [contextMenu, setContextMenu] = useState<{
-    mouseX: number;
-    mouseY: number;
-  } | null>(null);
-
-  // State for delete confirmation dialog
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-
   const [languageSearch, setLanguageSearch] = useState("");
 
   const filteredLanguageOptions = useMemo(() => {
     const query = languageSearch.trim().toLowerCase();
-    if (!query) {
-      return languageOptions;
-    }
+    if (!query) return languageOptions;
 
-    return languageOptions.filter(({ code, label }) => {
-      const lowerCode = code.toLowerCase();
-      const lowerLabel = label.toLowerCase();
-      return lowerCode.includes(query) || lowerLabel.includes(query);
-    });
+    return languageOptions.filter(({ code, label }) => 
+      code.toLowerCase().includes(query) || label.toLowerCase().includes(query)
+    );
   }, [languageOptions, languageSearch]);
 
-  const handleContextMenu = (event: React.MouseEvent) => {
+  const handleContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    setContextMenu({
-      mouseX: event.clientX + 2,
-      mouseY: event.clientY - 6,
-    });
-  };
+    setContextMenu({ mouseX: event.clientX + 2, mouseY: event.clientY - 6 });
+  }, []);
 
-  const handleCloseContextMenu = () => {
-    setContextMenu(null);
-  };
+  const handleCloseContextMenu = useCallback(() => setContextMenu(null), []);
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     setDeleteDialogOpen(true);
     handleCloseContextMenu();
-  };
+  }, [handleCloseContextMenu]);
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = useCallback(() => {
     onDeleteTranslation(activeTab);
     setDeleteDialogOpen(false);
-  };
+  }, [onDeleteTranslation, activeTab]);
 
-  const handleCancelDelete = () => {
-    setDeleteDialogOpen(false);
-  };
+  const handleCancelDelete = useCallback(() => setDeleteDialogOpen(false), []);
 
-  const handleUpdate = () => {
+  const handleUpdate = useCallback(() => {
     onUpdateTranslation(activeTab);
     handleCloseContextMenu();
-  };
+  }, [onUpdateTranslation, activeTab, handleCloseContextMenu]);
+
+  const getTabStyles = useCallback((tabId: string, idx: number = 0, isOriginal: boolean = false): SxProps<Theme> => {
+    const isActive = activeTab === tabId;
+    const bgColor = isOriginal ? BOOKMARK_COLORS[0] : BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length];
+    
+    return {
+      backgroundColor: bgColor,
+      color: "#000",
+      textTransform: "uppercase",
+      
+      opacity: isDisabled ? 0.4 : (isActive ? 1 : 0.7),
+      pointerEvents: isDisabled ? "none" : "auto",
+      cursor: isDisabled ? "not-allowed" : "pointer",
+      
+      position: "relative",
+      transform: isActive && !isDisabled ? "translateY(-6px) scale(1.04)" : "translateY(0) scale(1)",
+      boxShadow: isActive && !isDisabled ? "0 8px 18px rgba(15, 23, 42, 0.18), 0 0 0 2px rgba(33, 66, 108, 0.45)" : "none",
+      zIndex: isActive ? 2 : 1,
+      transition: "transform 150ms ease, box-shadow 180ms ease, opacity 120ms ease",
+      borderRadius: "6px 6px 3px 3px",
+      "&::after": isActive ? {
+        content: '""',
+        position: "absolute",
+        left: "50%",
+        bottom: "-8px", 
+        transform: "translateX(-50%)",
+        width: "12px",  
+        height: "8px",  
+        backgroundColor: bgColor,
+        clipPath: "polygon(50% 100%, 0 0, 100% 0)",
+        boxShadow: "0 4px 10px rgba(15, 23, 42, 0.15)",
+      } : undefined,
+    };
+  }, [activeTab, isDisabled]);
+
   return (
-    <Box
-      sx={{ mb: -2.2, ml: 1, display: "flex", gap: 0.5, alignItems: "center" }}
-    >
+    <Box sx={{ mb: -2.2, ml: 4, display: "flex", gap: 0.5, alignItems: "center" }}>
+      
       <Button
         variant="contained"
         size="small"
         onClick={() => onTabClick("original")}
-        sx={{
-          backgroundColor: BOOKMARK_COLORS[0],
-          color: "#000",
-          textTransform: "uppercase",
-          opacity: activeTab === "original" ? 1 : 0.7,
-          position: "relative",
-          transform:
-            activeTab === "original"
-              ? "translateY(-6px) scale(1.04)"
-              : "translateY(0) scale(1)",
-          boxShadow:
-            activeTab === "original"
-              ? "0 8px 18px rgba(15, 23, 42, 0.18), 0 0 0 2px rgba(33, 66, 108, 0.45)"
-              : "none",
-          zIndex: activeTab === "original" ? 2 : 1,
-          transition:
-            "transform 150ms ease, box-shadow 180ms ease, opacity 120ms ease",
-          borderRadius: "6px 6px 3px 3px",
-          "&::after":
-            activeTab === "original"
-              ? {
-                  content: '""',
-                  position: "absolute",
-                  left: "50%",
-                  bottom: -8,
-                  transform: "translateX(-50%)",
-                  width: 12,
-                  height: 8,
-                  backgroundColor: BOOKMARK_COLORS[0],
-                  clipPath: "polygon(50% 100%, 0 0, 100% 0)",
-                  boxShadow: "0 4px 10px rgba(15, 23, 42, 0.15)",
-                }
-              : undefined,
-        }}
+        sx={getTabStyles("original", 0, true)}
       >
         Original
       </Button>
 
-      {translationLanguages.map((lang, idx) => (
+      {translationLanguages.map((lang: string, idx: number) => (
         <Button
           key={lang}
           variant="contained"
@@ -155,47 +140,18 @@ const BookmarkBar: React.FC<Props> = ({
           component="div"
           onClick={() => onTabClick(lang)}
           onContextMenu={activeTab === lang && !isUpdating ? handleContextMenu : undefined}
-          sx={{
-            backgroundColor:
-              BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length],
-            color: "#000",
-            textTransform: "uppercase",
-            opacity: activeTab === lang ? 1 : 0.7,
-            pr: activeTab === lang ? 0.5 : 1,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.5,
-            cursor: "pointer",
-            position: "relative",
-            transform:
-              activeTab === lang
-                ? "translateY(-6px) scale(1.04)"
-                : "translateY(0) scale(1)",
-            boxShadow:
-              activeTab === lang
-                ? "0 8px 18px rgba(15, 23, 42, 0.18), 0 0 0 2px rgba(33, 66, 108, 0.45)"
-                : "none",
-            zIndex: activeTab === lang ? 2 : 1,
-            borderRadius: "6px 6px 3px 3px",
-            transition:
-              "transform 150ms ease, box-shadow 180ms ease, opacity 120ms ease",
-            "&::after":
-              activeTab === lang
-                ? {
-                    content: '""',
-                    position: "absolute",
-                    left: "50%",
-                    bottom: -8,
-                    transform: "translateX(-50%)",
-                    width: 12,
-                    height: 8,
-                    backgroundColor:
-                      BOOKMARK_COLORS[(idx + 1) % BOOKMARK_COLORS.length],
-                    clipPath: "polygon(50% 100%, 0 0, 100% 0)",
-                    boxShadow: "0 4px 10px rgba(15, 23, 42, 0.15)",
-                  }
-                : undefined,
-          }}
+          sx={[
+            ...(Array.isArray(getTabStyles(lang, idx, false)) 
+              ? (getTabStyles(lang, idx, false) as SxProps<Theme>[]) 
+              : [getTabStyles(lang, idx, false)]),
+            {
+              pr: activeTab === lang ? 0.5 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              cursor: "pointer",
+            }
+          ]}
         >
           {lang}
           {activeTab === lang && !isUpdating && (
@@ -206,15 +162,7 @@ const BookmarkBar: React.FC<Props> = ({
                 e.stopPropagation();
                 handleContextMenu(e);
               }}
-              sx={{
-                color: "#000",
-                p: 0.25,
-                minWidth: "auto",
-                margin: 0,
-                "&:hover": {
-                  backgroundColor: "rgba(0,0,0,0.1)",
-                },
-              }}
+              sx={{ color: "#000", p: 0.25, minWidth: "auto", margin: 0, "&:hover": { backgroundColor: "rgba(0,0,0,0.1)" } }}
             >
               <MoreVertIcon fontSize="small" />
             </IconButton>
@@ -222,83 +170,62 @@ const BookmarkBar: React.FC<Props> = ({
         </Button>
       ))}
 
-      <Tooltip title="Add translation">
-        <IconButton
-          onClick={onAddClick}
-          size="small"
-          disableRipple
-          disableFocusRipple
-          disableTouchRipple
-          sx={{
-            color: "#DDD1A0",
-            borderRadius: "50%",
-            border: "none",
-            outline: "none",
-            "&:focus-visible": {
-              outline: "none",
-              boxShadow: "0 0 0 2px rgba(33, 66, 108, 0.35)",
-            },
-            "&:focus": {
-              outline: "none",
-            },
-            "&:active": {
-              backgroundColor: "rgba(221, 209, 160, 0.2)",
-            },
-          }}
-        >
-          <AddIcon />
-        </IconButton>
+<Tooltip title={isDisabled ? "Please wait..." : "Add translation"}>
+        <span> 
+          <IconButton 
+            onClick={onAddClick} 
+            size="small" 
+            disabled={isDisabled}
+            sx={{
+              ml: 0.5,
+              width: 28,
+              height: 28,
+              backgroundColor: isDisabled ? "rgba(255, 255, 255, 0.1)" : "#DDD1A0", 
+              color: isDisabled ? "rgba(255, 255, 255, 0.3)" : "#1a1a1a", 
+              boxShadow: isDisabled ? "none" : "0 2px 6px rgba(0,0,0,0.15)",
+              border: "none",
+              transition: "all 0.2s ease",
+              "&:hover": { 
+                backgroundColor: "#EFE5C3",
+                transform: "translateY(-2px) scale(1.05)",
+                boxShadow: "0 4px 10px rgba(0,0,0,0.25)",
+              },
+              "&:focus-visible": {
+                outline: "none",
+                boxShadow: "0 0 0 2px rgba(221, 209, 160, 0.6)",
+              },
+              "&:active": { 
+                transform: "translateY(0) scale(0.95)",
+                boxShadow: "none",
+              },
+            }}>
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </span>
       </Tooltip>
 
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={onClose}
-        PaperProps={{
-          sx: {
-            maxHeight: 280,
-            overflowY: "auto",
-            minWidth: 260,
-          },
-        }}
-        MenuListProps={{
-          sx: {
-            py: 0,
-          },
-        }}
+        PaperProps={{ sx: { maxHeight: 280, overflowY: "auto", minWidth: 260 } }}
+        MenuListProps={{ sx: { py: 0 } }}
       >
-        <MenuItem disableRipple disableGutters sx={{ px: 2, py: 1.5 }}>
+        <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #eee' }}>
           <TextField
             fullWidth
             size="small"
             placeholder="Search language..."
             value={languageSearch}
             autoFocus
-            onClick={(event) => event.stopPropagation()}
             onChange={(event) => setLanguageSearch(event.target.value)}
-            inputProps={{
-              onKeyDown: (event) => {
-                // Prevent menu closure on Enter when typing search
-                event.stopPropagation();
-              },
-            }}
             variant="standard"
             InputProps={{ disableUnderline: true }}
-            sx={{
-              backgroundColor: "#fff",
-              borderRadius: 1,
-              px: 1,
-              py: 0.5,
-            }}
+            sx={{ backgroundColor: "#fff", borderRadius: 1, px: 1, py: 0.5 }}
           />
-        </MenuItem>
-        <Box sx={{ px: 1, pb: 1 }}>
-          <Box
-            sx={{
-              maxHeight: 220,
-              overflowY: "auto",
-            }}
-          >
+        </Box>
+        
+        <Box sx={{ px: 1, pb: 1, maxHeight: 220, overflowY: "auto" }}>
             {isLanguageListLoading ? (
               <MenuItem disabled>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -307,7 +234,7 @@ const BookmarkBar: React.FC<Props> = ({
                 </Box>
               </MenuItem>
             ) : filteredLanguageOptions.length > 0 ? (
-              filteredLanguageOptions.map(({ code, label }) => (
+              filteredLanguageOptions.map(({ code, label }: { code: string; label: string }) => (
                 <MenuItem key={code} onClick={() => onSelectLanguage(code)}>
                   <Box sx={{ display: "flex", flexDirection: "column" }}>
                     <span style={{ textTransform: "uppercase", fontWeight: 600 }}>{code}</span>
@@ -318,58 +245,33 @@ const BookmarkBar: React.FC<Props> = ({
             ) : (
               <MenuItem disabled>No matching languages</MenuItem>
             )}
-          </Box>
         </Box>
       </Menu>
 
-      {/* Context menu for active translation tab */}
       <Menu
         open={contextMenu !== null}
         onClose={handleCloseContextMenu}
         anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
+        anchorPosition={contextMenu !== null ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
       >
-        <MenuItem onClick={handleUpdate}>
-          Update Translation
-        </MenuItem>
-        <MenuItem 
-          onClick={handleDelete}
-          sx={{ color: "error.main" }}
-        >
-          Delete Translation
-        </MenuItem>
+        <MenuItem onClick={handleUpdate}>Update Translation</MenuItem>
+        <MenuItem onClick={handleDelete} sx={{ color: "error.main" }}>Delete Translation</MenuItem>
       </Menu>
 
-      {/* Delete confirmation dialog */}
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={handleCancelDelete}
-        aria-labelledby="delete-dialog-title"
-        aria-describedby="delete-dialog-description"
-      >
-        <DialogTitle id="delete-dialog-title">
-          Delete Translation
-        </DialogTitle>
+      <Dialog open={deleteDialogOpen} onClose={handleCancelDelete}>
+        <DialogTitle>Delete Translation</DialogTitle>
         <DialogContent>
-          <DialogContentText id="delete-dialog-description">
+          <DialogContentText>
             Are you sure you want to delete the "{activeTab}" translation? This action cannot be undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelDelete} color="primary">
-            Cancel
-          </Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">
-            Delete
-          </Button>
+          <Button onClick={handleCancelDelete} color="primary">Cancel</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">Delete</Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
 };
 
-export default BookmarkBar;
+export default React.memo(BookmarkBar);
