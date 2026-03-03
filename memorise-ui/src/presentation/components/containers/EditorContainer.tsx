@@ -10,6 +10,7 @@ import { SegmentService } from "../../../core/services/SegmentService";
 import type { Segment } from "../../../types/Segment";
 import SegmentJoinDialog from "../editor/dialogs/SegmentJoinDialog";
 import { annotationWorkflowService } from "../../../application/services/AnnotationWorkflowService.ts";
+import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic.ts";
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
@@ -37,11 +38,17 @@ const EditorContainer: React.FC = () => {
     activeTab, 
   } = sessionStore;
 
-  const activeContent = useMemo(() => {
-    if (!session) return null;
-    if (activeTab === "original") return session;
-    return session.translations?.find((t) => t.language === activeTab) || null;
-  }, [session, activeTab]);
+  const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [cmReplaceFn, setCmReplaceFn] = useState<((text: string) => void) | null>(null);
+  const [newSelection, setNewSelection] = useState<{ start: number; end: number; top: number; left: number } | null>(null);
+
+
+  const [pendingDeletionId, setPendingDeletionId] = useState<string | null>(null);
+  const [pendingProtectionIds, setPendingProtectionIds] = useState<string[]>([]);
+
+
+
 
   const updateActiveLayer = useCallback((updates: any) => {
     const store = useSessionStore.getState();
@@ -58,6 +65,11 @@ const EditorContainer: React.FC = () => {
     }
   }, []);
 
+  const activeContent = useMemo(() => {
+    if (!session) return null;
+    if (activeTab === "original") return session;
+    return session.translations?.find((t) => t.language === activeTab) || null;
+  }, [session, activeTab]);
   
   const activeSegment = useMemo(() => {
     const masterSeg = session?.segments?.find((s) => s.id === activeSegmentId);
@@ -76,16 +88,11 @@ const EditorContainer: React.FC = () => {
     if (activeTab === "original") return masterSegments;
 
     const currentTranslation = session?.translations?.find(t => t.language === activeTab);
-    const segmentTranslations = currentTranslation?.segmentTranslations || {};
-    
-    let currentOffset = 0;
-    return masterSegments.map(seg => {
-       const translatedText = segmentTranslations[seg.id] || "";
-       const start = currentOffset;
-       const end = start + translatedText.length;
-       currentOffset = end; 
-       return { ...seg, start, end, text: translatedText };
-    });
+
+    return SegmentLogic.calculateVirtualBoundaries(
+      masterSegments, 
+      currentTranslation?.segmentTranslations || {}
+    );
   }, [viewMode, session?.segments, session?.translations, activeTab]);
 
   const displayText = useMemo(() => {
@@ -108,10 +115,7 @@ const EditorContainer: React.FC = () => {
     setPendingJoinIds(null);
   };
 
-  const [activeSpan, setActiveSpan] = useState<NerSpan | null>(null);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [cmReplaceFn, setCmReplaceFn] = useState<((text: string) => void) | null>(null);
-  const [newSelection, setNewSelection] = useState<{ start: number; end: number; top: number; left: number } | null>(null);
+
 
   const displaySpans = useMemo(() => {
     const bannedKeys = new Set(session?.deletedApiKeys || []);
@@ -159,8 +163,6 @@ const EditorContainer: React.FC = () => {
     setActiveSpan(null); setMenuAnchor(null); setCmReplaceFn(null);
   };
 
-  const [pendingDeletionId, setPendingDeletionId] = useState<string | null>(null);
-  const [pendingProtectionIds, setPendingProtectionIds] = useState<string[]>([]);
 
   const handleDeleteSpan = () => {
     if (!activeSpan) return;

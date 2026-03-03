@@ -22,5 +22,21 @@ export const SegmentLogic = {
     }
 
     return 0; 
+  },
+
+  calculateVirtualBoundaries: (
+    masterSegments: Segment[], 
+    segmentTranslations: Record<string, string>
+  ): Segment[] => {
+    let currentOffset = 0;
+    
+    return masterSegments.map(seg => {
+       const translatedText = segmentTranslations[seg.id] || "";
+       const start = currentOffset;
+       const end = start + translatedText.length;
+       currentOffset = end; 
+       return { ...seg, start, end, text: translatedText };
+    });
   }
+
 };
