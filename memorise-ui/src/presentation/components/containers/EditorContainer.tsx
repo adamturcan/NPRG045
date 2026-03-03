@@ -11,6 +11,8 @@ import type { Segment } from "../../../types/Segment";
 import SegmentJoinDialog from "../editor/dialogs/SegmentJoinDialog";
 import { annotationWorkflowService } from "../../../application/services/AnnotationWorkflowService.ts";
 import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic.ts";
+import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService.ts";
+import { SpanLogic } from "../../../core/domain/entities/SpanLogic.ts";
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
@@ -47,7 +49,7 @@ const EditorContainer: React.FC = () => {
   const [pendingDeletionId, setPendingDeletionId] = useState<string | null>(null);
   const [pendingProtectionIds, setPendingProtectionIds] = useState<string[]>([]);
 
-
+  const [pendingJoinIds, setPendingJoinIds] = useState<[string, string] | null>(null);
 
 
   const updateActiveLayer = useCallback((updates: any) => {
@@ -100,52 +102,25 @@ const EditorContainer: React.FC = () => {
     return draftText || "";
   }, [viewMode, activeSegment, draftText]);
 
-  const [pendingJoinIds, setPendingJoinIds] = useState<[string, string] | null>(null);
-
-  const handleSegmentJoinRequest = useCallback((id1: string, id2: string) => {
-    if (activeTab !== "original") return; 
-    setPendingJoinIds([id1, id2]);
-  }, [activeTab]);
-
-  const confirmJoinSegments = () => {
-    if (!pendingJoinIds || !session?.segments) return;
-    const [id1, id2] = pendingJoinIds;
-    const updated = SegmentService.joinSegments(session.segments, id1, id2);
-    if (updated) updateActiveLayer({ segments: updated }); 
-    setPendingJoinIds(null);
-  };
-
-
 
   const displaySpans = useMemo(() => {
     const bannedKeys = new Set(session?.deletedApiKeys || []);
-
     const rawApi = (activeContent?.apiSpans || []).filter(
       s => !bannedKeys.has(`${s.start}:${s.end}:${s.entity}`)
     );
-    
     const rawUser = activeContent?.userSpans || [];
     const allSpans = [...rawApi, ...rawUser].map((span) => ({ ...span, id: getSpanId(span) }));
 
-    if (viewMode === "document") {
-      if (activeSegmentId) return [];
-      return allSpans;
-    }
-
-    if (!activeSegment) return [];
+    return SpanLogic.projectSpansForView(
+      allSpans,
+      viewMode,
+      activeTab,
+      activeSegmentId,
+      activeSegment,
+      displaySegments
+    );
     
-    const segStart = activeTab === "original" 
-      ? activeSegment.start 
-      : (displaySegments.find(s => s.id === activeSegmentId)?.start || 0);
-      
-    const segEnd = activeTab === "original"
-      ? activeSegment.end
-      : (displaySegments.find(s => s.id === activeSegmentId)?.end || 0);
-
-    return allSpans
-      .filter((s) => s.start >= segStart && s.end <= segEnd)
-      .map((s) => ({ ...s, start: s.start - segStart, end: s.end - segStart }));
-  }, [activeContent?.apiSpans, activeContent?.userSpans, viewMode, activeSegmentId, activeSegment, activeTab, displaySegments,session?.deletedApiKeys]);
+  }, [activeContent?.apiSpans, activeContent?.userSpans, viewMode,activeSegmentId,activeSegment, activeTab, displaySegments, session?.deletedApiKeys]);
 
   const activeSpanText = useMemo(() => {
     if (!activeSpan) return "";
@@ -164,21 +139,44 @@ const EditorContainer: React.FC = () => {
   };
 
 
-  const handleDeleteSpan = () => {
-    if (!activeSpan) return;
-    setPendingDeletionId(getSpanId(activeSpan)); closeEditMenu();
+  const handleCreateSpan = (category: string) => {
+    if (!newSelection) return;
+    
+    annotationWorkflowService.createSpan(
+      category, 
+      newSelection.start, 
+      newSelection.end
+    );
+    
+    setNewSelection(null);
   };
 
   const pendingDeletionSpan = useMemo(() => pendingDeletionId ? displaySpans.find((s) => getSpanId(s) === pendingDeletionId) ?? null : null, [pendingDeletionId, displaySpans]);
   const pendingDeletionText = useMemo(() => pendingDeletionSpan ? safeSubstring(displayText, pendingDeletionSpan.start, pendingDeletionSpan.end) : undefined, [pendingDeletionSpan, displayText]);
+
+
+  const handleDeleteSpan = () => {
+    if (!activeSpan) return;
+    setPendingDeletionId(getSpanId(activeSpan)); closeEditMenu();
+  };
 
   const confirmDeleteSpan = () => {
     if (!pendingDeletionId) return;
     annotationWorkflowService.deleteSpan(pendingDeletionId);
     setPendingDeletionId(null);
   };
-
   const cancelDeleteSpan = () => setPendingDeletionId(null);
+
+  const handleSegmentJoinRequest = useCallback((id1: string, id2: string) => {
+    if (activeTab !== "original") return; 
+    setPendingJoinIds([id1, id2]);
+  }, [activeTab]);
+
+  const confirmJoinSegments = () => {
+    if (!pendingJoinIds) return;    
+    segmentWorkflowService.joinSegments(pendingJoinIds[0], pendingJoinIds[1]);    
+    setPendingJoinIds(null);
+  };
 
   const handleChangeCategory = (newCategory: string) => {
     if (!activeSpan) return;    
@@ -197,149 +195,137 @@ const EditorContainer: React.FC = () => {
     if (sel) closeEditMenu(); setNewSelection(sel);
   }, []);
 
-  const handleCreateSpan = (category: string) => {
-    if (!newSelection) return;
-    
-    annotationWorkflowService.createSpan(
-      category, 
-      newSelection.start, 
-      newSelection.end
-    );
-    
-    setNewSelection(null);
-  };
-
   const virtualElement = newSelection
     ? ({ getBoundingClientRect: () => ({ top: newSelection.top, left: newSelection.left, bottom: newSelection.top, right: newSelection.left, width: 0, height: 0 }), nodeType: 1 } as unknown as HTMLElement)
     : null;
 
-    const handleTextChange = useCallback(
-      (text: string, liveCoords?: Map<string, { start: number; end: number }>, liveSegments?: Segment[], contextMode?: string, contextSegId?: string) => {
-        if (contextMode && contextMode !== viewMode) return;
-        if (viewMode === "segments" && contextSegId !== undefined && contextSegId !== activeSegmentId) return;
-    
-        const store = useSessionStore.getState();
-        const currentSession = store.session;
-        if (!currentSession) return;
-        
-        const currentDataLayer = store.activeTab === "original" ? currentSession : currentSession.translations?.find(t => t.language === store.activeTab);
-        if (!currentDataLayer) return;
-    
-        const currentFullText = store.draftText || currentDataLayer.text || "";
-        let nextUserSpans = currentDataLayer.userSpans ?? [];
-        let nextApiSpans = currentDataLayer.apiSpans ?? [];
-        const shiftedInStepA = new Set<string>();
-    
-        if (liveCoords) {
-          let shiftOffset = 0;
-          if (viewMode === "segments" && activeSegmentId) {
-             if (store.activeTab === "original") {
-                 shiftOffset = currentSession.segments?.find(s => s.id === activeSegmentId)?.start || 0;
-             } else {
-                 const currentTranslation = currentDataLayer as import("../../../types/Workspace").Translation;
-                 for (const s of (currentSession.segments || [])) {
-                    if (s.id === activeSegmentId) break;
-                    shiftOffset += (currentTranslation.segmentTranslations?.[s.id] || "").length;
-                 }
-             }
-          }
-          
-          const syncSpans = (spans: NerSpan[]) => spans.map((s) => {
-            const id = getSpanId(s);
-            const coords = liveCoords.get(id);
-            if (coords) {
-              shiftedInStepA.add(id); 
-              const globalStart = coords.start + shiftOffset;
-              const globalEnd = coords.end + shiftOffset;
-              if (s.start !== globalStart || s.end !== globalEnd) return { ...s, start: globalStart, end: globalEnd, id };
-            }
-            return { ...s, id };
-          });
-          nextUserSpans = syncSpans(nextUserSpans); nextApiSpans = syncSpans(nextApiSpans);
-        }
-    
-        if (viewMode === "document") {
-          store.setDraftText(text);
-          
-          if (store.activeTab === "original") {
-             const nextSegments = (liveSegments && liveSegments !== currentSession.segments) 
-               ? liveSegments.map(seg => ({ ...seg, text: text.substring(seg.start, seg.end) }))
-               : currentSession.segments;
-               
-             updateActiveLayer({ text, segments: nextSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans });
-          } else {
-             updateActiveLayer({ text, userSpans: nextUserSpans, apiSpans: nextApiSpans });
-          }
-    
-        } else if (viewMode === "segments" && activeSegmentId) {
-          
-          if (store.activeTab === "original") {
-            const masterActiveSegment = currentSession.segments?.find(s => s.id === activeSegmentId);
-            if (!masterActiveSegment) return;
-            
-            const lengthDiff = text.length - (masterActiveSegment.end - masterActiveSegment.start);
-            const updatedFull = currentFullText.substring(0, masterActiveSegment.start) + text + currentFullText.substring(masterActiveSegment.end);
-      
-            let updatedSegments = SegmentService.updateSegmentAndShift(
-              currentSession.segments || [], masterActiveSegment.id, masterActiveSegment.start + text.length, lengthDiff, masterActiveSegment.end
-            );
-      
-            updatedSegments = updatedSegments.map(seg => seg.id === masterActiveSegment.id ? { ...seg, text } : { ...seg, text: updatedFull.substring(seg.start, seg.end) });
-      
-            if (lengthDiff !== 0) {
-              const shiftGlobalSpans = (spans: NerSpan[]) => spans.map(s => {
-                if (shiftedInStepA.has(getSpanId(s))) return s;
-                let newStart = s.start; let newEnd = s.end;
-                if (s.start >= masterActiveSegment.end) newStart += lengthDiff;
-                if (s.end >= masterActiveSegment.end) newEnd += lengthDiff;
-                if (newStart !== s.start || newEnd !== s.end) return { ...s, start: newStart, end: newEnd };
-                return s;
-              });
-              nextUserSpans = shiftGlobalSpans(nextUserSpans); nextApiSpans = shiftGlobalSpans(nextApiSpans);
-            }
-      
-            store.setDraftText(updatedFull); 
-            updateActiveLayer({ text: updatedFull, segments: updatedSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans });
-            
-          } else {
-            const currentTranslation = currentDataLayer as import("../../../types/Workspace").Translation; 
-            
-            const oldSegText = currentTranslation.segmentTranslations?.[activeSegmentId] || "";
-            const lengthDiff = text.length - oldSegText.length;
-            
-            const updatedSegmentTranslations = {
-              ...(currentTranslation.segmentTranslations || {}),
-              [activeSegmentId]: text
-            };
-            
-            const updatedFull = (currentSession.segments || []).map(s => updatedSegmentTranslations[s.id] || "").join("");
-            
-            let virtualStart = 0;
-            for (const s of (currentSession.segments || [])) {
-               if (s.id === activeSegmentId) break;
-               virtualStart += (currentTranslation.segmentTranslations?.[s.id] || "").length;
-            }
-            const virtualEnd = virtualStart + oldSegText.length;
+  const handleTextChange = useCallback(
+    (text: string, liveCoords?: Map<string, { start: number; end: number }>, liveSegments?: Segment[], contextMode?: string, contextSegId?: string) => {
+      if (contextMode && contextMode !== viewMode) return;
+      if (viewMode === "segments" && contextSegId !== undefined && contextSegId !== activeSegmentId) return;
   
-            if (lengthDiff !== 0) {
-              const shiftGlobalSpans = (spans: NerSpan[]) => spans.map(s => {
-                if (shiftedInStepA.has(getSpanId(s))) return s;
-                let newStart = s.start; let newEnd = s.end;
-                if (s.start >= virtualEnd) newStart += lengthDiff;
-                if (s.end >= virtualEnd) newEnd += lengthDiff;
-                if (newStart !== s.start || newEnd !== s.end) return { ...s, start: newStart, end: newEnd };
-                return s;
-              });
-              nextUserSpans = shiftGlobalSpans(nextUserSpans); nextApiSpans = shiftGlobalSpans(nextApiSpans);
+      const store = useSessionStore.getState();
+      const currentSession = store.session;
+      if (!currentSession) return;
+      
+      const currentDataLayer = store.activeTab === "original" ? currentSession : currentSession.translations?.find(t => t.language === store.activeTab);
+      if (!currentDataLayer) return;
+  
+      const currentFullText = store.draftText || currentDataLayer.text || "";
+      let nextUserSpans = currentDataLayer.userSpans ?? [];
+      let nextApiSpans = currentDataLayer.apiSpans ?? [];
+      const shiftedInStepA = new Set<string>();
+  
+      if (liveCoords) {
+        let shiftOffset = 0;
+        if (viewMode === "segments" && activeSegmentId) {
+            if (store.activeTab === "original") {
+                shiftOffset = currentSession.segments?.find(s => s.id === activeSegmentId)?.start || 0;
+            } else {
+                const currentTranslation = currentDataLayer as import("../../../types/Workspace").Translation;
+                for (const s of (currentSession.segments || [])) {
+                  if (s.id === activeSegmentId) break;
+                  shiftOffset += (currentTranslation.segmentTranslations?.[s.id] || "").length;
+                }
             }
-            
-            store.setDraftText(updatedFull);
-            updateActiveLayer({ text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans });
-          }
         }
-      },
-      [viewMode, activeSegmentId, updateActiveLayer]
-    );
+        
+        const syncSpans = (spans: NerSpan[]) => spans.map((s) => {
+          const id = getSpanId(s);
+          const coords = liveCoords.get(id);
+          if (coords) {
+            shiftedInStepA.add(id); 
+            const globalStart = coords.start + shiftOffset;
+            const globalEnd = coords.end + shiftOffset;
+            if (s.start !== globalStart || s.end !== globalEnd) return { ...s, start: globalStart, end: globalEnd, id };
+          }
+          return { ...s, id };
+        });
+        nextUserSpans = syncSpans(nextUserSpans); nextApiSpans = syncSpans(nextApiSpans);
+      }
+  
+      if (viewMode === "document") {
+        store.setDraftText(text);
+        
+        if (store.activeTab === "original") {
+            const nextSegments = (liveSegments && liveSegments !== currentSession.segments) 
+              ? liveSegments.map(seg => ({ ...seg, text: text.substring(seg.start, seg.end) }))
+              : currentSession.segments;
+              
+            updateActiveLayer({ text, segments: nextSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+        } else {
+            updateActiveLayer({ text, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+        }
+  
+      } else if (viewMode === "segments" && activeSegmentId) {
+        
+        if (store.activeTab === "original") {
+          const masterActiveSegment = currentSession.segments?.find(s => s.id === activeSegmentId);
+          if (!masterActiveSegment) return;
+          
+          const lengthDiff = text.length - (masterActiveSegment.end - masterActiveSegment.start);
+          const updatedFull = currentFullText.substring(0, masterActiveSegment.start) + text + currentFullText.substring(masterActiveSegment.end);
+    
+          let updatedSegments = SegmentService.updateSegmentAndShift(
+            currentSession.segments || [], masterActiveSegment.id, masterActiveSegment.start + text.length, lengthDiff, masterActiveSegment.end
+          );
+    
+          updatedSegments = updatedSegments.map(seg => seg.id === masterActiveSegment.id ? { ...seg, text } : { ...seg, text: updatedFull.substring(seg.start, seg.end) });
+    
+          if (lengthDiff !== 0) {
+            const shiftGlobalSpans = (spans: NerSpan[]) => spans.map(s => {
+              if (shiftedInStepA.has(getSpanId(s))) return s;
+              let newStart = s.start; let newEnd = s.end;
+              if (s.start >= masterActiveSegment.end) newStart += lengthDiff;
+              if (s.end >= masterActiveSegment.end) newEnd += lengthDiff;
+              if (newStart !== s.start || newEnd !== s.end) return { ...s, start: newStart, end: newEnd };
+              return s;
+            });
+            nextUserSpans = shiftGlobalSpans(nextUserSpans); nextApiSpans = shiftGlobalSpans(nextApiSpans);
+          }
+    
+          store.setDraftText(updatedFull); 
+          updateActiveLayer({ text: updatedFull, segments: updatedSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+          
+        } else {
+          const currentTranslation = currentDataLayer as import("../../../types/Workspace").Translation; 
+          
+          const oldSegText = currentTranslation.segmentTranslations?.[activeSegmentId] || "";
+          const lengthDiff = text.length - oldSegText.length;
+          
+          const updatedSegmentTranslations = {
+            ...(currentTranslation.segmentTranslations || {}),
+            [activeSegmentId]: text
+          };
+          
+          const updatedFull = (currentSession.segments || []).map(s => updatedSegmentTranslations[s.id] || "").join("");
+          
+          let virtualStart = 0;
+          for (const s of (currentSession.segments || [])) {
+              if (s.id === activeSegmentId) break;
+              virtualStart += (currentTranslation.segmentTranslations?.[s.id] || "").length;
+          }
+          const virtualEnd = virtualStart + oldSegText.length;
+
+          if (lengthDiff !== 0) {
+            const shiftGlobalSpans = (spans: NerSpan[]) => spans.map(s => {
+              if (shiftedInStepA.has(getSpanId(s))) return s;
+              let newStart = s.start; let newEnd = s.end;
+              if (s.start >= virtualEnd) newStart += lengthDiff;
+              if (s.end >= virtualEnd) newEnd += lengthDiff;
+              if (newStart !== s.start || newEnd !== s.end) return { ...s, start: newStart, end: newEnd };
+              return s;
+            });
+            nextUserSpans = shiftGlobalSpans(nextUserSpans); nextApiSpans = shiftGlobalSpans(nextApiSpans);
+          }
+          
+          store.setDraftText(updatedFull);
+          updateActiveLayer({ text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+        }
+      }
+    },
+    [viewMode, activeSegmentId, updateActiveLayer]
+  );
 
   const handleProtectSpans = useCallback((affected: NerSpan[]) => { setPendingProtectionIds(affected.map(getSpanId)); }, []);
   const cancelProtection = () => setPendingProtectionIds([]);
@@ -361,10 +347,8 @@ const EditorContainer: React.FC = () => {
   }, [pendingProtectionIds, displaySpans, displayText]);
 
   const confirmProtectionDelete = () => {
-    if (pendingProtectionIds.length === 0 || !activeContent) return;
-    const idsToDelete = new Set(pendingProtectionIds);
-    const filter = (list: NerSpan[]) => list.filter((s) => !idsToDelete.has(getSpanId(s)));
-    updateActiveLayer({ userSpans: filter(activeContent.userSpans ?? []), apiSpans: filter(activeContent.apiSpans ?? []) });
+    if (pendingProtectionIds.length === 0) return;    
+    annotationWorkflowService.deleteMultipleSpans(pendingProtectionIds);    
     setPendingProtectionIds([]);
   };
 

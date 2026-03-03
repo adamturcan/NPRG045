@@ -148,6 +148,31 @@ export class AnnotationWorkflowService {
       apiSpans: updateSpans(currentLayer.apiSpans ?? []) 
     });
   }
+
+
+
+  deleteMultipleSpans(spanIds: string[]): void {
+    const store = useSessionStore.getState();
+    const currentLayer = this.getCurrentLayer(store);
+    if (!currentLayer) return;
+
+    const idsToRemove = new Set(spanIds);
+
+    const nextUserSpans = (currentLayer.userSpans ?? []).filter(
+      s => !idsToRemove.has(this.getSpanId(s))
+    );
+
+    const newBannedKeys = (currentLayer.apiSpans ?? [])
+      .filter(s => idsToRemove.has(this.getSpanId(s)))
+      .map(s => `${s.start}:${s.end}:${s.entity}`);
+
+    store.updateActiveLayer({ userSpans: nextUserSpans });
+    
+    if (newBannedKeys.length > 0) {
+      const currentBanned = store.session?.deletedApiKeys ?? [];
+      store.updateDeletedApiKeys([...new Set([...currentBanned, ...newBannedKeys])]);
+    }
+  }
 }
 
 export const annotationWorkflowService = new AnnotationWorkflowService();
