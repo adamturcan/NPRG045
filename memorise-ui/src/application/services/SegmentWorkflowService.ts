@@ -1,23 +1,97 @@
 import { useSessionStore } from "../../presentation/stores/sessionStore";
-import { SegmentService } from "../../core/services/SegmentService"; 
+import { useNotificationStore } from "../../presentation/stores/notificationStore";
+import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 
 export class SegmentWorkflowService {
-  
+
   joinSegments(id1: string, id2: string): void {
     const store = useSessionStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
     const { session, activeTab } = store;
 
-    if (!session || !session.segments) return;
-    
-    if (activeTab !== "original") return; 
-
-
-    // move this to the domain entity object - later
-    const updatedSegments = SegmentService.joinSegments(session.segments, id1, id2);
-    
-    if (updatedSegments) {
-      store.updateActiveLayer({ segments: updatedSegments }); 
+    if (!session || !session.segments) {
+      notify({ message: "No segments available.", tone: "error" }); 
+      return;
     }
+    
+    if (activeTab !== "original") {
+      notify({ message: "Segments can only be joined in the original text.", tone: "error" });
+      return; 
+    }
+
+    const nextSegments = SegmentLogic.joinMasterSegments(session.segments, id1, id2);
+    if (!nextSegments) {
+      notify({ message: "Segments must be consecutive to be joined.", tone: "error" });
+      return;
+    }
+
+    const nextTranslations = (session.translations || []).map(translation => {
+      const nextSegTrans = SegmentLogic.joinSegmentTranslations(
+        translation.segmentTranslations, 
+        id1, 
+        id2
+      );
+      
+      const nextFullText = nextSegments.map(s => nextSegTrans[s.id] || "").join("");
+
+      return {
+        ...translation,
+        segmentTranslations: nextSegTrans,
+        text: nextFullText
+      };
+    });
+
+    store.updateSession({
+      ...session,
+      segments: nextSegments,
+      translations: nextTranslations
+    });
+
+    notify({ message: "Segments joined successfully.", tone: "success" });
+  }
+  
+  splitSegment(position: number): boolean {
+    const store = useSessionStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
+    const { session, activeSegmentId, activeTab } = store;
+
+    if (!session?.segments || !activeSegmentId) {
+      notify({ message: "No active segment to split.", tone: "error" });
+      return false;
+    }
+
+    if (activeTab !== "original") {
+      notify({ message: "Segments can only be split in the original document.", tone: "error" });
+      return false;
+    }
+
+    const fullText = session.text || "";
+    const updatedSegments = SegmentLogic.split(session.segments, activeSegmentId, position, fullText);
+    
+    if (!updatedSegments) {
+      notify({ message: "Invalid split position.", tone: "error" });
+      store.setActiveSegmentId(undefined);
+      return false;
+    }
+
+    const updatedTranslations = (session.translations || []).map(translation => {
+      const nextDict = { ...(translation.segmentTranslations || {}) };
+      
+      delete nextDict[activeSegmentId]; 
+      
+      const nextFullText = updatedSegments.map(s => nextDict[s.id] || "").join("");
+      
+      return { ...translation, segmentTranslations: nextDict, text: nextFullText };
+    });
+    
+    store.updateSession({
+      ...session,
+      segments: updatedSegments,
+      translations: updatedTranslations
+    });
+    
+    notify({ message: "Segment split successfully.", tone: "success" });
+    return true; 
   }
 }
 

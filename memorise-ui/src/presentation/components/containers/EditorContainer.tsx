@@ -1,12 +1,10 @@
 import React, { useMemo, useCallback, useState } from "react";
-import { useParams } from "react-router-dom";
 import { useSessionStore } from "../../stores/sessionStore";
-import { CodeMirrorWrapper } from "../editor/CodeMirrorWrapper";
+import { CodeMirrorWrapper } from "../editor/codemirror/CodeMirrorWrapper.tsx";
 import CategoryMenu from "../editor/menus/CategoryMenu.tsx";
 import type { NerSpan } from "../../../types/NotationEditor";
 import DeletionConfirmationDialog from "../editor/dialogs/DeletionConfirmationDialog";
 import MultiDeletionDialog from "../editor/dialogs/MultiDeletionDialog";
-import { SegmentService } from "../../../core/services/SegmentService";
 import type { Segment } from "../../../types/Segment";
 import SegmentJoinDialog from "../editor/dialogs/SegmentJoinDialog";
 import { annotationWorkflowService } from "../../../application/services/AnnotationWorkflowService.ts";
@@ -14,6 +12,10 @@ import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic.ts";
 import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService.ts";
 import { SpanLogic } from "../../../core/domain/entities/SpanLogic.ts";
 import { editorWorkflowService } from "../../../application/services/EditorWorkflowService.ts";
+
+import { Fab, Tooltip, CircularProgress } from "@mui/material";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
+import EditorSpeedDial from "../editor/menus/EditorSpeedDial.tsx";
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
@@ -50,6 +52,42 @@ const EditorContainer: React.FC = () => {
   const [pendingProtectionIds, setPendingProtectionIds] = useState<string[]>([]);
 
   const [pendingJoinIds, setPendingJoinIds] = useState<[string, string] | null>(null);
+
+  const [isNerLoading, setIsNerLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleRunNer = async () => {
+    setIsNerLoading(true);
+    try {
+      await annotationWorkflowService.runNer(async () => {
+        return "api"; 
+      });
+    } finally {
+      setIsNerLoading(false);
+    }
+  };
+
+  const handleRunSegmentation = async () => {
+    setIsProcessing(true);
+    try {
+      // We will build this Service method in the next step
+      // await segmentWorkflowService.runAutoSegmentation();
+      console.log("Triggering Segmentation API...");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 3. Save Handler
+  const handleSave = async () => {
+    setIsProcessing(true);
+    try {
+      // Trigger the workspace/session save
+      console.log("Saving Workspace...");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
 
   const activeContent = useMemo(() => {
@@ -227,25 +265,39 @@ const EditorContainer: React.FC = () => {
 
   return (
     <div style={{ padding: "20px", height: "100%", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
-      <CodeMirrorWrapper
-        key={viewMode === "segments" ? `segment-${activeSegmentId}-${activeTab}` : `document-view-${activeTab}`} 
-        onProtectSpans={handleProtectSpans}
-        editorContext={viewMode}
-        value={displayText}
-        spans={displaySpans}
-        activeSegmentId={viewMode === "document" ? activeSegmentId : undefined} 
-        segments={viewMode === "document" ? displaySegments : []}
-        onChange={handleTextChange}
-        onSpanClick={handleSpanClick}
-        onSelectionChange={handleSelectionChange}
-        onSegmentJoinRequest={handleSegmentJoinRequest}
+      <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column" }}>
+        
+        <CodeMirrorWrapper
+          key={viewMode === "segments" ? `segment-${activeSegmentId}-${activeTab}` : `document-view-${activeTab}`} 
+          onProtectSpans={handleProtectSpans}
+          editorContext={viewMode}
+          value={displayText}
+          spans={displaySpans}
+          activeSegmentId={viewMode === "document" ? activeSegmentId : undefined} 
+          segments={viewMode === "document" ? displaySegments : []}
+          onChange={handleTextChange}
+          onSpanClick={handleSpanClick}
+          onSelectionChange={handleSelectionChange}
+          onSegmentJoinRequest={handleSegmentJoinRequest}
+        />
+
+    <EditorSpeedDial 
+            onNer={handleRunNer}
+            onSegment={handleRunSegmentation}
+            onSemTag={() => console.log("SemTag clicked")}
+            onSave={handleSave}
+            isProcessing={isProcessing}
+            viewMode={viewMode}
       />
-      <CategoryMenu anchorEl={menuAnchor} onClose={closeEditMenu} onCategorySelect={handleChangeCategory} showDelete={true} onDelete={handleDeleteSpan} spanText={activeSpanText} onTextUpdate={handleUpdateSpanText}/>
+      </div>
+
+      <CategoryMenu anchorEl={menuAnchor} onClose={closeEditMenu} onCategorySelect={handleChangeCategory} showDelete={true} onDelete={handleDeleteSpan} spanText={activeSpanText} onTextUpdate={handleUpdateSpanText} onMouseDown={() => {}}/>
       <CategoryMenu anchorEl={virtualElement} open={Boolean(virtualElement)} onClose={() => setNewSelection(null)} onCategorySelect={handleCreateSpan} showDelete={false} />
       <DeletionConfirmationDialog open={pendingDeletionId !== null} span={pendingDeletionSpan} spanText={pendingDeletionText} onConfirm={confirmDeleteSpan} onCancel={cancelDeleteSpan} />
       <MultiDeletionDialog open={pendingProtectionIds.length > 0} spans={pendingProtectionSpans} spanTexts={spanTextsForMultiDelete} onConfirm={confirmProtectionDelete} onCancel={cancelProtection} />
       <SegmentJoinDialog open={pendingJoinIds !== null} onConfirm={confirmJoinSegments} onCancel={() => setPendingJoinIds(null)} />
     </div>
+  
   );
 };
 

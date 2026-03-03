@@ -1,12 +1,12 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import RightPanel, { type TagRow } from "../rightPanel/RightPanel";
 import SplitSegmentDialog from "../rightPanel/dialogs/SplitSegmentDialog";
 import type { ThesaurusItem } from "../rightPanel/inputs/TagThesaurusInput";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useThesaurusDisplay, useThesaurusWorker } from "../../hooks";
-import { useSegmentOperations } from "../../hooks/useSegmentOperations";
-import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice";
+import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice.ts";
+import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService.ts";
 import { type Segment } from "../../../types/Segment";
 
 const PanelContainer: React.FC = () => {
@@ -15,12 +15,14 @@ const PanelContainer: React.FC = () => {
   const session = useSessionStore((state) => state.session);
   const activeTab = useSessionStore((state) => state.activeTab);
   const activeSegmentId = useSessionStore((state) => state.activeSegmentId);
+  const setActiveSegmentId = useSessionStore((state) => state.setActiveSegmentId); 
   const viewMode = useSessionStore((state) => state.viewMode);
   const setViewMode = useSessionStore((state) => state.setViewMode);
   
   const currentId = routeId ?? session?.id ?? null;
-
   const tags = session?.tags ?? [];
+
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
 
   const displaySegments = useMemo(() => {
     const masterSegments = session?.segments ?? [];
@@ -40,7 +42,6 @@ const PanelContainer: React.FC = () => {
       }));
   }, [session?.segments, session?.translations, activeTab]);
 
-  const segmentOps = useSegmentOperations();
   const thesaurusWorker = useThesaurusWorker();
   const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
 
@@ -104,6 +105,26 @@ const PanelContainer: React.FC = () => {
     [fetchThesaurus, thesaurusWorker.ready, currentId]
   );
 
+  const handleSegmentClick = useCallback((segment: Segment) => {
+    if (viewMode === "segments") {
+      setActiveSegmentId(segment.id);
+    } else {      
+      setActiveSegmentId(activeSegmentId === segment.id ? undefined : segment.id);
+    } 
+  }, [viewMode, activeSegmentId, setActiveSegmentId]);
+
+  const handleSplitSegmentRequest = useCallback((segmentId: string) => {
+    setActiveSegmentId(segmentId);
+    setSplitDialogOpen(true);
+  }, [setActiveSegmentId]);
+
+  const handleConfirmSplit = useCallback((splitPosition: number) => {
+    const success = segmentWorkflowService.splitSegment(splitPosition);
+    if (success) {
+      setSplitDialogOpen(false);
+    }
+  }, []);
+
   return (
     <>
       <RightPanel
@@ -115,18 +136,18 @@ const PanelContainer: React.FC = () => {
         segments={displaySegments}
         activeSegmentId={activeSegmentId}
         segmentOperations={{
-          handleSegmentClick: (segment: Segment) => segmentOps.handleSegmentClick(segment),
-          handleJoinSegments: segmentOps.handleJoinSegments,
-          handleSplitSegment: segmentOps.handleSplitSegment,
+          handleSegmentClick,
+          handleJoinSegments: segmentWorkflowService.joinSegments, 
+          handleSplitSegment: handleSplitSegmentRequest,
         }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
       <SplitSegmentDialog
-        open={segmentOps.splitDialogOpen}
+        open={splitDialogOpen}
         segment={displaySegments.find(s => s.id === activeSegmentId) ?? null}
-        onClose={() => segmentOps.setSplitDialogOpen(false)}
-        onConfirm={segmentOps.handleConfirmSplit}
+        onClose={() => setSplitDialogOpen(false)}
+        onConfirm={handleConfirmSplit}
       />
     </>
   );

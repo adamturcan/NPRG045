@@ -1,7 +1,6 @@
 import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { SpanLogic } from "../../core/domain/entities/SpanLogic";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
-import { SegmentService } from "../../core/services/SegmentService";
 import type { NerSpan } from "../../types/NotationEditor";
 import type { Segment } from "../../types/Segment";
 
@@ -91,7 +90,7 @@ export class EditorWorkflowService {
     const lengthDiff = text.length - (masterActiveSegment.end - masterActiveSegment.start);
     const updatedFull = currentFullText.substring(0, masterActiveSegment.start) + text + currentFullText.substring(masterActiveSegment.end);
 
-    let updatedSegments = SegmentService.updateSegmentAndShift(
+    let updatedSegments = SegmentLogic.updateSegmentAndShift(
       session.segments, masterActiveSegment.id, masterActiveSegment.start + text.length, lengthDiff, masterActiveSegment.end
     );
     updatedSegments = updatedSegments.map(seg => seg.id === masterActiveSegment.id ? { ...seg, text } : { ...seg, text: updatedFull.substring(seg.start, seg.end) });
