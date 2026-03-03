@@ -1,6 +1,5 @@
 import React, { useMemo, useCallback, useState } from "react";
 import { useParams } from "react-router-dom";
-import { v4 as uuidv4 } from "uuid";
 import { useSessionStore } from "../../stores/sessionStore";
 import { CodeMirrorWrapper } from "../editor/CodeMirrorWrapper";
 import CategoryMenu from "../editor/menus/CategoryMenu.tsx";
@@ -115,7 +114,12 @@ const EditorContainer: React.FC = () => {
   const [newSelection, setNewSelection] = useState<{ start: number; end: number; top: number; left: number } | null>(null);
 
   const displaySpans = useMemo(() => {
-    const rawApi = activeContent?.apiSpans || [];
+    const bannedKeys = new Set(session?.deletedApiKeys || []);
+
+    const rawApi = (activeContent?.apiSpans || []).filter(
+      s => !bannedKeys.has(`${s.start}:${s.end}:${s.entity}`)
+    );
+    
     const rawUser = activeContent?.userSpans || [];
     const allSpans = [...rawApi, ...rawUser].map((span) => ({ ...span, id: getSpanId(span) }));
 
@@ -137,7 +141,7 @@ const EditorContainer: React.FC = () => {
     return allSpans
       .filter((s) => s.start >= segStart && s.end <= segEnd)
       .map((s) => ({ ...s, start: s.start - segStart, end: s.end - segStart }));
-  }, [activeContent?.apiSpans, activeContent?.userSpans, viewMode, activeSegmentId, activeSegment, activeTab, displaySegments]);
+  }, [activeContent?.apiSpans, activeContent?.userSpans, viewMode, activeSegmentId, activeSegment, activeTab, displaySegments,session?.deletedApiKeys]);
 
   const activeSpanText = useMemo(() => {
     if (!activeSpan) return "";
@@ -167,19 +171,16 @@ const EditorContainer: React.FC = () => {
   const pendingDeletionText = useMemo(() => pendingDeletionSpan ? safeSubstring(displayText, pendingDeletionSpan.start, pendingDeletionSpan.end) : undefined, [pendingDeletionSpan, displayText]);
 
   const confirmDeleteSpan = () => {
-    if (!pendingDeletionId || !activeContent) return;
-    const filterOut = (spans: NerSpan[]) => spans.filter((s) => getSpanId(s) !== pendingDeletionId);
-    updateActiveLayer({ userSpans: filterOut(activeContent.userSpans ?? []), apiSpans: filterOut(activeContent.apiSpans ?? []) });
+    if (!pendingDeletionId) return;
+    annotationWorkflowService.deleteSpan(pendingDeletionId);
     setPendingDeletionId(null);
   };
 
   const cancelDeleteSpan = () => setPendingDeletionId(null);
 
   const handleChangeCategory = (newCategory: string) => {
-    if (!activeSpan || !activeContent) return;
-    const activeId = getSpanId(activeSpan);
-    const updateSpans = (spans: NerSpan[]) => spans.map((s) => (getSpanId(s) === activeId ? { ...s, entity: newCategory, id: activeId } : s));
-    updateActiveLayer({ userSpans: updateSpans(activeContent.userSpans ?? []), apiSpans: updateSpans(activeContent.apiSpans ?? []) });
+    if (!activeSpan) return;    
+    annotationWorkflowService.updateSpanCategory(activeSpan.id ?? "", newCategory);
     closeEditMenu();
   };
 
