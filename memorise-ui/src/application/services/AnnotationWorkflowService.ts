@@ -3,6 +3,9 @@ import { errorHandlingService, type ErrorContext } from "../../infrastructure/se
 import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { resolveApiSpanConflicts, type ConflictPrompt } from "../../core/services/annotation/resolveApiSpanConflicts";
 import type { NerSpan } from "../../types/NotationEditor";
+import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
+import { v4 as uuidv4 } from "uuid";
+
 
 export class AnnotationWorkflowService {
   private apiService = getApiService();
@@ -110,6 +113,46 @@ export class AnnotationWorkflowService {
     if (keyToBan && !deletedApiKeys.includes(keyToBan)) {
         store.updateDeletedApiKeys([...deletedApiKeys, keyToBan]);
     }
+  }
+
+  createSpan(
+    category: string, 
+    localStart: number, 
+    localEnd: number
+  ): void  {
+    const store = useSessionStore.getState();
+    const { session, activeTab, viewMode, activeSegmentId } = store;
+    
+    if (!session) return;
+
+    const isOriginal = activeTab === "original";
+    const currentLayer = isOriginal 
+      ? session 
+      : session.translations?.find(t => t.language === activeTab);
+      
+    if (!currentLayer) return;
+
+    let shiftOffset = 0;
+    if (viewMode === "segments" && activeSegmentId && session.segments) {
+      const translations = isOriginal ? undefined : (currentLayer as any).segmentTranslations;
+      shiftOffset = SegmentLogic.calculateGlobalOffset(
+        activeSegmentId, 
+        session.segments, 
+        translations
+      );
+    }
+
+    const newSpan: NerSpan = {
+      id: uuidv4(),
+      start: localStart + shiftOffset,
+      end: localEnd + shiftOffset,
+      entity: category,
+      origin: "user"
+    };
+
+    const updatedSpans = [...(currentLayer.userSpans ?? []), newSpan];
+    
+    store.updateActiveLayer({ userSpans: updatedSpans });
   }
 }
 

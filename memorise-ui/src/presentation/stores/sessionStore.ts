@@ -50,6 +50,7 @@ interface SessionStore {
   
   setSelectedSegmentId: (id: string | null) => void;
   setActiveSegmentId: (id: string | undefined) => void;
+  updateActiveLayer: (updates: any) => void;
 }
 
 export const useSessionStore = create<SessionStore>()(
@@ -239,6 +240,23 @@ export const useSessionStore = create<SessionStore>()(
       setActiveSegmentId: (id) => {
         set({ activeSegmentId: id });
       },
+
+      updateActiveLayer: (updates: any) => set((state) => {
+        if (!state.session) return state; 
+      
+        if (state.activeTab === "original") {
+          return { 
+            session: { ...state.session, ...updates } 
+          };
+        } else {
+          const updatedTranslations = (state.session.translations || []).map((t) =>
+            t.language === state.activeTab ? { ...t, ...updates } : t
+          );
+          return { 
+            session: { ...state.session, translations: updatedTranslations } 
+          };
+        }
+      }),
     }),
     { name: 'session-store' }
   )

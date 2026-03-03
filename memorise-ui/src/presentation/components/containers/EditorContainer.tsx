@@ -3,13 +3,14 @@ import { useParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import { useSessionStore } from "../../stores/sessionStore";
 import { CodeMirrorWrapper } from "../editor/CodeMirrorWrapper";
-import CategoryMenu from "../editor/CategoryMenu";
+import CategoryMenu from "../editor/menus/CategoryMenu.tsx";
 import type { NerSpan } from "../../../types/NotationEditor";
 import DeletionConfirmationDialog from "../editor/dialogs/DeletionConfirmationDialog";
 import MultiDeletionDialog from "../editor/dialogs/MultiDeletionDialog";
 import { SegmentService } from "../../../core/services/SegmentService";
 import type { Segment } from "../../../types/Segment";
 import SegmentJoinDialog from "../editor/dialogs/SegmentJoinDialog";
+import { annotationWorkflowService } from "../../../application/services/AnnotationWorkflowService.ts";
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
@@ -194,13 +195,14 @@ const EditorContainer: React.FC = () => {
   }, []);
 
   const handleCreateSpan = (category: string) => {
-    if (!newSelection || !activeContent) return;
-    const shiftOffset = viewMode === "segments" && activeSegment 
-      ? (activeTab === "original" ? activeSegment.start : (displaySegments.find(s => s.id === activeSegmentId)?.start || 0))
-      : 0;
-
-    const newSpan: NerSpan = { id: uuidv4(), start: newSelection.start + shiftOffset, end: newSelection.end + shiftOffset, entity: category, origin: "user" };
-    updateActiveLayer({ userSpans: [...(activeContent.userSpans ?? []), newSpan] });
+    if (!newSelection) return;
+    
+    annotationWorkflowService.createSpan(
+      category, 
+      newSelection.start, 
+      newSelection.end
+    );
+    
     setNewSelection(null);
   };
 
