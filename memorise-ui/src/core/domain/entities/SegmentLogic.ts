@@ -3,25 +3,21 @@ import type { Segment } from "../../../types/Segment";
 export const SegmentLogic = {
 
   calculateGlobalOffset: (
-    targetSegmentId: string,
-    segments: Segment[],
-    segmentTranslations?: Record<string, string>
+    segmentId: string, 
+    segments: Segment[], 
+    translations?: Record<string, string>
   ): number => {
-    let currentOffset = 0;
-
-    for (const seg of segments) {
-      if (seg.id === targetSegmentId) {
-        return currentOffset;
-      }
-      
-      if (segmentTranslations) {
-        currentOffset += (segmentTranslations[seg.id] || "").length;
-      } else {
-        currentOffset = seg.start; 
-      }
+    if (!translations) {
+      const seg = segments.find(s => s.id === segmentId);
+      return seg ? seg.start : 0;
     }
 
-    return 0; 
+    let offset = 0;
+    for (const s of segments) {
+      if (s.id === segmentId) break;
+      offset += (translations[s.id] || "").length;
+    }
+    return offset;
   },
 
   calculateVirtualBoundaries: (

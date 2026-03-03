@@ -69,8 +69,7 @@ const EditorContainer: React.FC = () => {
     return { ...masterSeg, text: translatedText };
   }, [session, activeSegmentId, activeTab]);
 
-  const displaySegments = useMemo(() => {
-    if (viewMode === "segments") return [];
+  const displaySegments = useMemo(() => {    
     const masterSegments = session?.segments || [];
     if (activeTab === "original") return masterSegments;
 
@@ -80,7 +79,7 @@ const EditorContainer: React.FC = () => {
       masterSegments, 
       currentTranslation?.segmentTranslations || {}
     );
-  }, [viewMode, session?.segments, session?.translations, activeTab]);
+  }, [session?.segments, session?.translations, activeTab]);
 
   const displayText = useMemo(() => {
     if (viewMode === "segments") return activeSegment?.text || "";
@@ -235,7 +234,7 @@ const EditorContainer: React.FC = () => {
         value={displayText}
         spans={displaySpans}
         activeSegmentId={viewMode === "document" ? activeSegmentId : undefined} 
-        segments={displaySegments} 
+        segments={viewMode === "document" ? displaySegments : []}
         onChange={handleTextChange}
         onSpanClick={handleSpanClick}
         onSelectionChange={handleSelectionChange}
