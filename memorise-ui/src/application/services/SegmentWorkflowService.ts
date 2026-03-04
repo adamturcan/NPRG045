@@ -1,8 +1,55 @@
 import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { useNotificationStore } from "../../presentation/stores/notificationStore";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
+import { getApiService } from "../../infrastructure/providers/apiProvider";
 
 export class SegmentWorkflowService {
+  private apiService = getApiService();
+
+  async runAutoSegmentation(): Promise<boolean> {
+    const store = useSessionStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
+    const { session, activeTab } = store;
+
+    if (!session || !session.text?.trim()) {
+      notify({ message: "No text to segment.", tone: "error" });
+      return false;
+    }
+
+    if (activeTab !== "original") {
+      notify({ message: "Segmentation can only be run on the original text.", tone: "error" });
+      return false;
+    }
+
+    try {
+      const newSegments = await this.apiService.segmentText(session.text);
+      
+      if (newSegments.length === 0) {
+        notify({ message: "No segments found.", tone: "error" });
+        return false;
+      }
+
+      store.updateSession({
+        ...session,
+        segments: newSegments,
+        
+        translations: (session.translations || []).map(t => ({
+          ...t,
+          segmentTranslations: {}, 
+          text: "" 
+        }))
+      });
+
+      notify({ message: `Auto-segmented into ${newSegments.length} segment(s).`, tone: "success" });
+      return true;
+
+    } catch (error) {
+      notify({ message: "Segmentation analysis failed.", tone: "error" });
+      return false;
+    }
+  }
+
+
 
   joinSegments(id1: string, id2: string): void {
     const store = useSessionStore.getState();

@@ -1,5 +1,6 @@
 import type { NerSpan } from '../../../types/NotationEditor';
 import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../shared/utils/translation';
+import type { Segment } from '../../../types/Segment';
 
 /**
  * Classification result from the semantic tagging API.
@@ -13,6 +14,9 @@ export type ClassificationResult = unknown;
  * Contract for browser/API integrations that presentation can rely on.
  */
 export interface ApiService {
+
+  segmentText(text: string): Promise<Segment[]>;
+
   /**
    * Classify text (semantic tagging / categorisation).
    */

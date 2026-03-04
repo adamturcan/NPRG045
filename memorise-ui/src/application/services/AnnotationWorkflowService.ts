@@ -1,10 +1,11 @@
 import { getApiService } from "../../infrastructure/providers/apiProvider";
-import { errorHandlingService, type ErrorContext } from "../../infrastructure/services/ErrorHandlingService";
+import { errorHandlingService } from "../../infrastructure/services/ErrorHandlingService";
 import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { resolveApiSpanConflicts, type ConflictPrompt } from "../../core/services/annotation/resolveApiSpanConflicts";
 import type { NerSpan } from "../../types/NotationEditor";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import { v4 as uuidv4 } from "uuid";
+import { useNotificationStore } from "../../presentation/stores/notificationStore";
 
 
 export class AnnotationWorkflowService {
@@ -24,55 +25,87 @@ export class AnnotationWorkflowService {
   }
 
 
-  async runNer(
-    text: string,
-    options?: {
-      workspaceId?: string | null;
-      segmentOffset?: number;
-      fullDocumentText?: string;
-      onConflict?: (prompt: ConflictPrompt) => Promise<"api" | "existing">;
-    }
-  ): Promise<{ conflictsHandled: number }> {
-    if (!text.trim()) {
-      throw this.errorService.handleValidationError("Text is empty", { operation: "run NER" });
+  async runNer(onConflict: (prompt: ConflictPrompt) => Promise<"api" | "existing">): Promise<boolean> {
+    const store = useSessionStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
+    const { session, viewMode, activeSegmentId, activeTab } = store;
+
+    const currentLayer = this.getCurrentLayer(store) as any; 
+    if (!session || !currentLayer) return false;
+
+    let textToProcess = "";
+    let globalOffset = 0;
+
+    if (viewMode === "segments" && activeSegmentId) {
+      const translations = activeTab === "original" ? undefined : currentLayer.segmentTranslations;
+      
+      globalOffset = SegmentLogic.calculateGlobalOffset(
+         activeSegmentId, 
+         session.segments || [], 
+         translations
+      );
+      
+      const targetSeg = session.segments?.find(s => s.id === activeSegmentId);
+      if (!targetSeg) return false;
+      
+      textToProcess = activeTab === "original" 
+        ? targetSeg.text 
+        : (currentLayer.segmentTranslations?.[activeSegmentId] || "");
+        
+    } else {
+      textToProcess = currentLayer.text || "";
     }
 
-    const context: ErrorContext = { operation: "run NER", workspaceId: options?.workspaceId ?? undefined };
+    if (!textToProcess.trim()) {
+      notify({ message: "No text to process.", tone: "error" });
+      return false;
+    }
 
     try {
-      let incomingSpans = await this.apiService.ner(text);
+      let incomingSpans = await this.apiService.ner(textToProcess);
 
-      if (options?.segmentOffset !== undefined) {
-        const offset = options.segmentOffset;
-        incomingSpans = incomingSpans.map((span) => ({ ...span, start: span.start + offset, end: span.end + offset }));
+      if (globalOffset > 0) {
+        incomingSpans = incomingSpans.map((span) => ({ 
+          ...span, 
+          start: span.start + globalOffset, 
+          end: span.end + globalOffset 
+        }));
       }
 
-      const session = useSessionStore.getState().session;
-      const userSpans = session?.userSpans ?? [];
-      const apiSpans = session?.apiSpans ?? [];
-      const deletedApiKeys = new Set(session?.deletedApiKeys ?? []);
+      const userSpans = currentLayer.userSpans || [];
+      const apiSpans = currentLayer.apiSpans || [];
+      const deletedApiKeys = new Set(session.deletedApiKeys || []);
 
       const filteredApiSpans = apiSpans.filter((s) => !deletedApiKeys.has(`${s.start}:${s.end}:${s.entity}`));
-      const conflictResolutionText = options?.fullDocumentText ?? text;
 
       const { nextUserSpans, nextApiSpans, conflictsHandled } = await resolveApiSpanConflicts({
-        text: conflictResolutionText,
+        text: currentLayer.text || "", 
         incomingSpans,
         userSpans,
         existingApiSpans: filteredApiSpans,
-        onConflict: options?.onConflict ?? (async () => "api"),
+        onConflict,
+      });
+    
+      store.updateActiveLayer({
+        userSpans: nextUserSpans,
+        apiSpans: nextApiSpans,
       });
 
-      const store = useSessionStore.getState();
-      store.updateUserSpans(nextUserSpans);
-      store.updateApiSpans(nextApiSpans);
       store.updateDeletedApiKeys([]);
 
-      return { conflictsHandled };
+      notify({ 
+        message: conflictsHandled > 0 ? "NER completed with conflicts." : "NER completed.", 
+        tone: "success" 
+      });
+      return true;
+
     } catch (error) {
-      const appError = this.errorService.handleApiError(error, context);
-      this.errorService.logError(appError, context);
-      throw appError;
+      this.errorService.handleApiError(error, {
+        operation: "run NER",
+        payloadLength: textToProcess.length,
+      });
+      notify({ message: "Failed to run NER analysis.", tone: "error" });
+      return false;
     }
   }
 

@@ -3,6 +3,9 @@ import { SpanLogic } from "../../core/domain/entities/SpanLogic";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import type { NerSpan } from "../../types/NotationEditor";
 import type { Segment } from "../../types/Segment";
+import { useWorkspaceStore } from "../../presentation/stores/workspaceStore";
+import { useNotificationStore } from "../../presentation/stores/notificationStore";
+import { getWorkspaceApplicationService } from "../../infrastructure/providers/workspaceProvider";
 
 export class EditorWorkflowService {
   
@@ -123,6 +126,59 @@ export class EditorWorkflowService {
     
     store.setDraftText(updatedFull);
     store.updateActiveLayer({ text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+  }
+
+  async saveWorkspace(): Promise<boolean> {
+    const sessionStore = useSessionStore.getState();
+    const workspaceStore = useWorkspaceStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
+
+    const { session, draftText } = sessionStore;
+
+    if (!session || !session.id) {
+      notify({ message: "No active workspace to save.", tone: "error" });
+      return false;
+    }
+
+    try {
+      const appService = getWorkspaceApplicationService();
+
+      // 1. Gather the heavy data directly from the Session Store
+      const patch = {
+        text: draftText, // Use draftText to catch any pending CodeMirror edits
+        userSpans: session.userSpans,
+        apiSpans: session.apiSpans,
+        deletedApiKeys: session.deletedApiKeys,
+        tags: session.tags,
+        translations: session.translations,
+        segments: session.segments, // The bug fix we just applied ensures this gets saved!
+      };
+
+      // 2. Call the Application Service directly
+      await appService.updateWorkspace({
+        workspaceId: session.id,
+        patch
+      });
+
+      // 3. Update the lightweight metadata store (so UI lists show the correct timestamp)
+      workspaceStore.updateWorkspaceMetadata(session.id, { 
+        updatedAt: Date.now() 
+      });
+
+      // 4. Mark the session as clean
+      useSessionStore.setState({ 
+        session: { ...session, text: draftText },
+        isDirty: false 
+      });
+
+      notify({ message: "Workspace saved successfully.", tone: "success" });
+      return true;
+
+    } catch (error) {
+      console.error("Failed to save workspace:", error);
+      notify({ message: "Failed to save workspace.", tone: "error" });
+      return false;
+    }
   }
 }
 

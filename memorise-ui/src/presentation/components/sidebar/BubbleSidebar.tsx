@@ -56,22 +56,14 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useNavigate, useLocation } from "react-router-dom";
+import type { WorkspaceMetadata } from "../../../core/entities/Workspace";
 
 interface Props {
-  /** List of all workspaces (sidebar shows first 3) */
-  workspaces: Workspace[];
-  
-  /** Desktop: expanded state, Mobile: not used */
   open: boolean;
-  
-  /** Desktop: toggle expand/collapse */
   onToggle: () => void;
-  
-  /** Create new workspace and return it */
-  onAddWorkspace: () => Workspace;
-  
-  /** Handle logout action */
   onLogout: () => void;
+  workspaces: WorkspaceMetadata[]; 
+  onAddWorkspace: () => void; // <--- THE FIX
 }
 
 const BubbleSidebar: React.FC<Props> = ({

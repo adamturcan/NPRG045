@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom'; // 1. Import useLocation
+import React, { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useNotificationStore } from '../../stores/notificationStore';
@@ -29,12 +29,41 @@ export const StateSynchronizer: React.FC<StateSynchronizerProps> = ({ username, 
     }
 
     const hydrateMetadata = async () => {
-      const { loadWorkspaces } = useWorkspaceStore.getState();
+      // Get the pure state setters from the purified store
+      const { setWorkspaces } = useWorkspaceStore.getState();
       const { enqueue: enqueueNotification } = useNotificationStore.getState();
       
       try {
         console.log(`[StateSynchronizer] Loading workspace metadata for user: ${username}`);
-        await loadWorkspaces(username);
+        
+        // Use the App Service directly
+        const service = getWorkspaceApplicationService();
+        const loaded = await service.loadForOwner(username);
+
+        if (loaded && loaded.length > 0) {
+          // Map Domain DTOs to lightweight UI metadata
+          const metadata = loaded.map(ws => ({
+            id: ws.id!,
+            name: ws.name,
+            owner: ws.owner ?? username,
+            updatedAt: ws.updatedAt ?? Date.now(),
+          }));
+          
+          setWorkspaces(metadata, username);
+        } else {
+          // If no workspaces exist, handle the seed logic from the App Service
+          const seeded = service.seedForOwner(username);
+          const metadata = seeded.map(ws => ({
+            id: ws.id!,
+            name: ws.name,
+            owner: ws.owner ?? username,
+            updatedAt: ws.updatedAt ?? Date.now(),
+          }));
+          
+          setWorkspaces(metadata, username);
+          await service.replaceAllForOwner(username, seeded);
+        }
+
       } catch (error) {
         console.error('[StateSynchronizer] Failed to load workspace metadata:', error);
         enqueueNotification({
@@ -58,12 +87,15 @@ export const StateSynchronizer: React.FC<StateSynchronizerProps> = ({ username, 
 
     const hydrateActiveSession = async () => {      
       const { setLoading, loadSession } = useSessionStore.getState();
+      const { setCurrentWorkspace } = useWorkspaceStore.getState();
       const { enqueue: enqueueNotification } = useNotificationStore.getState();
       
       setLoading();
 
       try {
         console.log(`[StateSynchronizer] Loading active workspace: ${workspaceId}`);
+        
+        // Use the App Service directly
         const service = getWorkspaceApplicationService();
         const workspace = await service.getWorkspaceById(workspaceId);
 
@@ -71,7 +103,10 @@ export const StateSynchronizer: React.FC<StateSynchronizerProps> = ({ username, 
           throw new Error(`Workspace ${workspaceId} not found`);
         }
               
+        // Load heavy data into Session Store
         loadSession(workspace);
+        // Track active ID in Metadata Store
+        setCurrentWorkspace(workspaceId);
 
         console.log(`[StateSynchronizer] Successfully hydrated session for workspace: ${workspace.name}`);
       } catch (error) {

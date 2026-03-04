@@ -13,9 +13,8 @@ import { segmentWorkflowService } from "../../../application/services/SegmentWor
 import { SpanLogic } from "../../../core/domain/entities/SpanLogic.ts";
 import { editorWorkflowService } from "../../../application/services/EditorWorkflowService.ts";
 
-import { Fab, Tooltip, CircularProgress } from "@mui/material";
-import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import EditorSpeedDial from "../editor/menus/EditorSpeedDial.tsx";
+import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice.ts";
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
@@ -53,42 +52,46 @@ const EditorContainer: React.FC = () => {
 
   const [pendingJoinIds, setPendingJoinIds] = useState<[string, string] | null>(null);
 
-  const [isNerLoading, setIsNerLoading] = useState(false);
+  // const [isNerLoading, setIsNerLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleRunNer = async () => {
-    setIsNerLoading(true);
+    setIsProcessing(true);
     try {
       await annotationWorkflowService.runNer(async () => {
         return "api"; 
       });
     } finally {
-      setIsNerLoading(false);
+      setIsProcessing(false);
     }
   };
 
   const handleRunSegmentation = async () => {
     setIsProcessing(true);
-    try {
-      // We will build this Service method in the next step
-      // await segmentWorkflowService.runAutoSegmentation();
-      console.log("Triggering Segmentation API...");
+    try {   
+      await segmentWorkflowService.runAutoSegmentation();
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 3. Save Handler
   const handleSave = async () => {
     setIsProcessing(true);
     try {
-      // Trigger the workspace/session save
-      console.log("Saving Workspace...");
+      await editorWorkflowService.saveWorkspace();
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const handleRunSemTag = async () => {
+    setIsProcessing(true);
+    try {
+      await taggingWorkflowService.runClassify();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const activeContent = useMemo(() => {
     if (!session) return null;
@@ -284,7 +287,7 @@ const EditorContainer: React.FC = () => {
     <EditorSpeedDial 
             onNer={handleRunNer}
             onSegment={handleRunSegmentation}
-            onSemTag={() => console.log("SemTag clicked")}
+            onSemTag={handleRunSemTag}
             onSave={handleSave}
             isProcessing={isProcessing}
             viewMode={viewMode}

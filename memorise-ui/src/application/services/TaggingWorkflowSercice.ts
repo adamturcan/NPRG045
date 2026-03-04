@@ -1,4 +1,6 @@
+import { getApiService } from "../../infrastructure/providers/apiProvider";
 import { errorHandlingService, type ErrorContext } from "../../infrastructure/services/ErrorHandlingService";
+import { useNotificationStore } from "../../presentation/stores/notificationStore";
 import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { loadThesaurusIndex } from "../../shared/utils/thesaurusHelpers";
 import type { TagItem } from "../../types/Tag";
@@ -6,72 +8,99 @@ import type { TagItem } from "../../types/Tag";
 export class TaggingWorkflowService {
   private errorService = errorHandlingService;
 
-  async runClassify(text: string, segmentId?: string | null): Promise<TagItem[]> {
-    if (!text.trim()) {
-      throw this.errorService.handleValidationError("Text is empty", { operation: "classify text" });
+  private apiService = getApiService();
+
+  async runClassify(): Promise<boolean> {
+    const store = useSessionStore.getState();
+    const notify = useNotificationStore.getState().enqueue;
+    const { session, viewMode, activeSegmentId, activeTab } = store;
+
+    if (!session) return false;
+   
+    let textToProcess = "";
+    let targetSegmentId: string | undefined = undefined;
+
+    if (viewMode === "segments" && activeSegmentId) {
+      targetSegmentId = activeSegmentId;
+      const targetSeg = session.segments?.find(s => s.id === activeSegmentId);
+      
+      textToProcess = activeTab === "original" 
+        ? targetSeg?.text || ""
+        : session.translations?.find(t => t.language === activeTab)?.segmentTranslations?.[activeSegmentId] || "";
+    } else {
+      textToProcess = activeTab === "original"
+        ? session.text || ""
+        : session.translations?.find(t => t.language === activeTab)?.text || "";
     }
 
-    const context: ErrorContext = { operation: "classify text", payloadLength: text.length };
+    if (!textToProcess.trim()) {
+      notify({ message: "No text to classify.", tone: "error" });
+      return false;
+    }
 
     try {
-      const { classify: apiClassify } = await import("../../shared/utils/api");
-      const data = await apiClassify(text);
+      const apiResults = await this.apiService.classify(textToProcess);
 
-      interface ClassificationResult { label?: number; name?: string; }
-      const apiResults: ClassificationResult[] = Array.isArray(data?.result) ? data.result : Array.isArray(data?.results) ? data.results : [];
+      let thesaurusIndex: any[] = [];
+      try {
+        thesaurusIndex = await loadThesaurusIndex();
+      } catch (e) {
+        console.warn("Could not load thesaurus index", e);
+      }
 
-      const session = useSessionStore.getState().session;
-      const userTags = (session?.tags ?? []).filter((t) => t.source === "user");
+      const allTags = session.tags ?? [];
+      const userTags = allTags.filter((t) => t.source === "user");
       const newTags: TagItem[] = [];
 
-      for (const r of apiResults) {
+      for (const r of apiResults as { label?: number; name?: string; }[]) {
         if (!r.name) continue;
 
         if (userTags.some((t) => t.name.toLowerCase() === r.name!.toLowerCase())) continue;
 
-        if (r.label) {
-          try {
-            const thesaurusIndex = await loadThesaurusIndex();
-            const matches = thesaurusIndex.filter((item) => item.id === r.label);
+        if (r.label && thesaurusIndex.length > 0) {
+          const matches = thesaurusIndex.filter((item) => item.id === r.label);
 
-            if (matches.length > 1) {
-              for (const match of matches) {
-                if (!userTags.some((t) => t.name.toLowerCase() === match.label.toLowerCase() && t.label === match.id && t.parentId === match.parentId)) {
-                  newTags.push({ name: match.label, source: "api", label: match.id, parentId: match.parentId, segmentId: segmentId ?? undefined });
-                }
+          if (matches.length > 0) {
+            for (const match of matches) {
+              const exists = userTags.some((t) => 
+                t.name.toLowerCase() === match.label.toLowerCase() && 
+                t.label === match.id && 
+                t.parentId === match.parentId
+              );
+              
+              if (!exists) {
+                newTags.push({ 
+                  name: match.label, 
+                  source: "api", 
+                  label: match.id, 
+                  parentId: match.parentId, 
+                  segmentId: targetSegmentId 
+                });
               }
-            } else if (matches.length === 1) {
-              const match = matches[0];
-              if (!userTags.some((t) => t.name.toLowerCase() === match.label.toLowerCase() && t.label === match.id && t.parentId === match.parentId)) {
-                newTags.push({ name: match.label, source: "api", label: match.id, parentId: match.parentId, segmentId: segmentId ?? undefined });
-              }
-            } else {
-              newTags.push({ name: r.name, source: "api", label: r.label, segmentId: segmentId ?? undefined });
             }
-          } catch {
-            newTags.push({ name: r.name, source: "api", label: r.label, segmentId: segmentId ?? undefined });
+          } else {
+             newTags.push({ name: r.name, source: "api", label: r.label, segmentId: targetSegmentId });
           }
         } else {
-          newTags.push({ name: r.name, source: "api", segmentId: segmentId ?? undefined });
+          newTags.push({ name: r.name, source: "api", label: r.label, segmentId: targetSegmentId });
         }
       }
 
-      const updateSession = useSessionStore.getState().updateSession;
-      const allTags = session?.tags ?? [];
-
-      if (segmentId) {
-        const filteredTags = allTags.filter((t) => t.source !== "api" || !t.segmentId || t.segmentId !== segmentId);
-        updateSession({ tags: [...filteredTags, ...newTags] });
+      if (targetSegmentId) {
+        const filteredTags = allTags.filter((t) => t.source !== "api" || t.segmentId !== targetSegmentId);
+        store.updateSession({ tags: [...filteredTags, ...newTags] });
       } else {
         const userTagsOnly = allTags.filter((t) => t.source === "user");
-        updateSession({ tags: [...userTagsOnly, ...newTags] });
+        store.updateSession({ tags: [...userTagsOnly, ...newTags] });
       }
 
-      return newTags;
+      notify({ message: "Classification completed.", tone: "success" });
+      return true;
+
     } catch (error) {
-      const appError = this.errorService.handleApiError(error, context);
-      this.errorService.logError(appError, context);
-      throw appError;
+      console.error("Classification crashed:", error);
+      notify({ message: "Failed to classify text.", tone: "error" });
+      return false;
     }
   }
 

@@ -55,21 +55,28 @@ theme = responsiveFontSizes(theme);
 // Storage key for persisting the current user's username
 const USER_KEY = "memorise.user.v1";
 
-
 // Component that creates a new workspace and redirects to it or manage page
 const NewWorkspaceRedirect: React.FC<{
-  onCreate: () => Workspace;
+  onCreate: () => Promise<Workspace | null>; // Updated to expect a Promise
 }> = ({ onCreate }) => {
   const navigate = useNavigate();
+  
   useEffect(() => {
-    const ws = onCreate();
-    if (ws?.id) {
-      navigate(`/workspace/${encodeURIComponent(ws.id)}`, { replace: true });
-    } else {
-      navigate("/manage-workspaces", { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let isMounted = true;
+    
+    // Execute creation asynchronously
+    void onCreate().then((ws) => {
+      if (!isMounted) return;
+      if (ws?.id) {
+        navigate(`/workspace/${encodeURIComponent(ws.id)}`, { replace: true });
+      } else {
+        navigate("/manage-workspaces", { replace: true });
+      }
+    });
+    
+    return () => { isMounted = false; };
+  }, [navigate, onCreate]);
+  
   return null;
 };
 
@@ -87,13 +94,14 @@ const App: React.FC = () => {
   // Track sidebar open state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Access Zustand store state and actions for workspace management
+  // Access Zustand store state (purified metadata only)
   const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const createWorkspaceAction = useWorkspaceStore.getState().createWorkspace;
+  const addWorkspaceMetadata = useWorkspaceStore((state) => state.addWorkspaceMetadata);
   
   // Access notification store
   const current = useNotificationStore((state) => state.current);
   const dequeue = useNotificationStore.getState().dequeue;
+  const notify = useNotificationStore.getState().enqueue;
   
   // Memoize workspace application service
   const workspaceApplicationService = useMemo(
@@ -115,31 +123,56 @@ const App: React.FC = () => {
     navigate("/login");
   };
 
-  // Create a new workspace draft with auto-incremented name
-  const handleAddWorkspace = () => {
-    if (!username) return { id: "", name: "", isTemporary: true } as Workspace;
+  // Create a new workspace draft, persist it, and update UI metadata
+  const handleAddWorkspace = async (): Promise<Workspace | null> => {
+    if (!username) return null;
+    
     const newCount = workspaces.filter((w) =>
       w.name.startsWith("New Workspace")
     ).length;
+    
+    // 1. Generate the Draft DTO
     const ws = workspaceApplicationService.createWorkspaceDraft(
       username,
       `New Workspace #${newCount + 1}`
     );
-    void createWorkspaceAction(ws);
-    return ws;
+
+    try {
+      // 2. Persist to Infrastructure (LocalStorage)
+      await workspaceApplicationService.createWorkspace({
+        ownerId: username,
+        workspaceId: ws.id,
+        name: ws.name,
+        isTemporary: ws.isTemporary,
+      });
+
+      // 3. Update the lightweight Zustand metadata store for the UI
+      addWorkspaceMetadata({
+        id: ws.id!,
+        name: ws.name,
+        owner: username,
+        updatedAt: ws.updatedAt ?? Date.now(),
+      });
+
+      return ws;
+    } catch (error) {
+      console.error("Failed to create workspace:", error);
+      notify({ message: "Failed to create new workspace", tone: "error" });
+      return null;
+    }
   };
 
   // Move the opened workspace to the front of the list to maintain recent workspaces order
   const bumpWorkspaceToFront = (id: string) => {
-    
     const currentWorkspaces = useWorkspaceStore.getState().workspaces;    
-
     const idx = currentWorkspaces.findIndex((w) => w.id === id);
     if (idx <= 0) return;
+    
     const next = [...currentWorkspaces];
     const [item] = next.splice(idx, 1);    
     next.unshift(item);
     
+    // Pure metadata array update
     useWorkspaceStore.setState({ workspaces: next });
   };
 
@@ -202,7 +235,7 @@ const App: React.FC = () => {
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           workspaces={workspaces}
-          onAddWorkspace={handleAddWorkspace}
+          onAddWorkspace={() => { void handleAddWorkspace() }} // Handle async strictly
         />
         {/* Render the main content area */}
         <Box

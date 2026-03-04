@@ -120,7 +120,12 @@ export class WorkspaceApplicationService {
     const workspace = await this.updateUseCase.execute(params);
     if (!workspace) return null;
     
-    // Preserve segments from stored data
+    // CRITICAL FIX: Explicitly save segments to the repository if they are in the patch
+    if (params.patch.segments !== undefined && this.deps.workspaceRepository.updateSegments) {
+      await this.deps.workspaceRepository.updateSegments(workspace.id, params.patch.segments);
+    }
+
+    // Preserve segments from stored data to return the complete DTO
     const rawPersistence = await this.getRawPersistenceForWorkspace(workspace.id);
     const existingDto = rawPersistence ? { segments: rawPersistence.segments } : undefined;
     return workspaceToDto(workspace, existingDto);
