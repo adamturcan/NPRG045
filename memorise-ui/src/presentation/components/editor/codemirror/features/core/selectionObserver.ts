@@ -1,11 +1,9 @@
 import React from "react";
 import { EditorView } from "@codemirror/view";
 import type { NerSpan } from "../../../../../../types/NotationEditor";
-import type { Segment } from "../../../../../../types/Segment";
 
 export const createSelectionObserver = (
   spans: NerSpan[],
-  segments: Segment[],
   onSelectionChange?: (sel: { start: number; end: number; top: number; left: number } | null) => void,
   timeoutRef?: React.MutableRefObject<ReturnType<typeof setTimeout> | null>
 ) => {
@@ -21,18 +19,12 @@ export const createSelectionObserver = (
         onSelectionChange(null);
         return;
       }
-
+            
       const overlapsSpan = spans.some(
         (s) => Math.max(Number(s.start), range.from) < Math.min(Number(s.end), range.to)
       );
 
-      const overlapsBoundary = segments.some((seg, i) => {
-        if (i === segments.length - 1) return false;
-        const nextSeg = segments[i + 1];
-        return range.from < nextSeg.start && range.to > seg.end;
-      });
-
-      if (overlapsSpan || overlapsBoundary) {
+      if (overlapsSpan) {
         onSelectionChange(null);
         return;
       }

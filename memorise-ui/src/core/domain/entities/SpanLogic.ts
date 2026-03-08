@@ -1,45 +1,27 @@
 import type { NerSpan } from "../../../types/NotationEditor";
-import type { Segment } from "../../../types/Segment";
 
 export const SpanLogic = {
  
-  projectSpansForView: (
+  
+  getLocalSpansForSegment: (
     allSpans: NerSpan[],
-    viewMode: string,
-    activeTab: string,
-    activeSegmentId?: string,
-    activeSegment?: Segment | null,
-    displaySegments: Segment[] = []
+    globalStart: number,
+    globalEnd: number
   ): NerSpan[] => {
-    
-    if (viewMode === "document") {
-      if (activeSegmentId) return [];
-      return allSpans;
-    }
-
-    if (!activeSegment || !activeSegmentId) return [];
-    
-    const segStart = activeTab === "original" 
-      ? activeSegment.start 
-      : (displaySegments.find(s => s.id === activeSegmentId)?.start || 0);
-      
-    const segEnd = activeTab === "original"
-      ? activeSegment.end
-      : (displaySegments.find(s => s.id === activeSegmentId)?.end || 0);
-
     return allSpans
-      .filter((s) => s.start >= segStart && s.end <= segEnd)
+      .filter((s) => s.start >= globalStart && s.end <= globalEnd)
       .map((s) => ({ 
         ...s, 
-        start: s.start - segStart, 
-        end: s.end - segStart 
+        start: s.start - globalStart, 
+        end: s.end - globalStart 
       }));
   },
 
+  
   syncLiveCoords: (
     spans: NerSpan[], 
     liveCoords: Map<string, { start: number; end: number }>, 
-    shiftOffset: number, 
+    globalOffset: number, 
     shiftedSet: Set<string>
   ): NerSpan[] => {
     return spans.map((s) => {
@@ -47,8 +29,8 @@ export const SpanLogic = {
       const coords = liveCoords.get(id);
       if (coords) {
         shiftedSet.add(id); 
-        const globalStart = coords.start + shiftOffset;
-        const globalEnd = coords.end + shiftOffset;
+        const globalStart = coords.start + globalOffset;
+        const globalEnd = coords.end + globalOffset;
         if (s.start !== globalStart || s.end !== globalEnd) {
           return { ...s, start: globalStart, end: globalEnd, id };
         }
@@ -57,9 +39,10 @@ export const SpanLogic = {
     });
   },
 
+  
   shiftSpansAfterEdit: (
     spans: NerSpan[], 
-    editEndIndex: number, 
+    editGlobalEndIndex: number, 
     lengthDiff: number, 
     shiftedSet: Set<string>
   ): NerSpan[] => {
@@ -70,8 +53,8 @@ export const SpanLogic = {
       
       let newStart = s.start; 
       let newEnd = s.end;
-      if (s.start >= editEndIndex) newStart += lengthDiff;
-      if (s.end >= editEndIndex) newEnd += lengthDiff;
+      if (s.start >= editGlobalEndIndex) newStart += lengthDiff;
+      if (s.end >= editGlobalEndIndex) newEnd += lengthDiff;
       
       if (newStart !== s.start || newEnd !== s.end) return { ...s, start: newStart, end: newEnd };
       return s;

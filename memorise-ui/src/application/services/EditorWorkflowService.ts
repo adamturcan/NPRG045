@@ -2,7 +2,6 @@ import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { SpanLogic } from "../../core/domain/entities/SpanLogic";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import type { NerSpan } from "../../types/NotationEditor";
-import type { Segment } from "../../types/Segment";
 import { useWorkspaceStore } from "../../presentation/stores/workspaceStore";
 import { useNotificationStore } from "../../presentation/stores/notificationStore";
 import { getWorkspaceApplicationService } from "../../infrastructure/providers/workspaceProvider";
@@ -19,67 +18,58 @@ export class EditorWorkflowService {
 
   handleTextChange(
     text: string, 
-    liveCoords?: Map<string, { start: number; end: number }>, 
-    liveSegments?: Segment[], 
-    contextMode?: string, 
-    contextSegId?: string
+    activeSegId: string,
+    liveCoords?: Map<string, { start: number; end: number }>,
+    deadSpanIds?: string[]
   ): void {
     const store = useSessionStore.getState();
-    const { session, viewMode, activeSegmentId, activeTab } = store;
+    const { session, activeTab } = store;
 
-    if (contextMode && contextMode !== viewMode) return;
-    if (viewMode === "segments" && contextSegId !== undefined && contextSegId !== activeSegmentId) return;
-    
     const currentLayer = this.getCurrentLayer(store);
     if (!session || !currentLayer) return;
 
     const { nextUserSpans, nextApiSpans, shiftedInStepA } = this.syncLiveSpans(
-      store, currentLayer, liveCoords
+      store, currentLayer, activeSegId, liveCoords, deadSpanIds 
     );
 
-    if (viewMode === "document") {
-      this.processDocumentEdit(text, liveSegments, nextUserSpans, nextApiSpans);
-    } 
-    else if (viewMode === "segments" && activeSegmentId) {
-      if (activeTab === "original") {
-        this.processMasterSegmentEdit(text, activeSegmentId, nextUserSpans, nextApiSpans, shiftedInStepA);
-      } else {
-        this.processTranslationSegmentEdit(text, activeSegmentId, currentLayer, nextUserSpans, nextApiSpans, shiftedInStepA);
-      }
+    if (!activeSegId) {
+      store.setDraftText(text);
+      store.updateActiveLayer({ text, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+      return;
+    }
+
+    if (activeTab === "original") {
+      this.processMasterSegmentEdit(text, activeSegId, nextUserSpans, nextApiSpans, shiftedInStepA);
+    } else {
+      this.processTranslationSegmentEdit(text, activeSegId, currentLayer, nextUserSpans, nextApiSpans, shiftedInStepA);
     }
   }
 
-  private syncLiveSpans(store: any, currentLayer: any, liveCoords?: Map<string, { start: number; end: number }>) {
-    let nextUserSpans = currentLayer.userSpans ?? [];
-    let nextApiSpans = currentLayer.apiSpans ?? [];
+  private syncLiveSpans(
+    store: any, 
+    currentLayer: any, 
+    activeSegId: string, 
+    liveCoords?: Map<string, { start: number; end: number }>, 
+    deadSpanIds?: string[]
+  ) {
+    const deadSet = new Set(deadSpanIds || []);
+
+    let nextUserSpans = (currentLayer.userSpans ?? []).filter((s: NerSpan) => !deadSet.has(s.id));
+    let nextApiSpans = (currentLayer.apiSpans ?? []).filter((s: NerSpan) => !deadSet.has(s.id));
     const shiftedInStepA = new Set<string>();
 
     if (!liveCoords) return { nextUserSpans, nextApiSpans, shiftedInStepA };
 
     let shiftOffset = 0;
-    if (store.viewMode === "segments" && store.activeSegmentId && store.session.segments) {
+    if (activeSegId && store.session.segments) {
       const translations = store.activeTab === "original" ? undefined : currentLayer.segmentTranslations;
-      shiftOffset = SegmentLogic.calculateGlobalOffset(store.activeSegmentId, store.session.segments, translations);
+      shiftOffset = SegmentLogic.calculateGlobalOffset(activeSegId, store.session.segments, translations);
     }
     
     nextUserSpans = SpanLogic.syncLiveCoords(nextUserSpans, liveCoords, shiftOffset, shiftedInStepA);
     nextApiSpans = SpanLogic.syncLiveCoords(nextApiSpans, liveCoords, shiftOffset, shiftedInStepA);
 
     return { nextUserSpans, nextApiSpans, shiftedInStepA };
-  }
-
-  private processDocumentEdit(text: string, liveSegments: Segment[] | undefined, userSpans: NerSpan[], apiSpans: NerSpan[]) {
-    const store = useSessionStore.getState();
-    store.setDraftText(text);
-    
-    if (store.activeTab === "original") {
-        const nextSegments = (liveSegments && liveSegments !== store.session?.segments) 
-          ? liveSegments.map(seg => ({ ...seg, text: text.substring(seg.start, seg.end) }))
-          : store.session?.segments;
-        store.updateActiveLayer({ text, segments: nextSegments, userSpans, apiSpans });
-    } else {
-        store.updateActiveLayer({ text, userSpans, apiSpans });
-    }
   }
 
   private processMasterSegmentEdit(text: string, activeSegId: string, userSpans: NerSpan[], apiSpans: NerSpan[], shiftedSet: Set<string>) {
@@ -143,29 +133,25 @@ export class EditorWorkflowService {
     try {
       const appService = getWorkspaceApplicationService();
 
-      // 1. Gather the heavy data directly from the Session Store
       const patch = {
-        text: draftText, // Use draftText to catch any pending CodeMirror edits
+        text: draftText, 
         userSpans: session.userSpans,
         apiSpans: session.apiSpans,
         deletedApiKeys: session.deletedApiKeys,
         tags: session.tags,
         translations: session.translations,
-        segments: session.segments, // The bug fix we just applied ensures this gets saved!
+        segments: session.segments, 
       };
 
-      // 2. Call the Application Service directly
       await appService.updateWorkspace({
         workspaceId: session.id,
         patch
       });
 
-      // 3. Update the lightweight metadata store (so UI lists show the correct timestamp)
       workspaceStore.updateWorkspaceMetadata(session.id, { 
         updatedAt: Date.now() 
       });
 
-      // 4. Mark the session as clean
       useSessionStore.setState({ 
         session: { ...session, text: draftText },
         isDirty: false 

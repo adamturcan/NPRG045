@@ -7,7 +7,6 @@ import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import { v4 as uuidv4 } from "uuid";
 import { useNotificationStore } from "../../presentation/stores/notificationStore";
 
-
 export class AnnotationWorkflowService {
   private apiService = getApiService();
   private errorService = errorHandlingService;
@@ -24,11 +23,10 @@ export class AnnotationWorkflowService {
       : session.translations?.find((t) => t.language === activeTab) || null;
   }
 
-
   async runNer(onConflict: (prompt: ConflictPrompt) => Promise<"api" | "existing">): Promise<boolean> {
     const store = useSessionStore.getState();
     const notify = useNotificationStore.getState().enqueue;
-    const { session, viewMode, activeSegmentId, activeTab } = store;
+    const { session, activeSegmentId, activeTab } = store;
 
     const currentLayer = this.getCurrentLayer(store) as any; 
     if (!session || !currentLayer) return false;
@@ -36,22 +34,16 @@ export class AnnotationWorkflowService {
     let textToProcess = "";
     let globalOffset = 0;
 
-    if (viewMode === "segments" && activeSegmentId) {
+    if (activeSegmentId && session.segments) {
       const translations = activeTab === "original" ? undefined : currentLayer.segmentTranslations;
+      globalOffset = SegmentLogic.calculateGlobalOffset(activeSegmentId, session.segments, translations);
       
-      globalOffset = SegmentLogic.calculateGlobalOffset(
-         activeSegmentId, 
-         session.segments || [], 
-         translations
-      );
-      
-      const targetSeg = session.segments?.find(s => s.id === activeSegmentId);
+      const targetSeg = session.segments.find(s => s.id === activeSegmentId);
       if (!targetSeg) return false;
       
       textToProcess = activeTab === "original" 
         ? targetSeg.text 
         : (currentLayer.segmentTranslations?.[activeSegmentId] || "");
-        
     } else {
       textToProcess = currentLayer.text || "";
     }
@@ -66,54 +58,34 @@ export class AnnotationWorkflowService {
 
       if (globalOffset > 0) {
         incomingSpans = incomingSpans.map((span) => ({ 
-          ...span, 
-          start: span.start + globalOffset, 
-          end: span.end + globalOffset 
+          ...span, start: span.start + globalOffset, end: span.end + globalOffset 
         }));
       }
 
       const userSpans = currentLayer.userSpans || [];
       const apiSpans = currentLayer.apiSpans || [];
       const deletedApiKeys = new Set(session.deletedApiKeys || []);
-
       const filteredApiSpans = apiSpans.filter((s) => !deletedApiKeys.has(`${s.start}:${s.end}:${s.entity}`));
 
       const { nextUserSpans, nextApiSpans, conflictsHandled } = await resolveApiSpanConflicts({
-        text: currentLayer.text || "", 
-        incomingSpans,
-        userSpans,
-        existingApiSpans: filteredApiSpans,
-        onConflict,
+        text: currentLayer.text || "", incomingSpans, userSpans, existingApiSpans: filteredApiSpans, onConflict,
       });
     
-      store.updateActiveLayer({
-        userSpans: nextUserSpans,
-        apiSpans: nextApiSpans,
-      });
-
+      store.updateActiveLayer({ userSpans: nextUserSpans, apiSpans: nextApiSpans });
       store.updateDeletedApiKeys([]);
 
-      notify({ 
-        message: conflictsHandled > 0 ? "NER completed with conflicts." : "NER completed.", 
-        tone: "success" 
-      });
+      notify({ message: conflictsHandled > 0 ? "NER completed with conflicts." : "NER completed.", tone: "success" });
       return true;
-
     } catch (error) {
-      this.errorService.handleApiError(error, {
-        operation: "run NER",
-        payloadLength: textToProcess.length,
-      });
+      this.errorService.handleApiError(error, { operation: "run NER", payloadLength: textToProcess.length });
       notify({ message: "Failed to run NER analysis.", tone: "error" });
       return false;
     }
   }
 
-
   deleteSpan(spanId: string): void {
     const store = useSessionStore.getState();
     const currentLayer = this.getCurrentLayer(store);
-    
     if (!currentLayer) return;
 
     const userSpans = currentLayer.userSpans ?? [];
@@ -130,7 +102,6 @@ export class AnnotationWorkflowService {
     } 
 
     const apiSpan = apiSpans.find(s => this.getSpanId(s) === spanId);
-
     if (apiSpan) {
         const keyToBan = `${apiSpan.start}:${apiSpan.end}:${apiSpan.entity}`;
         if (!deletedApiKeys.includes(keyToBan)) {
@@ -142,17 +113,12 @@ export class AnnotationWorkflowService {
   createSpan(category: string, localStart: number, localEnd: number): void {
     const store = useSessionStore.getState();
     const currentLayer = this.getCurrentLayer(store);
-    
     if (!currentLayer || !store.session) return;
 
     let shiftOffset = 0;
-    if (store.viewMode === "segments" && store.activeSegmentId && store.session.segments) {
+    if (store.activeSegmentId && store.session.segments) {
       const translations = store.activeTab === "original" ? undefined : (currentLayer as any).segmentTranslations;
-      shiftOffset = SegmentLogic.calculateGlobalOffset(
-        store.activeSegmentId, 
-        store.session.segments, 
-        translations
-      );
+      shiftOffset = SegmentLogic.calculateGlobalOffset(store.activeSegmentId, store.session.segments, translations);
     }
 
     const newSpan: NerSpan = {
@@ -163,10 +129,8 @@ export class AnnotationWorkflowService {
       origin: "user"
     };
 
-    const updatedSpans = [...(currentLayer.userSpans ?? []), newSpan];
-    store.updateActiveLayer({ userSpans: updatedSpans });
+    store.updateActiveLayer({ userSpans: [...(currentLayer.userSpans ?? []), newSpan] });
   }
-
 
   updateSpanCategory(spanId: string, newCategory: string): void {
     const store = useSessionStore.getState();
@@ -182,25 +146,18 @@ export class AnnotationWorkflowService {
     });
   }
 
-
-
   deleteMultipleSpans(spanIds: string[]): void {
     const store = useSessionStore.getState();
     const currentLayer = this.getCurrentLayer(store);
     if (!currentLayer) return;
 
     const idsToRemove = new Set(spanIds);
-
-    const nextUserSpans = (currentLayer.userSpans ?? []).filter(
-      s => !idsToRemove.has(this.getSpanId(s))
-    );
-
+    const nextUserSpans = (currentLayer.userSpans ?? []).filter(s => !idsToRemove.has(this.getSpanId(s)));
     const newBannedKeys = (currentLayer.apiSpans ?? [])
       .filter(s => idsToRemove.has(this.getSpanId(s)))
       .map(s => `${s.start}:${s.end}:${s.entity}`);
 
     store.updateActiveLayer({ userSpans: nextUserSpans });
-    
     if (newBannedKeys.length > 0) {
       const currentBanned = store.session?.deletedApiKeys ?? [];
       store.updateDeletedApiKeys([...new Set([...currentBanned, ...newBannedKeys])]);
