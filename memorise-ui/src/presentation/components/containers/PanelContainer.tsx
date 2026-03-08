@@ -143,12 +143,12 @@ const PanelContainer: React.FC = () => {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
-      <SplitSegmentDialog
+      {/* <SplitSegmentDialog
         open={splitDialogOpen}
         segment={displaySegments.find(s => s.id === activeSegmentId) ?? null}
         onClose={() => setSplitDialogOpen(false)}
         onConfirm={handleConfirmSplit}
-      />
+      /> */}
     </>
   );
 };

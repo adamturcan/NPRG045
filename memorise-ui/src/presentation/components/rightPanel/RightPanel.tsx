@@ -61,7 +61,7 @@ const RightPanel: React.FC<Props> = (props) => {
 
   return (
     <Box sx={{ width: 300, height: "100%", display: "flex", flexDirection: "column", minHeight: 0, color: COLORS.text, mt: -1.1 }}>
-      <TabSwitcher activeTab={activeTab} onChange={setActiveTab} />
+      {/* <TabSwitcher activeTab={activeTab} onChange={setActiveTab} /> */}
 
       <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", borderRadius: 3, background: "#FFFFFF", border: `1px solid ${COLORS.border}`, boxShadow: "0 14px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.25)" }}>
         <Box sx={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
@@ -86,7 +86,7 @@ const RightPanel: React.FC<Props> = (props) => {
             </Fade>
           )}
 
-          {/* SEGMENTS PANEL */}
+          {/* SEGMENTS PANEL
           {activeTab === "segments" && (
             <Fade in timeout={300}>
               <Box sx={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
@@ -104,7 +104,7 @@ const RightPanel: React.FC<Props> = (props) => {
                 />
               </Box>
             </Fade>
-          )}
+          )} */}
 
         </Box>
       </Box>

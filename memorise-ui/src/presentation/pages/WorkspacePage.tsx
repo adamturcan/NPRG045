@@ -19,7 +19,7 @@ const WorkspacePage: React.FC = () => {
   return (
     <Box sx={{ display: "flex", height: "100vh", overflow: "visible", px: 4, color: COLORS.text }}>
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", height: "88.5vh", pl: 4, minHeight: 0 }}>
-        <BookmarkContainer />
+        {/* <BookmarkContainer /> */}
         
         {isDataReady ? (
           <EditorContainer key={currentSessionId} />

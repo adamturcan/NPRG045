@@ -7,13 +7,21 @@ import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import { v4 as uuidv4 } from "uuid";
 import { useNotificationStore } from "../../presentation/stores/notificationStore";
 
-
 export class AnnotationWorkflowService {
   private apiService = getApiService();
   private errorService = errorHandlingService;
 
   private getSpanId(s: NerSpan): string {
     return s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
+  }
+
+  // Ensures the store's activeTab matches the layer we are operating on 
+  // to prevent race conditions during async state updates.
+  private ensureCorrectLayer(layerId?: string) {
+    if (layerId && useSessionStore.getState().activeTab !== layerId) {
+      useSessionStore.setState({ activeTab: layerId });
+    }
+    return useSessionStore.getState();
   }
 
   private getCurrentLayer(storeState: ReturnType<typeof useSessionStore.getState>) {
@@ -24,9 +32,8 @@ export class AnnotationWorkflowService {
       : session.translations?.find((t) => t.language === activeTab) || null;
   }
 
-
-  async runNer(onConflict: (prompt: ConflictPrompt) => Promise<"api" | "existing">): Promise<boolean> {
-    const store = useSessionStore.getState();
+  async runNer(onConflict: (prompt: ConflictPrompt) => Promise<"api" | "existing">, layerId?: string): Promise<boolean> {
+    const store = this.ensureCorrectLayer(layerId);
     const notify = useNotificationStore.getState().enqueue;
     const { session, viewMode, activeSegmentId, activeTab } = store;
 
@@ -109,19 +116,19 @@ export class AnnotationWorkflowService {
     }
   }
 
-
-  deleteSpan(spanId: string): void {
-    const store = useSessionStore.getState();
+  deleteSpan(spanId: string, layerId?: string): void {
+    console.log("deleteSpan", spanId, layerId);
+    const store = this.ensureCorrectLayer(layerId);
     const currentLayer = this.getCurrentLayer(store);
     
     if (!currentLayer) return;
 
     const userSpans = currentLayer.userSpans ?? [];
     const apiSpans = currentLayer.apiSpans ?? [];
-    const deletedApiKeys = store.session?.deletedApiKeys ?? []; 
     
     const userSpanIndex = userSpans.findIndex(s => this.getSpanId(s) === spanId);
 
+    // If it's a User Span, simply remove it from the layer
     if (userSpanIndex !== -1) {
       const nextUserSpans = [...userSpans];
       nextUserSpans.splice(userSpanIndex, 1);
@@ -129,47 +136,52 @@ export class AnnotationWorkflowService {
       return; 
     } 
 
+    // If it's an API span, we must add its coordinates to the global "banned" list
+    // so it doesn't come back on the next NER run.
     const apiSpan = apiSpans.find(s => this.getSpanId(s) === spanId);
 
     if (apiSpan) {
         const keyToBan = `${apiSpan.start}:${apiSpan.end}:${apiSpan.entity}`;
-        if (!deletedApiKeys.includes(keyToBan)) {
-            store.updateDeletedApiKeys([...deletedApiKeys, keyToBan]);
+        
+        // Always fetch the freshest state right before updating to prevent array overwrites!
+        const freshestDeletedKeys = useSessionStore.getState().session?.deletedApiKeys ?? [];
+        
+        if (!freshestDeletedKeys.includes(keyToBan)) {
+            store.updateDeletedApiKeys([...freshestDeletedKeys, keyToBan]);
         }
     }
   }
   
-  createSpan(category: string, localStart: number, localEnd: number): void {
-    const store = useSessionStore.getState();
-    const currentLayer = this.getCurrentLayer(store);
+  createSpan(category: string, globalStart: number, globalEnd: number, layerId?: string): void {
+    // 1. Force the layer sync
+    this.ensureCorrectLayer(layerId);
     
-    if (!currentLayer || !store.session) return;
-
-    let shiftOffset = 0;
-    if (store.viewMode === "segments" && store.activeSegmentId && store.session.segments) {
-      const translations = store.activeTab === "original" ? undefined : (currentLayer as any).segmentTranslations;
-      shiftOffset = SegmentLogic.calculateGlobalOffset(
-        store.activeSegmentId, 
-        store.session.segments, 
-        translations
-      );
-    }
-
+    // 2. Get the FRESH store state
+    const freshStore = useSessionStore.getState();
+    const currentLayer = this.getCurrentLayer(freshStore);
+    
+    if (!currentLayer || !freshStore.session) return;
+  
+    // 3. Create the span using the global coordinates directly from the UI
     const newSpan: NerSpan = {
       id: uuidv4(),
-      start: localStart + shiftOffset,
-      end: localEnd + shiftOffset,
+      start: globalStart, // Trust the coordinates passed by the EditorContainer
+      end: globalEnd,
       entity: category,
       origin: "user"
     };
-
+  
+    // 4. Spread the spans from the FRESH currentLayer 
+    // (which now safely contains the shifted coords from EditorWorkflowService!)
     const updatedSpans = [...(currentLayer.userSpans ?? []), newSpan];
-    store.updateActiveLayer({ userSpans: updatedSpans });
+    
+    freshStore.updateActiveLayer({ 
+      userSpans: updatedSpans 
+    });
   }
 
-
-  updateSpanCategory(spanId: string, newCategory: string): void {
-    const store = useSessionStore.getState();
+  updateSpanCategory(spanId: string, newCategory: string, layerId?: string): void {
+    const store = this.ensureCorrectLayer(layerId);
     const currentLayer = this.getCurrentLayer(store);
     if (!currentLayer) return;
 
@@ -182,10 +194,8 @@ export class AnnotationWorkflowService {
     });
   }
 
-
-
-  deleteMultipleSpans(spanIds: string[]): void {
-    const store = useSessionStore.getState();
+  deleteMultipleSpans(spanIds: string[], layerId?: string): void {
+    const store = this.ensureCorrectLayer(layerId);
     const currentLayer = this.getCurrentLayer(store);
     if (!currentLayer) return;
 
@@ -202,8 +212,9 @@ export class AnnotationWorkflowService {
     store.updateActiveLayer({ userSpans: nextUserSpans });
     
     if (newBannedKeys.length > 0) {
-      const currentBanned = store.session?.deletedApiKeys ?? [];
-      store.updateDeletedApiKeys([...new Set([...currentBanned, ...newBannedKeys])]);
+      // Again, grab the freshest state right before merging!
+      const freshestDeletedKeys = useSessionStore.getState().session?.deletedApiKeys ?? [];
+      store.updateDeletedApiKeys([...new Set([...freshestDeletedKeys, ...newBannedKeys])]);
     }
   }
 }

@@ -4,34 +4,29 @@ import { alpha, darken } from "@mui/material/styles";
 
 import CloseIcon from "@mui/icons-material/Close";
 import TuneIcon from "@mui/icons-material/Tune";
-
-// Action icons (outlined = lighter/cleaner on white)
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import CallSplitIcon from "@mui/icons-material/CallSplit";
 import ManageSearchIcon from "@mui/icons-material/ManageSearch";
+import TranslateIcon from "@mui/icons-material/Translate"; 
 
 interface EditorSpeedDialProps {
   onNer: () => void;
   onSegment: () => void;
   onSemTag: () => void;
   onSave: () => void;
+  onTranslateAll: (e: React.MouseEvent<HTMLElement>) => void;
   isProcessing: boolean;
   viewMode: "document" | "segments";
 }
 
 const COLORS = {
   gold: "#DDD1A0",
-  pink: "#DDA0AF",
-  apiBlue: "#A0B8DD",
+  magenta: "#C2185B",
   dateBlue: "#1976D2",
   darkBlue: "#21426C",
-  magenta: "#C2185B",
   green: "#388E3C",
-  orange: "#F57C00",
-  purpleCamp: "#6A1B9A",
-  purpleGhetto: "#9C27B0",
-  blueGrey: "#607D8B",
+  orange: "#F57C00", 
 };
 
 const EditorSpeedDial: React.FC<EditorSpeedDialProps> = ({
@@ -39,43 +34,18 @@ const EditorSpeedDial: React.FC<EditorSpeedDialProps> = ({
   onSegment,
   onSemTag,
   onSave,
+  onTranslateAll,
   isProcessing,
   viewMode,
 }) => {
   const [open, setOpen] = React.useState(false);
 
   const actions = [
-    {
-      key: "save",
-      icon: <SaveOutlinedIcon />,
-      name: "Save",
-      onClick: onSave,
-      accent: COLORS.green,
-    },
-    {
-      key: "semtag",
-      icon: <LabelOutlinedIcon />,
-      name: "Sem-Tags",
-      onClick: onSemTag,
-      // Pink is pretty light on white; magenta reads cleaner for an action icon.
-      // If you *really* want pink, use it as a hover tint instead.
-      accent: COLORS.magenta,
-    },
-    {
-      key: "segment",
-      icon: <CallSplitIcon />,
-      name: viewMode === "segments" ? "Re-segment" : "Auto-Segment",
-      onClick: onSegment,
-      // Your light API blue is low-contrast on white; dateBlue works better for an icon.
-      accent: COLORS.dateBlue,
-    },
-    {
-      key: "ner",
-      icon: <ManageSearchIcon />,
-      name: viewMode === "segments" ? "NER" : "NER",
-      onClick: onNer,
-      accent: COLORS.magenta,
-    },
+    { key: "save", icon: <SaveOutlinedIcon />, name: "Save", onClick: onSave, accent: COLORS.green },
+    { key: "translate", icon: <TranslateIcon />, name: "Translate All", onClick: onTranslateAll, accent: COLORS.orange },
+    { key: "semtag", icon: <LabelOutlinedIcon />, name: "Sem-Tags", onClick: onSemTag, accent: COLORS.magenta },
+    { key: "segment", icon: <CallSplitIcon />, name: viewMode === "segments" ? "Re-segment" : "Auto-Segment", onClick: onSegment, accent: COLORS.dateBlue },
+    { key: "ner", icon: <ManageSearchIcon />, name: "NER", onClick: onNer, accent: COLORS.magenta },
   ];
 
   return (
@@ -84,33 +54,36 @@ const EditorSpeedDial: React.FC<EditorSpeedDialProps> = ({
       open={open}
       onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}
-      direction="up"
+      direction="right" 
       sx={{
-        position: "absolute",
-        bottom: 24,
-        right: 24,
+        position: "relative", 
         zIndex: 10,
       }}
       icon={
         <SpeedDialIcon
-          icon={<TuneIcon sx={{ fontSize: 20  }} />}
-          openIcon={<CloseIcon sx={{ fontSize: 20 }} />}
-          
+          // Cleaned up the font sizes here. 1.8rem is prominent but leaves 
+          // enough room for the flexbox to center it perfectly.
+          icon={<TuneIcon sx={{ fontSize: "1.8rem" }} />}
+          openIcon={<CloseIcon sx={{ fontSize: "1.8rem" }} />}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         />
       }
       FabProps={{
         disabled: isProcessing,
         sx: {
-          // Main button: strong contrast on white editor
           bgcolor: COLORS.darkBlue,
           color: COLORS.gold,
-          width: 60,
-          height: 60,
-          boxShadow: "0 10px 26px rgba(0,0,0,0.20)",
+          width: 45,  
+          height: 45, 
+          minHeight: 45, // <--- CRITICAL FIX: Forces MUI to center properly
+          boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
           "&:hover": {
             bgcolor: darken(COLORS.darkBlue, 0.06),
             transform: "scale(1.04)",
-            boxShadow: "0 14px 34px rgba(0,0,0,0.24)",
           },
         },
       }}
@@ -120,36 +93,39 @@ const EditorSpeedDial: React.FC<EditorSpeedDialProps> = ({
           key={action.key}
           icon={action.icon}
           tooltipTitle={action.name}
-          tooltipOpen={open}              // only show labels when dial is open
-          tooltipPlacement="left"         // better for bottom-right corner
-          onClick={() => {
-            action.onClick();
-            setOpen(false);
+          tooltipPlacement="bottom" 
+          onClick={(e) => {
+            action.onClick(e as any);
+            if (action.key !== "translate") {
+              setOpen(false);
+            }
           }}
           sx={{
+            margin: "0 6px",
+            // We target the action fab directly to ensure the dimensions apply correctly
             "& .MuiSpeedDialAction-fab": {
+              width: 45,
+              height: 45,
+              minHeight: 45, // <--- Ensures secondary buttons don't warp
               bgcolor: "white",
               color: action.accent,
               border: `1px solid ${alpha(COLORS.darkBlue, 0.14)}`,
-              boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+              "& svg": {
+                fontSize: "1.65rem", // <--- MADE INNER ICONS BIGGER!
+              }
             },
             "& .MuiSpeedDialAction-staticTooltipLabel": {
-              // key fixes:
               whiteSpace: "nowrap",
-              maxWidth: 220,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-        
-              // make it not shouty:
-              bgcolor: alpha("#FFFFFF", 0.92),
+              bgcolor: alpha("#FFFFFF", 0.95),
               color: COLORS.darkBlue,
               border: `1px solid ${alpha(COLORS.darkBlue, 0.16)}`,
-              boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
-              borderRadius: 12,
-              padding: "6px 10px",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+              borderRadius: "8px",
+              padding: "6px 12px",
               fontSize: 13,
-              fontWeight: 500,
-              backdropFilter: "blur(6px)",
+              fontWeight: 600,
+              mt: 1, 
             },
           }}
         />

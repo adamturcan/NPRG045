@@ -25,31 +25,38 @@ export class EditorWorkflowService {
     contextSegId?: string
   ): void {
     const store = useSessionStore.getState();
-    const { session, viewMode, activeSegmentId, activeTab } = store;
+    const { session, viewMode, activeTab } = store;
+
+    // 1. Trust the contextSegId from the active editor first!
+    const targetSegId = contextSegId || store.activeSegmentId;
 
     if (contextMode && contextMode !== viewMode) return;
-    if (viewMode === "segments" && contextSegId !== undefined && contextSegId !== activeSegmentId) return;
+    
+    // REMOVED: The early return that was swallowing your keystrokes.
+    // if (viewMode === "segments" && contextSegId !== undefined && contextSegId !== store.activeSegmentId) return;
     
     const currentLayer = this.getCurrentLayer(store);
     if (!session || !currentLayer) return;
 
+    // 2. Pass targetSegId down so it uses the correct segment for offset math
     const { nextUserSpans, nextApiSpans, shiftedInStepA } = this.syncLiveSpans(
-      store, currentLayer, liveCoords
+      store, currentLayer, liveCoords, targetSegId
     );
 
     if (viewMode === "document") {
       this.processDocumentEdit(text, liveSegments, nextUserSpans, nextApiSpans);
     } 
-    else if (viewMode === "segments" && activeSegmentId) {
+    else if (viewMode === "segments" && targetSegId) {
       if (activeTab === "original") {
-        this.processMasterSegmentEdit(text, activeSegmentId, nextUserSpans, nextApiSpans, shiftedInStepA);
+        this.processMasterSegmentEdit(text, targetSegId, nextUserSpans, nextApiSpans, shiftedInStepA);
       } else {
-        this.processTranslationSegmentEdit(text, activeSegmentId, currentLayer, nextUserSpans, nextApiSpans, shiftedInStepA);
+        this.processTranslationSegmentEdit(text, targetSegId, currentLayer, nextUserSpans, nextApiSpans, shiftedInStepA);
       }
     }
   }
 
-  private syncLiveSpans(store: any, currentLayer: any, liveCoords?: Map<string, { start: number; end: number }>) {
+  // 3. Update signature to accept targetSegId
+  private syncLiveSpans(store: any, currentLayer: any, liveCoords?: Map<string, { start: number; end: number }>, targetSegId?: string) {
     let nextUserSpans = currentLayer.userSpans ?? [];
     let nextApiSpans = currentLayer.apiSpans ?? [];
     const shiftedInStepA = new Set<string>();
@@ -57,9 +64,10 @@ export class EditorWorkflowService {
     if (!liveCoords) return { nextUserSpans, nextApiSpans, shiftedInStepA };
 
     let shiftOffset = 0;
-    if (store.viewMode === "segments" && store.activeSegmentId && store.session.segments) {
+    // 4. Calculate offset based on targetSegId, not store.activeSegmentId
+    if (store.viewMode === "segments" && targetSegId && store.session.segments) {
       const translations = store.activeTab === "original" ? undefined : currentLayer.segmentTranslations;
-      shiftOffset = SegmentLogic.calculateGlobalOffset(store.activeSegmentId, store.session.segments, translations);
+      shiftOffset = SegmentLogic.calculateGlobalOffset(targetSegId, store.session.segments, translations);
     }
     
     nextUserSpans = SpanLogic.syncLiveCoords(nextUserSpans, liveCoords, shiftOffset, shiftedInStepA);

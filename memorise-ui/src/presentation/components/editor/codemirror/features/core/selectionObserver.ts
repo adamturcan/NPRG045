@@ -4,7 +4,7 @@ import type { NerSpan } from "../../../../../../types/NotationEditor";
 import type { Segment } from "../../../../../../types/Segment";
 
 export const createSelectionObserver = (
-  spans: NerSpan[],
+  spans: NerSpan[], // Keep for backwards compat, but we don't block anymore
   segments: Segment[],
   onSelectionChange?: (sel: { start: number; end: number; top: number; left: number } | null) => void,
   timeoutRef?: React.MutableRefObject<ReturnType<typeof setTimeout> | null>
@@ -17,26 +17,26 @@ export const createSelectionObserver = (
     if (update.selectionSet || update.docChanged) {
       const range = update.state.selection.main;
 
+      // 1. If cursor is just blinking (not a highlight), close menu
       if (range.empty) {
         onSelectionChange(null);
         return;
       }
 
-      const overlapsSpan = spans.some(
-        (s) => Math.max(Number(s.start), range.from) < Math.min(Number(s.end), range.to)
-      );
-
+      // 2. ONLY block if they are trying to highlight across a segment boundary.
+      // We still want to prevent splitting a highlight between two blocks.
       const overlapsBoundary = segments.some((seg, i) => {
         if (i === segments.length - 1) return false;
         const nextSeg = segments[i + 1];
         return range.from < nextSeg.start && range.to > seg.end;
       });
 
-      if (overlapsSpan || overlapsBoundary) {
+      if (overlapsBoundary) {
         onSelectionChange(null);
         return;
       }
 
+      // 3. Trigger the menu!
       if (timeoutRef) {
         timeoutRef.current = setTimeout(() => {
           const coords = update.view.coordsAtPos(range.from);
@@ -48,7 +48,7 @@ export const createSelectionObserver = (
               left: coords.left,
             });
           }
-        }, 250);
+        }, 150); // Slightly faster for a snappier feel
       }
     }
   });
