@@ -1,10 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Box, Typography, Fade } from "@mui/material";
+import React from "react";
+import { Box, Fade } from "@mui/material";
 
 import TagTable, { type TagRow } from "./tags/TagTable";
-import SegmentNavBar from "./SegmentNavBar";
-import TabSwitcher from "./TabSwitcher";
-import EditorModeSwitcher from "./EditorModeSwitcher";
+
+
 import type { ThesaurusItem } from "./inputs/TagThesaurusInput";
 import type { ThesaurusIndexItem } from "../../../types/Thesaurus";
 import type { Segment } from "../../../types/Segment";
@@ -43,39 +42,15 @@ interface Props {
 
 
 const RightPanel: React.FC<Props> = (props) => {
-  const { segments = [], viewMode = "document", onViewModeChange, activeSegmentId } = props;
-  const shouldShowSegments = segments.length > 0;
   
-  const [activeTab, setActiveTab] = useState<"tags" | "segments">(
-    shouldShowSegments && viewMode === "segments" ? "segments" : "tags"
-  );
-
-  const prevViewModeRef = useRef(viewMode);
-    
-  useEffect(() => {
-    if (prevViewModeRef.current === "document" && viewMode === "segments" && shouldShowSegments) {
-      setActiveTab("segments");
-    }
-    prevViewModeRef.current = viewMode;
-  }, [viewMode, shouldShowSegments]);
-
   return (
-    <Box sx={{ width: 300, height: "100%", display: "flex", flexDirection: "column", minHeight: 0, color: COLORS.text, mt: -1.1 }}>
-      <TabSwitcher activeTab={activeTab} onChange={setActiveTab} />
-
+    <Box sx={{ width: 300, height: "100%", display: "flex", flexDirection: "column", minHeight: 0, color: COLORS.text, mt: -1.1 }}>      
       <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", borderRadius: 3, background: "#FFFFFF", border: `1px solid ${COLORS.border}`, boxShadow: "0 14px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.25)" }}>
         <Box sx={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
           
-          {/* TAGS PANEL */}
-          {activeTab === "tags" && (
+          
             <Fade in timeout={300}>
               <Box sx={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-                {viewMode === "segments" && activeSegmentId && (
-                  <Box sx={{ px: 2, pt: 1.5, pb: 1, borderBottom: `1px solid ${COLORS.border}`, backgroundColor: "rgba(59, 130, 246, 0.05)" }}>
-                    <Typography variant="caption" sx={{ fontWeight: 600, color: "text.secondary", textTransform: "uppercase" }}>Segment Tags</Typography>
-                    <Typography variant="body2">{activeSegmentId}</Typography>
-                  </Box>
-                )}
                 <TagTable
                   data={props.tags}
                   onDelete={props.onDeleteTag}                  
@@ -83,29 +58,7 @@ const RightPanel: React.FC<Props> = (props) => {
                   thesaurusIndex={props.thesaurusIndex}
                 />
               </Box>
-            </Fade>
-          )}
-
-          {/* SEGMENTS PANEL */}
-          {activeTab === "segments" && (
-            <Fade in timeout={300}>
-              <Box sx={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-                {shouldShowSegments && onViewModeChange && (
-                  <EditorModeSwitcher viewMode={viewMode} onViewModeChange={onViewModeChange} />
-                )}
-                <SegmentNavBar
-                  segments={segments}
-                  activeSegmentId={activeSegmentId}
-                  viewMode={viewMode}
-                  onSegmentClick={props.segmentOperations.handleSegmentClick}
-                  onJoinSegments={props.segmentOperations.handleJoinSegments}
-                  onSplitSegment={props.segmentOperations.handleSplitSegment}
-                  text={props.text}
-                />
-              </Box>
-            </Fade>
-          )}
-
+            </Fade>       
         </Box>
       </Box>
     </Box>
