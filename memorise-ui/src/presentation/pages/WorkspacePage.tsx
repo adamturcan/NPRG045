@@ -5,11 +5,12 @@ import EditorContainer from "../components/containers/EditorContainer";
 import { COLORS } from "../../shared/constants/ui";
 import { useSessionStore } from "../stores/sessionStore";
 import PanelContainer from "../components/containers/PanelContainer";
-import BookmarkContainer from "../components/containers/BookmarkContainer";
 
 const WorkspacePage: React.FC = () => {
   const location = useLocation();
   const currentSessionId = useSessionStore((state) => state.session?.id);
+    
+  const isTagPanelOpen = useSessionStore((state) => state.isTagPanelOpen);
   
   const match = location.pathname.match(/^\/workspace\/([^/]+)/);
   const urlId = match && match[1] !== 'new' ? match[1] : null;
@@ -17,20 +18,46 @@ const WorkspacePage: React.FC = () => {
   const isDataReady = currentSessionId === urlId && currentSessionId !== undefined;
 
   return (
-    <Box sx={{ display: "flex", height: "100vh", overflow: "visible", px: 4, color: COLORS.text }}>
-      <Box sx={{ flex: 1, display: "flex", flexDirection: "column", height: "88.5vh", pl: 4, minHeight: 0 }}>
-        <BookmarkContainer />
-        
-        {isDataReady ? (
-          <EditorContainer key={currentSessionId} />
-        ) : (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            Loading workspace...
-          </Box>
-        )}
-        
+    <Box sx={{ 
+      display: "flex", 
+      height: "100vh", 
+      overflow: "visible", 
+      px: 4, 
+      color: COLORS.text 
+    }}>
+      {/* EDITOR WRAPPER */}
+      <Box sx={{ 
+        flex: 1, 
+        display: "flex", 
+        flexDirection: "column", 
+        height: "88.5vh", 
+        pl: 4, 
+        minHeight: 0,
+        transition: "all 0.95s ease-in-out" 
+      }}>        
+        {isDataReady ? <EditorContainer key={currentSessionId} /> : <Box>Loading...</Box>}
       </Box>
-      <Box sx={{ width: "300px", height: "86vh", display: "flex", flexDirection: "column", mt: 4, minHeight: 0, ml: 2, pr: 1 }}>
+
+      {/* PANEL WRAPPER */}
+      <Box sx={{ 
+        width: isTagPanelOpen ? "300px" : "0px", 
+        opacity: isTagPanelOpen ? 1 : 0,
+        
+        height: "86vh", 
+        display: "flex", 
+        flexDirection: "column", 
+        mt: 4, 
+        minHeight: 0, 
+        ml: isTagPanelOpen ? 2 : 0, 
+        pr: isTagPanelOpen ? 1 : 0, 
+        
+        transition: isTagPanelOpen 
+          ? "width 0.95s ease-in-out, margin 0.95s ease-in-out, padding 0.95s ease-in-out, opacity 0s"
+          : "width 0.95s ease-in-out, margin 0.95s ease-in-out, padding 0.95s ease-in-out, opacity 0.1s linear 0.85s",
+        
+        overflow: "visible", 
+        pointerEvents: isTagPanelOpen ? "auto" : "none"
+      }}>
         <PanelContainer />
       </Box>
     </Box>

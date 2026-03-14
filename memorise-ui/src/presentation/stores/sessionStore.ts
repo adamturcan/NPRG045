@@ -22,8 +22,7 @@ interface SessionStore {
   session: Workspace | null;      
   draftText: string;              
   activeTab: string;
-
-  viewMode: "document" | "segments";
+  
   activeSegmentId: string | undefined;
   
   
@@ -35,9 +34,11 @@ interface SessionStore {
   setLoading: () => void;
 
 
-  setViewMode: (mode: "document" | "segments") => void;
+ 
 
-  
+  isTagPanelOpen: boolean;
+  setTagPanelOpen: (isOpen: boolean) => void;
+
   setDraftText: (text: string) => void;
   updateUserSpans: (spans: NerSpan[]) => void;
   updateApiSpans: (spans: NerSpan[]) => void;
@@ -48,7 +49,6 @@ interface SessionStore {
   
   setActiveTab: (tab: string) => void;
   
-  setSelectedSegmentId: (id: string | null) => void;
   setActiveSegmentId: (id: string | undefined) => void;
   updateActiveLayer: (updates: any) => void;
 }
@@ -60,9 +60,11 @@ export const useSessionStore = create<SessionStore>()(
       draftText: "",
       
       activeTab: "original",
-      translationViewMode: "document",
-      selectedSegmentId: null,
+      translationViewMode: "document",      
       activeSegmentId: undefined,
+
+      isTagPanelOpen: false,
+      setTagPanelOpen: (isOpen) => set({ isTagPanelOpen: isOpen }),
       
       isDirty: false,
       lastChangedAt: 0,
@@ -88,7 +90,6 @@ export const useSessionStore = create<SessionStore>()(
           isDirty: false,
           lastChangedAt: 0,
           activeTab: "original",
-          viewMode: "document",          
           activeSegmentId: undefined,
         });
       },
@@ -100,7 +101,6 @@ export const useSessionStore = create<SessionStore>()(
           isDirty: false,
           lastChangedAt: 0,
           activeTab: "original",
-          viewMode: "document",
           activeSegmentId: undefined,
         });
       },
@@ -230,13 +230,7 @@ export const useSessionStore = create<SessionStore>()(
       setActiveTab: (tab) => {
         set({ activeTab: tab });
       },
-      
 
-      
-      setViewMode: (mode) => {
-        set({ viewMode: mode });
-      },
-      
       setActiveSegmentId: (id) => {
         set({ activeSegmentId: id });
       },

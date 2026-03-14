@@ -9,17 +9,17 @@ export const createSelectionObserver = (
 ) => {
   return EditorView.updateListener.of((update) => {
     if (!onSelectionChange) return;
-
-    if (timeoutRef?.current) clearTimeout(timeoutRef.current);
-
+    
     if (update.selectionSet || update.docChanged) {
+      if (timeoutRef?.current) clearTimeout(timeoutRef.current);
+
       const range = update.state.selection.main;
 
       if (range.empty) {
         onSelectionChange(null);
         return;
       }
-            
+
       const overlapsSpan = spans.some(
         (s) => Math.max(Number(s.start), range.from) < Math.min(Number(s.end), range.to)
       );
@@ -29,7 +29,7 @@ export const createSelectionObserver = (
         return;
       }
 
-      if (timeoutRef) {
+      if (timeoutRef) {        
         timeoutRef.current = setTimeout(() => {
           const coords = update.view.coordsAtPos(range.from);
           if (coords) {
@@ -40,7 +40,7 @@ export const createSelectionObserver = (
               left: coords.left,
             });
           }
-        }, 250);
+        }, 150);
       }
     }
   });
