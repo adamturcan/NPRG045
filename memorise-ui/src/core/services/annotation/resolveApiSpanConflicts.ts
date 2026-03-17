@@ -78,7 +78,7 @@ export const resolveApiSpanConflicts = async (
       );
 
       if (!hasEntityChange) {
-        // Same entity type — silently replace
+
         conflictingApiSpans.forEach((span) => {
           retainedApiMap.delete(keyOfSpan(span));
         });
@@ -86,7 +86,6 @@ export const resolveApiSpanConflicts = async (
         continue;
       }
 
-      // Entity type differs — ask the user
     }
 
     conflictIndex += 1;
