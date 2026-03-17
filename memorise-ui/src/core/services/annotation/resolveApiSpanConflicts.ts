@@ -73,14 +73,20 @@ export const resolveApiSpanConflicts = async (
     }
 
     if (conflictingUserSpans.length === 0) {
-      // Only API conflicts — auto-replace existing API spans with the incoming API span
-      if (conflictingApiSpans.length > 0) {
+      const hasEntityChange = conflictingApiSpans.some(
+        (existing) => existing.entity !== candidate.entity
+      );
+
+      if (!hasEntityChange) {
+        // Same entity type — silently replace
         conflictingApiSpans.forEach((span) => {
           retainedApiMap.delete(keyOfSpan(span));
         });
+        acceptedNewApiSpans.push(candidate);
+        continue;
       }
-      acceptedNewApiSpans.push(candidate);
-      continue;
+
+      // Entity type differs — ask the user
     }
 
     conflictIndex += 1;
