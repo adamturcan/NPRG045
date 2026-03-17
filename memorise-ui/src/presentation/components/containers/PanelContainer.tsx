@@ -1,60 +1,41 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import RightPanel, { type TagRow } from "../rightPanel/RightPanel";
-import SplitSegmentDialog from "../rightPanel/dialogs/SplitSegmentDialog";
 import type { ThesaurusItem } from "../rightPanel/inputs/TagThesaurusInput";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useThesaurusDisplay, useThesaurusWorker } from "../../hooks";
 import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice.ts";
-import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService.ts";
-import { type Segment } from "../../../types/Segment";
 
 const PanelContainer: React.FC = () => {
   const { id: routeId } = useParams();
-
   const session = useSessionStore((state) => state.session);
-  const activeTab = useSessionStore((state) => state.activeTab);
   const activeSegmentId = useSessionStore((state) => state.activeSegmentId);
-  const setActiveSegmentId = useSessionStore((state) => state.setActiveSegmentId); 
-  const viewMode = useSessionStore((state) => state.viewMode);
-  const setViewMode = useSessionStore((state) => state.setViewMode);
-  
+
   const currentId = routeId ?? session?.id ?? null;
   const tags = session?.tags ?? [];
-
-  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
-
-  const displaySegments = useMemo(() => {
-    const masterSegments = session?.segments ?? [];
-
-    if (activeTab === "original") {
-      return masterSegments;
-    }
-
-    const currentTranslation = session?.translations?.find((t) => t.language === activeTab);
-    const segmentTranslations = currentTranslation?.segmentTranslations ?? {};
-
-    return masterSegments
-      .filter((seg) => segmentTranslations[seg.id] !== undefined)
-      .map((seg) => ({
-        ...seg,
-        text: segmentTranslations[seg.id],
-      }));
-  }, [session?.segments, session?.translations, activeTab]);
 
   const thesaurusWorker = useThesaurusWorker();
   const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
 
-  const filteredTags = useMemo(
-    () => {
-      if (viewMode === "segments" && activeSegmentId) {
-        return tags.filter(t => t.segmentId === activeSegmentId);
-      } else {       
-        return tags.filter(t => !t.segmentId);
-      }
-    },
-    [tags, activeSegmentId, viewMode]
-  );
+  const filteredTags = useMemo(() => {
+    if (activeSegmentId && activeSegmentId !== "root") {
+      return tags.filter(t => t.segmentId === activeSegmentId);
+    }
+    return tags.filter(t => !t.segmentId);
+  }, [tags, activeSegmentId]);
+
+  const isTagPanelOpen = useSessionStore((state) => state.isTagPanelOpen);
+  const setTagPanelOpen = useSessionStore((state) => state.setTagPanelOpen);
+
+  useEffect(() => {
+    if (filteredTags.length > 0) {
+      setTagPanelOpen(true);
+    } else {
+      setTagPanelOpen(false);
+    }
+  }, [filteredTags.length, setTagPanelOpen]);
+
+
 
   const tagRows = useMemo<TagRow[]>(
     () => filteredTags.map((t) => ({
@@ -67,9 +48,14 @@ const PanelContainer: React.FC = () => {
   );
 
   const addTag = useCallback(async (name: string, keywordId?: number, parentId?: number) => {
-    try {      
-      await taggingWorkflowService.addCustomTag(name, { keywordId, parentId, segmentId: activeSegmentId });
-    } catch  {
+    try {
+      await taggingWorkflowService.addCustomTag(name, {
+        keywordId,
+        parentId,
+        segmentId: (activeSegmentId && activeSegmentId !== "root") ? activeSegmentId : undefined
+      });
+      setTagPanelOpen(true);
+    } catch {
       //TODO: handle error
     }
   }, [activeSegmentId]);
@@ -83,73 +69,30 @@ const PanelContainer: React.FC = () => {
     if (!q.trim() || !thesaurusWorker.ready) return [];
     try {
       return (await thesaurusWorker.search(q, 20)).map(item => ({
-        name: item.label,
-        path: item.path,
-        keywordId: item.id,
-        parentId: item.parentId,
-        isPreferred: item.isPreferred,
-        depth: item.depth
+        name: item.label, path: item.path, keywordId: item.id, parentId: item.parentId,
+        isPreferred: item.isPreferred, depth: item.depth
       }));
     } catch {
       return [];
     }
   }, [thesaurusWorker]);
 
-  const thesaurusConfig = useMemo(
-    () => ({      
-      fetchSuggestions: fetchThesaurus,
-      defaultRestrictToThesaurus: false,
-      isThesaurusLoading: !thesaurusWorker.ready,
-      resetKey: currentId ?? undefined
-    }),
-    [fetchThesaurus, thesaurusWorker.ready, currentId]
-  );
-
-  const handleSegmentClick = useCallback((segment: Segment) => {
-    if (viewMode === "segments") {
-      setActiveSegmentId(segment.id);
-    } else {      
-      setActiveSegmentId(activeSegmentId === segment.id ? undefined : segment.id);
-    } 
-  }, [viewMode, activeSegmentId, setActiveSegmentId]);
-
-  const handleSplitSegmentRequest = useCallback((segmentId: string) => {
-    setActiveSegmentId(segmentId);
-    setSplitDialogOpen(true);
-  }, [setActiveSegmentId]);
-
-  const handleConfirmSplit = useCallback((splitPosition: number) => {
-    const success = segmentWorkflowService.splitSegment(splitPosition);
-    if (success) {
-      setSplitDialogOpen(false);
-    }
-  }, []);
+  const thesaurusConfig = useMemo(() => ({
+    fetchSuggestions: fetchThesaurus, defaultRestrictToThesaurus: false,
+    isThesaurusLoading: !thesaurusWorker.ready, resetKey: currentId ?? undefined
+  }), [fetchThesaurus, thesaurusWorker.ready, currentId]);
 
   return (
-    <>
-      <RightPanel
-        tags={tagRows}
-        onDeleteTag={deleteTag}
-        onAddTag={addTag}
-        thesaurus={thesaurusConfig}
-        thesaurusIndex={thesaurusIndexForDisplay}
-        segments={displaySegments}
-        activeSegmentId={activeSegmentId}
-        segmentOperations={{
-          handleSegmentClick,
-          handleJoinSegments: segmentWorkflowService.joinSegments, 
-          handleSplitSegment: handleSplitSegmentRequest,
-        }}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-      />
-      <SplitSegmentDialog
-        open={splitDialogOpen}
-        segment={displaySegments.find(s => s.id === activeSegmentId) ?? null}
-        onClose={() => setSplitDialogOpen(false)}
-        onConfirm={handleConfirmSplit}
-      />
-    </>
+    <RightPanel
+      tags={tagRows}
+      onDeleteTag={deleteTag}
+      onAddTag={addTag}
+      thesaurus={thesaurusConfig}
+      thesaurusIndex={thesaurusIndexForDisplay}
+      isExpanded={isTagPanelOpen}
+      onToggleExpand={setTagPanelOpen}
+      activeContext={activeSegmentId && activeSegmentId !== "root" ? "Segment Tags" : "Document Tags"}
+    />
   );
 };
 
