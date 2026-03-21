@@ -8,7 +8,7 @@ import { useNotificationStore } from "../../stores/notificationStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { presentError } from "../../../application/errors/errorPresenter";
 import { errorHandlingService } from "../../../infrastructure/services/ErrorHandlingService";
-import { useTranslationOperations } from "../../hooks/useTranslationOperations";
+import { useLanguageOptions } from "../../hooks/useLanguageOptions";
 import { useConflictResolution } from "../../hooks/useConflictResolution";
 import ConflictResolutionDialog from "../editor/dialogs/ConflictResolutionDialog";
 
@@ -16,6 +16,7 @@ import { annotationWorkflowService, type AnnotationResult } from "../../../appli
 import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService";
 import { editorWorkflowService } from "../../../application/services/EditorWorkflowService";
 import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice";
+import { translationWorkflowService } from "../../../application/services/TranslationWorkflowService";
 
 import EditorGlobalMenu from "../editor/menus/EditorGlobalMenu.tsx";
 import CategoryMenu from "../editor/menus/CategoryMenu.tsx";
@@ -31,6 +32,8 @@ const EditorContainer: React.FC = () => {
   const sessionStore = useSessionStore();
   const notify = useNotificationStore.getState().enqueue;
   const { session, draftText, setDraftText, activeSegmentId, setActiveSegmentId, activeTab } = sessionStore;
+  const setActiveTab = useSessionStore((state) => state.setActiveTab);
+  const updateTranslations = useSessionStore((state) => state.updateTranslations);
 
   const setTagPanelOpen = useSessionStore((state) => state.setTagPanelOpen);
   const isTagPanelOpen = useSessionStore((state) => state.isTagPanelOpen);
@@ -47,6 +50,7 @@ const EditorContainer: React.FC = () => {
   const [draggingFromIndex, setDraggingFromIndex] = useState<number | null>(null);
 
   const { conflictPrompt, requestConflictResolution, resolveConflictPrompt } = useConflictResolution();
+  const { languageOptions, isLanguageListLoading } = useLanguageOptions();
 
   const resolveLayer = (lang: string): AnnotationLayer | null => {
     if (!session) return null;
@@ -80,10 +84,58 @@ const EditorContainer: React.FC = () => {
 
 
 
-  const handleError = useCallback((err: unknown) => { const appError = errorHandlingService.isAppError(err) ? err : errorHandlingService.handleApiError(err); const notice = presentError(appError); notify(notice); }, [notify]);
-  const translationOps = useTranslationOperations(session?.id ?? null, session, notify, handleError);
+  const handleError = useCallback((err: unknown) => {
+    const appError = errorHandlingService.isAppError(err) ? err : errorHandlingService.handleApiError(err);
+    const notice = presentError(appError);
+    notify(notice);
+  }, [notify]);
 
-  const handleTranslateSegment = useCallback((segmentId: string, lang: string) => { notify({ message: `Translating segment to ${lang}...`, tone: "info" }); translationOps.handleAddTranslation(lang, setDraftText, segmentId); }, [translationOps, setDraftText, notify]);
+  const handleRunGlobalTranslate = useCallback(async (targetLang: string) => {
+    if (!session) return;
+    setIsProcessing(true);
+    try {
+      const result = await translationWorkflowService.addTranslation(targetLang, {
+        segments: session.segments || [],
+        translations: session.translations || [],
+      });
+
+      if (result.ok) {
+        if (result.translationsPatch) updateTranslations(result.translationsPatch);
+        if (result.newActiveTab) setActiveTab(result.newActiveTab);
+        if (result.newActiveTab && result.translationsPatch) {
+          const newText = result.translationsPatch.find(t => t.language === result.newActiveTab)?.text || "";
+          setDraftText(newText);
+        }
+      }
+      notify(result.notice);
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [session, updateTranslations, setActiveTab, setDraftText, notify, handleError]);
+
+  const handleTranslateSegment = useCallback(async (segmentId: string, lang: string) => {
+    if (!session) return;
+    setIsProcessing(true);
+    notify({ message: `Translating segment to ${lang}...`, tone: "info" });
+    try {
+      const result = await translationWorkflowService.addSegmentTranslation(lang, segmentId, {
+        segments: session.segments || [],
+        translations: session.translations || [],
+      });
+
+      if (result.ok) {
+        if (result.translationsPatch) updateTranslations(result.translationsPatch);
+        if (result.newActiveTab) setActiveTab(result.newActiveTab);
+      }
+      notify(result.notice);
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [session, updateTranslations, setActiveTab, notify, handleError]);
 
   const handleDeleteSegmentTranslation = useCallback((lang: string, segmentId: string) => {
     const currentLayer = session?.translations?.find(t => t.language === lang);
@@ -96,6 +148,8 @@ const EditorContainer: React.FC = () => {
       sessionStore.updateSession({ translations });
     }
   }, [session, sessionStore]);
+
+  // ─── Segment operations ─────────────────────────────────────────────────────
 
   const handleJoinUp = useCallback((segmentId: string) => {
     const idx = session?.segments?.findIndex(s => s.id === segmentId) ?? -1;
@@ -224,10 +278,7 @@ const EditorContainer: React.FC = () => {
     setDraggingFromIndex(null);
   }, [session?.segments, notify, draftText, activeTab, setDraftText]);
 
-  const handleRunGlobalTranslate = useCallback((lang: string) => {
-    notify({ message: `Translating document to ${lang}...`, tone: "info" });
-    translationOps.handleAddTranslation(lang, setDraftText);
-  }, [translationOps, setDraftText, notify]);
+  // ─── Global operations ──────────────────────────────────────────────────────
 
   const handleRunGlobalNer = useCallback(async () => {
     setIsProcessing(true); setActiveSegmentId(undefined); try {
@@ -330,8 +381,8 @@ const EditorContainer: React.FC = () => {
           }}
           hasActiveSegment={!!activeSegmentId && activeSegmentId !== "root"}
           hasSegments={(session?.segments?.length ?? 0) > 0}
-          languageOptions={translationOps.languageOptions}
-          isLanguageListLoading={translationOps.isLanguageListLoading}
+          languageOptions={languageOptions}
+          isLanguageListLoading={isLanguageListLoading}
         />
       </Box>
 
@@ -357,8 +408,8 @@ const EditorContainer: React.FC = () => {
                 translationHandlers={{
                   onAddTranslation: handleTranslateSegment,
                   onDeleteTranslation: handleDeleteSegmentTranslation,
-                  languageOptions: translationOps.languageOptions,
-                  isLanguageListLoading: translationOps.isLanguageListLoading,
+                  languageOptions: languageOptions,
+                  isLanguageListLoading: isLanguageListLoading,
                 }}
                 dragHandlers={{}}
               />
@@ -386,8 +437,8 @@ const EditorContainer: React.FC = () => {
                 const translationHandlers: SegmentTranslationHandlers = {
                   onAddTranslation: handleTranslateSegment,
                   onDeleteTranslation: handleDeleteSegmentTranslation,
-                  languageOptions: translationOps.languageOptions,
-                  isLanguageListLoading: translationOps.isLanguageListLoading,
+                  languageOptions: languageOptions,
+                  isLanguageListLoading: isLanguageListLoading,
                 };
 
                 return (

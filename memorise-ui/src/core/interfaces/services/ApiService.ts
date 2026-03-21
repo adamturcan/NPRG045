@@ -1,18 +1,9 @@
 import type { NerSpan } from '../../../types/NotationEditor';
-import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../shared/utils/translation';
+import type { LanguageCode, TranslationRequest, TranslationResponse } from '../../../types/Translation';
 import type { Segment } from '../../../types/Segment';
 
-/**
- * Classification result from the semantic tagging API.
- *
- * The service currently mirrors the raw API response (array of objects).
- * We keep the shape loose for forward compatibility.
- */
 export type ClassificationResult = unknown;
 
-/**
- * Contract for browser/API integrations that presentation can rely on.
- */
 export interface ApiService {
 
   segmentText(text: string): Promise<Segment[]>;
