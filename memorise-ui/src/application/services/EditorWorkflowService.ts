@@ -1,146 +1,158 @@
-import { useSessionStore } from "../../presentation/stores/sessionStore";
 import { SpanLogic } from "../../core/domain/entities/SpanLogic";
 import { SegmentLogic } from "../../core/domain/entities/SegmentLogic";
 import type { NerSpan } from "../../types/NotationEditor";
-import { useWorkspaceStore } from "../../presentation/stores/workspaceStore";
-import { useNotificationStore } from "../../presentation/stores/notificationStore";
+import type { AnnotationLayer } from "../../types/AnnotationTypes";
+import type { Segment } from "../../types/Segment";
+import type { Workspace } from "../../types/Workspace";
+import type { Notice } from "../../types/Notice";
 import { getWorkspaceApplicationService } from "../../infrastructure/providers/workspaceProvider";
 
+export type TextChangeResult = {
+  draftText: string;
+  layerPatch: Record<string, any>;
+  lang: string;
+}
+
+export type SaveResult = {
+  ok: boolean;
+  notice: Notice;
+  sessionPatch?: { text: string; isDirty: false };
+  workspaceMetadataPatch?: { updatedAt: number };
+}
+
 export class EditorWorkflowService {
-  
-  private getCurrentLayer(storeState: ReturnType<typeof useSessionStore.getState>) {
-    const { session, activeTab } = storeState;
-    if (!session) return null;
-    return activeTab === "original"
-      ? session
-      : session.translations?.find((t) => t.language === activeTab) || null;
-  }
 
   handleTextChange(
-    text: string, 
+    text: string,
     activeSegId: string,
+    lang: string,
+    session: { fullText: string; segments: Segment[] },
+    layer: AnnotationLayer,
     liveCoords?: Map<string, { start: number; end: number }>,
     deadSpanIds?: string[]
-  ): void {
-    const store = useSessionStore.getState();
-    const { session, activeTab } = store;
+  ): TextChangeResult | undefined {
 
-    const currentLayer = this.getCurrentLayer(store);
-    if (!session || !currentLayer) return;
+    if (!session || !layer) return undefined;
 
     const { nextUserSpans, nextApiSpans, shiftedInStepA } = this.syncLiveSpans(
-      store, currentLayer, activeSegId, liveCoords, deadSpanIds 
+      layer, lang, activeSegId, session.segments, liveCoords, deadSpanIds
     );
 
     if (!activeSegId) {
-      store.setDraftText(text);
-      store.updateActiveLayer({ text, userSpans: nextUserSpans, apiSpans: nextApiSpans });
-      return;
+      return {
+        draftText: text,
+        layerPatch: { text, userSpans: nextUserSpans, apiSpans: nextApiSpans },
+        lang
+      };
     }
 
-    if (activeTab === "original") {
-      this.processMasterSegmentEdit(text, activeSegId, nextUserSpans, nextApiSpans, shiftedInStepA);
+    if (lang === "original") {
+      return this.processMasterSegmentEdit(text, activeSegId, session.fullText, session.segments, nextUserSpans, nextApiSpans, shiftedInStepA);
     } else {
-      this.processTranslationSegmentEdit(text, activeSegId, currentLayer, nextUserSpans, nextApiSpans, shiftedInStepA);
+      return this.processTranslationSegmentEdit(text, activeSegId, layer, lang, session.segments, nextUserSpans, nextApiSpans, shiftedInStepA);
     }
   }
 
   private syncLiveSpans(
-    store: any, 
-    currentLayer: any, 
-    activeSegId: string, 
-    liveCoords?: Map<string, { start: number; end: number }>, 
+    layer: AnnotationLayer,
+    lang: string,
+    activeSegId: string,
+    segments: Segment[],
+    liveCoords?: Map<string, { start: number; end: number }>,
     deadSpanIds?: string[]
   ) {
     const deadSet = new Set(deadSpanIds || []);
+    const getId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
-    let nextUserSpans = (currentLayer.userSpans ?? []).filter((s: NerSpan) => !deadSet.has(s.id));
-    let nextApiSpans = (currentLayer.apiSpans ?? []).filter((s: NerSpan) => !deadSet.has(s.id));
+    let nextUserSpans = (layer.userSpans ?? []).filter((s: NerSpan) => !deadSet.has(getId(s)));
+    let nextApiSpans = (layer.apiSpans ?? []).filter((s: NerSpan) => !deadSet.has(getId(s)));
     const shiftedInStepA = new Set<string>();
 
     if (!liveCoords) return { nextUserSpans, nextApiSpans, shiftedInStepA };
 
     let shiftOffset = 0;
-    if (activeSegId && store.session.segments) {
-      const translations = store.activeTab === "original" ? undefined : currentLayer.segmentTranslations;
-      shiftOffset = SegmentLogic.calculateGlobalOffset(activeSegId, store.session.segments, translations);
+    if (activeSegId && segments) {
+      const translations = lang === "original" ? undefined : layer.segmentTranslations;
+      shiftOffset = SegmentLogic.calculateGlobalOffset(activeSegId, segments, translations);
     }
-    
+
     nextUserSpans = SpanLogic.syncLiveCoords(nextUserSpans, liveCoords, shiftOffset, shiftedInStepA);
     nextApiSpans = SpanLogic.syncLiveCoords(nextApiSpans, liveCoords, shiftOffset, shiftedInStepA);
 
     return { nextUserSpans, nextApiSpans, shiftedInStepA };
   }
 
-  private processMasterSegmentEdit(text: string, activeSegId: string, userSpans: NerSpan[], apiSpans: NerSpan[], shiftedSet: Set<string>) {
-    const store = useSessionStore.getState();
-    const session = store.session!;
-    const currentFullText = store.draftText || session.text || "";
-    const masterActiveSegment = session.segments?.find(s => s.id === activeSegId);
-    
-    if (!masterActiveSegment || !session.segments) return;
-    
+  private processMasterSegmentEdit(
+    text: string, activeSegId: string, fullText: string, segments: Segment[],
+    userSpans: NerSpan[], apiSpans: NerSpan[], shiftedSet: Set<string>
+  ): TextChangeResult | undefined {
+    const masterActiveSegment = segments.find(s => s.id === activeSegId);
+    if (!masterActiveSegment) return undefined;
+
     const lengthDiff = text.length - (masterActiveSegment.end - masterActiveSegment.start);
-    const updatedFull = currentFullText.substring(0, masterActiveSegment.start) + text + currentFullText.substring(masterActiveSegment.end);
+    const updatedFull = fullText.substring(0, masterActiveSegment.start) + text + fullText.substring(masterActiveSegment.end);
 
     let updatedSegments = SegmentLogic.updateSegmentAndShift(
-      session.segments, masterActiveSegment.id, masterActiveSegment.start + text.length, lengthDiff, masterActiveSegment.end
+      segments, masterActiveSegment.id, masterActiveSegment.start + text.length, lengthDiff, masterActiveSegment.end
     );
-    updatedSegments = updatedSegments.map(seg => seg.id === masterActiveSegment.id ? { ...seg, text } : { ...seg, text: updatedFull.substring(seg.start, seg.end) });
+    updatedSegments = updatedSegments.map(seg =>
+      seg.id === masterActiveSegment.id
+        ? { ...seg, text }
+        : { ...seg, text: updatedFull.substring(seg.start, seg.end) }
+    );
 
     const nextUserSpans = SpanLogic.shiftSpansAfterEdit(userSpans, masterActiveSegment.end, lengthDiff, shiftedSet);
     const nextApiSpans = SpanLogic.shiftSpansAfterEdit(apiSpans, masterActiveSegment.end, lengthDiff, shiftedSet);
 
-    store.setDraftText(updatedFull); 
-    store.updateActiveLayer({ text: updatedFull, segments: updatedSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+    return {
+      draftText: updatedFull,
+      layerPatch: { text: updatedFull, segments: updatedSegments, userSpans: nextUserSpans, apiSpans: nextApiSpans },
+      lang: "original"
+    };
   }
 
-  private processTranslationSegmentEdit(text: string, activeSegId: string, currentLayer: any, userSpans: NerSpan[], apiSpans: NerSpan[], shiftedSet: Set<string>) {
-    const store = useSessionStore.getState();
-    const session = store.session!;
-    
-    const oldSegText = currentLayer.segmentTranslations?.[activeSegId] || "";
+  private processTranslationSegmentEdit(
+    text: string, activeSegId: string, layer: AnnotationLayer, lang: string, segments: Segment[],
+    userSpans: NerSpan[], apiSpans: NerSpan[], shiftedSet: Set<string>
+  ): TextChangeResult | undefined {
+    const oldSegText = layer.segmentTranslations?.[activeSegId] || "";
     const lengthDiff = text.length - oldSegText.length;
-    
+
     const updatedSegmentTranslations = {
-      ...(currentLayer.segmentTranslations || {}),
+      ...(layer.segmentTranslations || {}),
       [activeSegId]: text
     };
-    
-    const updatedFull = (session.segments || []).map(s => updatedSegmentTranslations[s.id] || "").join("");
-    const virtualStart = SegmentLogic.calculateGlobalOffset(activeSegId, session.segments || [], currentLayer.segmentTranslations);
+
+    const updatedFull = segments.map(s => updatedSegmentTranslations[s.id] || "").join("");
+    const virtualStart = SegmentLogic.calculateGlobalOffset(activeSegId, segments, layer.segmentTranslations);
     const virtualEnd = virtualStart + oldSegText.length;
 
     const nextUserSpans = SpanLogic.shiftSpansAfterEdit(userSpans, virtualEnd, lengthDiff, shiftedSet);
     const nextApiSpans = SpanLogic.shiftSpansAfterEdit(apiSpans, virtualEnd, lengthDiff, shiftedSet);
-    
-    store.setDraftText(updatedFull);
-    store.updateActiveLayer({ text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans });
+
+    return {
+      draftText: updatedFull,
+      layerPatch: { text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans },
+      lang
+    };
   }
 
-  async saveWorkspace(): Promise<boolean> {
-    const sessionStore = useSessionStore.getState();
-    const workspaceStore = useWorkspaceStore.getState();
-    const notify = useNotificationStore.getState().enqueue;
-
-    const { session, draftText } = sessionStore;
-
+  async saveWorkspace(session: Workspace, draftText: string): Promise<SaveResult> {
     if (!session || !session.id) {
-      notify({ message: "No active workspace to save.", tone: "error" });
-      return false;
+      return { ok: false, notice: { message: "No active workspace to save.", tone: "error" } };
     }
 
     try {
       const appService = getWorkspaceApplicationService();
 
       const patch = {
-        text: draftText, 
+        text: draftText,
         userSpans: session.userSpans,
         apiSpans: session.apiSpans,
         deletedApiKeys: session.deletedApiKeys,
         tags: session.tags,
         translations: session.translations,
-        segments: session.segments, 
+        segments: session.segments,
       };
 
       await appService.updateWorkspace({
@@ -148,22 +160,18 @@ export class EditorWorkflowService {
         patch
       });
 
-      workspaceStore.updateWorkspaceMetadata(session.id, { 
-        updatedAt: Date.now() 
-      });
+      const now = Date.now();
 
-      useSessionStore.setState({ 
-        session: { ...session, text: draftText },
-        isDirty: false 
-      });
-
-      notify({ message: "Workspace saved successfully.", tone: "success" });
-      return true;
+      return {
+        ok: true,
+        notice: { message: "Workspace saved successfully.", tone: "success" },
+        sessionPatch: { text: draftText, isDirty: false as const },
+        workspaceMetadataPatch: { updatedAt: now },
+      };
 
     } catch (error) {
       console.error("Failed to save workspace:", error);
-      notify({ message: "Failed to save workspace.", tone: "error" });
-      return false;
+      return { ok: false, notice: { message: "Failed to save workspace.", tone: "error" } };
     }
   }
 }

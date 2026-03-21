@@ -5,6 +5,7 @@ import type { ThesaurusItem } from "../rightPanel/inputs/TagThesaurusInput";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useThesaurusDisplay, useThesaurusWorker } from "../../hooks";
 import { taggingWorkflowService } from "../../../application/services/TaggingWorkflowSercice.ts";
+import { useNotificationStore } from "../../stores/notificationStore.ts";
 
 const PanelContainer: React.FC = () => {
   const { id: routeId } = useParams();
@@ -16,6 +17,8 @@ const PanelContainer: React.FC = () => {
 
   const thesaurusWorker = useThesaurusWorker();
   const thesaurusIndexForDisplay = useThesaurusDisplay(thesaurusWorker);
+
+  const notify = useNotificationStore((state) => state.enqueue);
 
   const filteredTags = useMemo(() => {
     if (activeSegmentId && activeSegmentId !== "root") {
@@ -49,20 +52,32 @@ const PanelContainer: React.FC = () => {
 
   const addTag = useCallback(async (name: string, keywordId?: number, parentId?: number) => {
     try {
-      await taggingWorkflowService.addCustomTag(name, {
+      const result = await taggingWorkflowService.addCustomTag(name, {
         keywordId,
         parentId,
         segmentId: (activeSegmentId && activeSegmentId !== "root") ? activeSegmentId : undefined
-      });
+      }, tags);
+
+      if (result.success) {
+        useSessionStore.getState().updateSession({ tags: result.tags ?? [] });
+      }
+      notify(result.notice);
+
       setTagPanelOpen(true);
     } catch {
       //TODO: handle error
     }
-  }, [activeSegmentId]);
+  }, [activeSegmentId, tags, notify]);
 
   const deleteTag = useCallback(
-    (name: string, keywordId?: number, parentId?: number) => taggingWorkflowService.deleteTag(name, keywordId, parentId),
-    []
+    (name: string, keywordId?: number, parentId?: number) => {
+      const result = taggingWorkflowService.deleteTag(name, keywordId, parentId, tags, activeSegmentId);
+      if (result.success) {
+        useSessionStore.getState().updateSession({ tags: result.tags ?? [] });
+      }
+      notify(result.notice);
+    },
+    [activeSegmentId, tags, notify]
   );
 
   const fetchThesaurus = useCallback(async (q: string): Promise<ThesaurusItem[]> => {

@@ -18,24 +18,47 @@ interface Props {
   onSpanClick?: (span: NerSpan, anchorElement: HTMLElement, replaceTextFn: (newText: string) => void) => void;
   onSelectionChange?: (selection: { start: number; end: number; top: number; left: number } | null) => void;
   placeholder?: string;
+  onDropTextPosition?: (localOffset: number, dataTransfer: DataTransfer) => void;
 }
 
 const getSpanId = (s: NerSpan) => s.id ?? `span-${s.start}-${s.end}-${s.entity}`;
 
 export const CodeMirrorWrapper: React.FC<Props> = ({
-  value, spans, onChange, onSpanClick, onSelectionChange, placeholder,
+  value, spans, onChange, onSpanClick, onSelectionChange, placeholder, onDropTextPosition
 }) => {
   const selectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
 
-  const extensions = useMemo(() => [
-    EditorView.lineWrapping,
-    editorTheme,
-    spansFacet.of(spans),
-    spanDecorationField,
-    createSpanProtectionFilter(),
-    createSelectionObserver(spans, onSelectionChange, selectionTimeoutRef)
-  ], [spans, onSelectionChange]);
+  const extensions = useMemo(() => {
+    return [
+      EditorView.lineWrapping,
+      editorTheme,
+      spansFacet.of(spans),
+      spanDecorationField,
+      createSpanProtectionFilter(),
+      createSelectionObserver(spans, onSelectionChange, selectionTimeoutRef),
+      EditorView.domEventHandlers({
+        dragover(event) {
+          if (event.dataTransfer?.types.includes("application/segment-id")) {
+            event.preventDefault();
+          }
+        },
+        drop(event, view) {
+          if (event.dataTransfer?.types.includes("application/segment-id") && onDropTextPosition) {
+            event.preventDefault();
+
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+            console.log("[CMWrapper Drop] Client coords: ", event.clientX, event.clientY, "-> Extracted View Pos:", pos);
+
+            if (pos !== null) {
+              onDropTextPosition(pos, event.dataTransfer);
+            }
+            return true;
+          }
+        }
+      })
+    ];
+  }, [spans, onSelectionChange, onDropTextPosition]);
 
   const handleWrapperClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = (e.target as HTMLElement).closest(".cm-ner-span") as HTMLElement;
@@ -50,13 +73,13 @@ export const CodeMirrorWrapper: React.FC<Props> = ({
       className="cm-editor-container"
       onClick={handleWrapperClick}
       style={{
-        width: "100%", 
-        display: "flex", 
+        width: "100%",
+        display: "flex",
         flexDirection: "column",
         backgroundColor: "transparent",
       }}
     >
-     <CodeMirror
+      <CodeMirror
         ref={editorRef}
         value={value}
         style={{ width: "100%" }}
@@ -65,13 +88,13 @@ export const CodeMirrorWrapper: React.FC<Props> = ({
           const isUserEvent = viewUpdate.transactions.some(
             (tr) => tr.annotation(Transaction.userEvent) !== undefined || tr.annotation(intentionalTextReplace)
           );
-        
+
           if (!isUserEvent) return;
-        
+
           const decorations = viewUpdate.state.field(spanDecorationField);
           const iter = decorations.iter();
           const liveCoords = new Map<string, { start: number; end: number }>();
-        
+
           while (iter.value !== null) {
             const id = iter.value.spec.attributes["data-span-id"];
             if (id && iter.from < iter.to) {
@@ -79,7 +102,7 @@ export const CodeMirrorWrapper: React.FC<Props> = ({
             }
             iter.next();
           }
-        
+
           const deadSpanIds = spans.map(getSpanId).filter(id => !liveCoords.has(id));
           onChange(val, liveCoords, deadSpanIds);
         }}

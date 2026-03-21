@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { 
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import {
   Box, IconButton, Tooltip, Menu, MenuItem, TextField, CircularProgress,
-  Select, FormControl, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button, Collapse 
+  Select, FormControl, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button, Collapse
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 
@@ -11,6 +11,7 @@ import TranslateIcon from "@mui/icons-material/Translate";
 import ManageSearchIcon from "@mui/icons-material/ManageSearch";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import CallMergeIcon from "@mui/icons-material/CallMerge";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
@@ -18,35 +19,74 @@ import { CodeMirrorWrapper } from "./codemirror/CodeMirrorWrapper";
 import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic";
 import type { NerSpan } from "../../../types/NotationEditor";
 import { COLORS, getSpanId } from "./utils/editorUtils";
+import { useSegmentDrag } from "./context/SegmentDragContext";
 
-interface SegmentBlockProps {
-  segment: any;
-  index: number;
-  session: any;
-  languageOptions: any[];
-  isLanguageListLoading: boolean;
+// ─── Prop groups ─────────────────────────────────────────────────────────────
+
+export interface SegmentDisplayProps {
   isActive: boolean;
+  isDragging: boolean;
+  dropDisabled: boolean;
+}
+
+export interface SegmentHandlers {
   onActivate: () => void;
-  onAddTranslation: (segmentId: string, lang: string) => void;
-  onDeleteTranslation: (lang: string, segmentId: string) => void;
   onJoinUp: (segmentId: string) => void;
   onRunNer: (segmentId: string, lang: string) => void;
   onRunSemTag: (segmentId: string, lang: string) => void;
   onSpanClick: (span: NerSpan, el: HTMLElement, fn: any, lang: string, start: number) => void;
   onSelectionChange: (sel: any, segmentId: string, lang: string, start: number) => void;
   onTextChange: (segmentId: string, text: string, coords: any, deadIds?: string[], lang?: string) => void;
+  onShiftBoundary?: (sourceSegmentId: string, globalTargetPos: number) => void;
+  onInvalidDrop?: () => void;
 }
 
-export const SegmentBlock: React.FC<SegmentBlockProps> = ({ 
-  segment, index, session, languageOptions, isLanguageListLoading, isActive, onActivate,
-  onAddTranslation, onDeleteTranslation, onJoinUp, onRunNer, onRunSemTag,
-  onSpanClick, onSelectionChange, onTextChange 
+export interface SegmentTranslationHandlers {
+  onAddTranslation: (segmentId: string, lang: string) => void;
+  onDeleteTranslation: (lang: string, segmentId: string) => void;
+  languageOptions: any[];
+  isLanguageListLoading: boolean;
+}
+
+export interface SegmentDragHandlers {
+  prevSegmentId?: string;
+}
+
+// ─── Component props ──────────────────────────────────────────────────────────
+
+export interface SegmentBlockProps {
+  segment: any;
+  index: number;
+  session: any;
+  display: SegmentDisplayProps;
+  handlers: SegmentHandlers;
+  translationHandlers: SegmentTranslationHandlers;
+  dragHandlers: SegmentDragHandlers;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export const SegmentBlock: React.FC<SegmentBlockProps> = ({
+  segment, index, session,
+  display: { isActive, isDragging, dropDisabled },
+  handlers: { onActivate, onJoinUp, onRunNer, onRunSemTag, onSpanClick, onSelectionChange, onTextChange, onShiftBoundary, onInvalidDrop },
+  translationHandlers: { onAddTranslation, onDeleteTranslation, languageOptions, isLanguageListLoading },
+  dragHandlers: { prevSegmentId },
 }) => {
   const [localLang, setLocalLang] = useState("original");
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [languageSearch, setLanguageSearch] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isHeaderOpen, setIsHeaderOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const { notifyDragStart, notifyDragEnd, setHoveredIdx, registerNode } = useSegmentDrag();
+
+  useEffect(() => {
+    const el = boxRef.current;
+    registerNode(index, el);
+    return () => registerNode(index, null);
+  }, [index, registerNode]);
 
   const availableLangs = useMemo(() => (session?.translations || []).filter((t: any) => t.segmentTranslations?.[segment.id] !== undefined).map((t: any) => t.language), [session?.translations, segment.id]);
 
@@ -77,14 +117,14 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
       const api = (tLayer?.apiSpans || []).filter((s: NerSpan) => !bannedKeys.has(`${s.start}:${s.end}:${s.entity}`));
       rawSpans = [...api, ...(tLayer?.userSpans || [])];
     }
-    
+
     return rawSpans
       .filter(s => Math.max(s.start, virtualSegment.start) < Math.min(s.end, virtualSegment.end))
-      .map(s => ({ 
-        ...s, 
-        id: getSpanId(s), 
-        start: Math.max(0, s.start - virtualSegment.start), 
-        end: Math.min(virtualSegment.end - virtualSegment.start, s.end - virtualSegment.start) 
+      .map(s => ({
+        ...s,
+        id: getSpanId(s),
+        start: Math.max(0, s.start - virtualSegment.start),
+        end: Math.min(virtualSegment.end - virtualSegment.start, s.end - virtualSegment.start)
       }));
   }, [localLang, session, virtualSegment, isActive]);
 
@@ -108,54 +148,131 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
     onSelectionChange(sel, segment.id, localLang, virtualSegment.start);
   }, [onSelectionChange, segment.id, localLang, virtualSegment.start]);
 
+  const handleDropTextPosition = useCallback((localOffset: number, dataTransfer: DataTransfer) => {
+    const sourceSegmentId = dataTransfer.getData("application/segment-id");
+    if (sourceSegmentId && onShiftBoundary) {
+      onShiftBoundary(sourceSegmentId, virtualSegment.start + localOffset);
+    }
+  }, [virtualSegment.start, onShiftBoundary]);
+
   return (
-    <Box 
+    <Box
+      ref={boxRef}
       onClick={onActivate}
       onFocus={onActivate}
-      sx={{ 
+      onMouseEnter={() => setHoveredIdx(index)}
+      onMouseLeave={() => setHoveredIdx(null)}
+      onDragEnter={(e) => {
+        if (e.dataTransfer.types.includes("application/segment-id") && !isActive && !dropDisabled) {
+          onActivate();
+        }
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("application/segment-id")) {
+          if (dropDisabled) {
+            e.dataTransfer.dropEffect = "none";
+          } else {
+            e.preventDefault();
+          }
+        }
+      }}
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes("application/segment-id")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (dropDisabled && onInvalidDrop) {
+            onInvalidDrop();
+          }
+        }
+      }}
+      sx={{
         position: "relative",
-        backgroundColor: isActive ? "#ffffff" : "#f1f5f9", 
-        borderBottom: `2px dashed ${alpha(COLORS.dateBlue, 0.3)}`, 
-        display: "flex", 
-        flexDirection: "column", 
-        transition: "background-color 0.2s ease",
-        "&:hover .join-btn": { opacity: 1 },
-        "&:last-child": { borderBottom: "none" } 
+        backgroundColor: dropDisabled
+          ? "#fff5f5"
+          : isActive ? "#ffffff" : "#f1f5f9",
+        backgroundImage: dropDisabled
+          ? `repeating-linear-gradient(
+              -45deg,
+              transparent,
+              transparent 8px,
+              ${alpha("#ef4444", 0.07)} 8px,
+              ${alpha("#ef4444", 0.07)} 10px
+            )`
+          : "none",
+        borderBottom: `2px dashed ${alpha(COLORS.dateBlue, 0.3)}`,
+        display: "flex",
+        flexDirection: "column",
+        transition: isDragging ? "none" : "background-color 0.2s ease",
+        cursor: isDragging && !dropDisabled ? "crosshair" : "auto",
+        "& .boundary-btn-group": { opacity: 0 },
+        "&[data-boundary-visible='1'] .boundary-btn-group": { opacity: 1 },
+        "&[data-dragging='1'] .boundary-btn-group": { opacity: 0 },
+        "&:last-child": { borderBottom: "none" }
       }}
     >
-      
+
       {index > 0 && (
-        <Box sx={{ position: "absolute", top: "-14px", left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
-           <Tooltip title="Merge segments">
-             <IconButton 
-               className="join-btn"
-               onClick={(e) => { e.stopPropagation(); onJoinUp(segment.id); }} 
-               sx={{ 
-                 opacity: 0, 
-                 transition: "opacity 0.2s ease, transform 0.2s ease",
-                 bgcolor: "#ffffff", 
-                 border: `1px solid ${COLORS.dateBlue}`, 
-                 boxShadow: "0 2px 4px rgba(0,0,0,0.1)", 
-                 width: 28, height: 28, 
-                 "&:hover": { bgcolor: "#f0f7ff", transform: "scale(1.1)" }
-               }}
-             >
-               <CallMergeIcon sx={{ transform: "rotate(180deg)", fontSize: "1.1rem", color: COLORS.dateBlue }} />
-             </IconButton>
-           </Tooltip>
+        <Box
+          className="boundary-btn-group"
+          onMouseEnter={() => setHoveredIdx(index - 1)}
+          onMouseLeave={() => setHoveredIdx(null)}
+          sx={{ position: "absolute", top: "-14px", left: "50%", transform: "translateX(-50%)", zIndex: 10 }}
+        >
+          <Tooltip title="Merge segments">
+            <IconButton
+              className="join-btn"
+              onClick={(e) => { e.stopPropagation(); onJoinUp(segment.id); }}
+              sx={{
+                transition: "transform 0.2s ease",
+                bgcolor: "#ffffff",
+                border: `1px solid ${COLORS.dateBlue}`,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                width: 28, height: 28,
+                "&:hover": { bgcolor: "#f0f7ff", transform: "scale(1.1)" }
+              }}
+            >
+              <CallMergeIcon sx={{ transform: "rotate(180deg)", fontSize: "1.1rem", color: COLORS.dateBlue }} />
+            </IconButton>
+          </Tooltip>
+          {/* Drag Handle */}
+          <Tooltip title="Drag to shift boundary">
+            <IconButton
+              className="drag-btn"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/segment-id", prevSegmentId || segment.id);
+                e.dataTransfer.effectAllowed = "move";
+                if (index > 0) notifyDragStart(index - 1);
+              }}
+              onDragEnd={() => notifyDragEnd()}
+              sx={{
+                cursor: "grab",
+                transition: "transform 0.2s ease",
+                bgcolor: "#ffffff",
+                border: `1px solid ${COLORS.dateBlue}`,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                width: 28, height: 28,
+                ml: 1,
+                "&:hover": { bgcolor: "#f0f7ff", transform: "scale(1.1)" },
+                "&:active": { cursor: "grabbing" }
+              }}
+            >
+              <DragIndicatorIcon sx={{ fontSize: "1.1rem", color: COLORS.dateBlue }} />
+            </IconButton>
+          </Tooltip>
         </Box>
       )}
 
-      <Box sx={{ 
+      <Box sx={{
         position: "relative",
         backgroundColor: isHeaderOpen ? "#f8fafc" : "transparent",
         borderBottom: isHeaderOpen ? "1px solid #e2e8f0" : "none",
         transition: "background-color 0.2s ease"
       }}>
         <Box sx={{ position: "absolute", top: isHeaderOpen ? "8px" : "4px", right: "8px", zIndex: 10 }}>
-           <IconButton size="small" onClick={(e) => { e.stopPropagation(); setIsHeaderOpen(!isHeaderOpen); }} sx={{ color: "#94a3b8", width: 28, height: 28 }}>
-             {isHeaderOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-           </IconButton>
+          <IconButton size="small" onClick={(e) => { e.stopPropagation(); setIsHeaderOpen(!isHeaderOpen); }} sx={{ color: "#94a3b8", width: 28, height: 28 }}>
+            {isHeaderOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </IconButton>
         </Box>
 
         {!isHeaderOpen && <Box sx={{ height: "32px", width: "100%" }} />}
@@ -180,32 +297,40 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
           </Box>
         </Collapse>
       </Box>
-      
-      <Box sx={{ 
-        padding: "0pxg 20px 20px 20px",  
+
+      <Box sx={{
+        padding: "0pxg 20px 20px 20px",
         "& .cm-editor": { outline: "none", backgroundColor: "transparent !important" },
         "& .cm-scroller": { backgroundColor: "transparent !important" },
         "& .cm-activeLine": { backgroundColor: "transparent !important" },
         "& .cm-gutters": { backgroundColor: "transparent !important", border: "none" },
-        "& .cm-placeholder": { color: "#94a3b8", fontStyle: "italic" }
+        "& .cm-placeholder": { color: "#94a3b8", fontStyle: "italic" },
+        ...(isDragging && !dropDisabled ? {
+          "& .cm-editor, & .cm-scroller, & .cm-content": { cursor: "crosshair !important" },
+          "& .cm-dropCursor": {
+            borderLeft: `3px solid ${COLORS.dateBlue} !important`,
+            marginLeft: "-1px !important"
+          }
+        } : {})
       }}>
-        <CodeMirrorWrapper 
-          value={virtualSegment.text} 
-          spans={localSpans} 
-          onChange={handleCmChange} 
-          onSpanClick={handleCmSpanClick} 
-          onSelectionChange={handleCmSelectionChange} 
+        <CodeMirrorWrapper
+          value={virtualSegment.text}
+          spans={localSpans}
+          onChange={handleCmChange}
+          onSpanClick={handleCmSpanClick}
+          onSelectionChange={handleCmSelectionChange}
           placeholder={segment.id === "root" ? "Insert your document text here..." : undefined}
+          onDropTextPosition={handleDropTextPosition}
         />
       </Box>
 
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={(e: any) => { e.stopPropagation(); setAnchorEl(null); }} PaperProps={{ sx: { maxHeight: 280, minWidth: 260 } }}>
         <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #eee' }}><TextField fullWidth size="small" placeholder="Search language..." value={languageSearch} autoFocus onChange={(e) => setLanguageSearch(e.target.value)} variant="standard" InputProps={{ disableUnderline: true }} /></Box>
         <Box sx={{ px: 1, pb: 1, maxHeight: 220, overflowY: "auto" }}>
-            {isLanguageListLoading ? <MenuItem disabled><CircularProgress size={16} sx={{ mr: 1 }} /> Loading…</MenuItem> : filteredLanguageOptions.length > 0 ? filteredLanguageOptions.map(({ code, label }: any) => <MenuItem key={code} onClick={(e) => { e.stopPropagation(); onAddTranslation(segment.id, code); setLocalLang(code); setAnchorEl(null); }}><Box sx={{ display: "flex", flexDirection: "column" }}><span style={{ textTransform: "uppercase", fontWeight: 600 }}>{code}</span><span style={{ fontSize: "0.8rem", opacity: 0.8 }}>{label}</span></Box></MenuItem>) : <MenuItem disabled>No matches</MenuItem>}
+          {isLanguageListLoading ? <MenuItem disabled><CircularProgress size={16} sx={{ mr: 1 }} /> Loading…</MenuItem> : filteredLanguageOptions.length > 0 ? filteredLanguageOptions.map(({ code, label }: any) => <MenuItem key={code} onClick={(e) => { e.stopPropagation(); onAddTranslation(segment.id, code); setLocalLang(code); setAnchorEl(null); }}><Box sx={{ display: "flex", flexDirection: "column" }}><span style={{ textTransform: "uppercase", fontWeight: 600 }}>{code}</span><span style={{ fontSize: "0.8rem", opacity: 0.8 }}>{label}</span></Box></MenuItem>) : <MenuItem disabled>No matches</MenuItem>}
         </Box>
       </Menu>
-      
+
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
         <DialogTitle>Clear Segment Translation</DialogTitle>
         <DialogContent><DialogContentText>Are you sure you want to delete the {localLang.toUpperCase()} translation for this specific segment?</DialogContentText></DialogContent>
