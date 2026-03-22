@@ -68,6 +68,7 @@ const EditorContainer: React.FC = () => {
       userSpans: t.userSpans ?? [],
       apiSpans: t.apiSpans ?? [],
       segmentTranslations: t.segmentTranslations,
+      editedSegmentTranslations: t.editedSegmentTranslations,
     };
   };
   const applyLayerPatch = (lang: string, patch: AnnotationResult['layerPatch']) => {
@@ -75,13 +76,31 @@ const EditorContainer: React.FC = () => {
     if (lang === "original") {
       sessionStore.updateSession(patch);
     } else {
-      const translations = (session?.translations || []).map(t =>
+      const currentSession = useSessionStore.getState().session;
+      const translations = (currentSession?.translations || []).map(t =>
         t.language === lang ? { ...t, ...patch } : t
       );
       sessionStore.updateSession({ translations });
     }
   };
 
+  const markSegmentEdited = (segmentId: string | undefined, lang: string) => {
+    const currentSession = useSessionStore.getState().session;
+    if (!segmentId || !currentSession) return;
+    if (lang === "original") {
+      const updatedSegments = (currentSession.segments || []).map(s =>
+        s.id === segmentId ? { ...s, isEdited: true } : s
+      );
+      sessionStore.updateSession({ segments: updatedSegments });
+    } else {
+      const translations = (currentSession.translations || []).map(t =>
+        t.language === lang
+          ? { ...t, editedSegmentTranslations: { ...(t.editedSegmentTranslations || {}), [segmentId]: true } }
+          : t
+      );
+      sessionStore.updateSession({ translations });
+    }
+  };
 
 
   const handleError = useCallback((err: unknown) => {
@@ -149,7 +168,7 @@ const EditorContainer: React.FC = () => {
     }
   }, [session, sessionStore]);
 
-  // ─── Segment operations ─────────────────────────────────────────────────────
+  // Segment operations
 
   const handleJoinUp = useCallback((segmentId: string) => {
     const idx = session?.segments?.findIndex(s => s.id === segmentId) ?? -1;
@@ -212,6 +231,7 @@ const EditorContainer: React.FC = () => {
       const result = annotationWorkflowService.createSpan(category, newSelection.start, newSelection.end, { layer, activeSegmentId: newSelection.segmentId, segments: session?.segments ?? [] });
       if (result.ok) {
         applyLayerPatch(newSelection.localLang, result.layerPatch);
+        markSegmentEdited(newSelection.segmentId, newSelection.localLang);
       }
     }
 
@@ -278,7 +298,7 @@ const EditorContainer: React.FC = () => {
     setDraggingFromIndex(null);
   }, [session?.segments, notify, draftText, activeTab, setDraftText]);
 
-  // ─── Global operations ──────────────────────────────────────────────────────
+  // Global operations
 
   const handleRunGlobalNer = useCallback(async () => {
     setIsProcessing(true); setActiveSegmentId(undefined); try {
@@ -349,14 +369,17 @@ const EditorContainer: React.FC = () => {
         if (result.ok) {
           applyLayerPatch(actionLangContext, result.layerPatch);
           if (result.deletedApiKeys) sessionStore.updateSession({ deletedApiKeys: result.deletedApiKeys });
+          markSegmentEdited(activeSegmentId, actionLangContext);
         }
         notify(result.notice);
       }
       closeEditMenu();
       return;
     }
-    cmReplaceFn?.(normalized); closeEditMenu();
-  }, [activeSpan, cmReplaceFn, closeEditMenu, actionLangContext, session, draftText]);
+    cmReplaceFn?.(normalized);
+    markSegmentEdited(activeSegmentId, actionLangContext);
+    closeEditMenu();
+  }, [activeSpan, cmReplaceFn, closeEditMenu, actionLangContext, session, draftText, activeSegmentId]);
 
   const virtualElement = newSelection ? ({ getBoundingClientRect: () => ({ top: newSelection.top, left: newSelection.left, bottom: newSelection.top, right: newSelection.left, width: 0, height: 0 }), nodeType: 1 } as unknown as HTMLElement) : null;
 
@@ -470,6 +493,7 @@ const EditorContainer: React.FC = () => {
               const result = annotationWorkflowService.updateSpanCategory(activeSpan.id, c, { layer });
               if (result.ok) {
                 applyLayerPatch(actionLangContext, result.layerPatch);
+                markSegmentEdited(activeSegmentId, actionLangContext);
               }
               notify(result.notice);
             }
@@ -479,13 +503,13 @@ const EditorContainer: React.FC = () => {
         showDelete={true}
         onDelete={() => {
           if (activeSpan?.id) {
-
             const layer = resolveLayer(actionLangContext);
             if (layer) {
               const result = annotationWorkflowService.deleteSpan(activeSpan.id, { layer, deletedApiKeys: session?.deletedApiKeys ?? [] });
               if (result.ok) {
                 applyLayerPatch(actionLangContext, result.layerPatch);
                 if (result.deletedApiKeys) sessionStore.updateSession({ deletedApiKeys: result.deletedApiKeys });
+                markSegmentEdited(activeSegmentId, actionLangContext);
               }
               notify(result.notice);
             }

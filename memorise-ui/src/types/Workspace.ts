@@ -42,4 +42,7 @@ export type Translation = {
   segmentTranslations?: {
     [segmentId: string]: string;  
   };
+  editedSegmentTranslations?: {
+    [segmentId: string]: boolean;
+  };
 };

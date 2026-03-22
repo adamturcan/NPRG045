@@ -3,7 +3,8 @@ export type Segment = {
   start: number;        
   end: number;          
   text: string;         
-  order: number;        
+  order: number;
+  isEdited?: boolean;   
 };
 
 export function getSegmentText(segment: Segment, fullText: string): string {

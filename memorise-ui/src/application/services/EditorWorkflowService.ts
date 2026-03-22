@@ -97,7 +97,7 @@ export class EditorWorkflowService {
     );
     updatedSegments = updatedSegments.map(seg =>
       seg.id === masterActiveSegment.id
-        ? { ...seg, text }
+        ? { ...seg, text, isEdited: true }
         : { ...seg, text: updatedFull.substring(seg.start, seg.end) }
     );
 
@@ -123,6 +123,11 @@ export class EditorWorkflowService {
       [activeSegId]: text
     };
 
+    const updatedEditedSegmentTranslations = {
+      ...(layer.editedSegmentTranslations || {}),
+      [activeSegId]: true
+    };
+
     const updatedFull = segments.map(s => updatedSegmentTranslations[s.id] || "").join("");
     const virtualStart = SegmentLogic.calculateGlobalOffset(activeSegId, segments, layer.segmentTranslations);
     const virtualEnd = virtualStart + oldSegText.length;
@@ -132,7 +137,7 @@ export class EditorWorkflowService {
 
     return {
       draftText: updatedFull,
-      layerPatch: { text: updatedFull, segmentTranslations: updatedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans },
+      layerPatch: { text: updatedFull, segmentTranslations: updatedSegmentTranslations, editedSegmentTranslations: updatedEditedSegmentTranslations, userSpans: nextUserSpans, apiSpans: nextApiSpans },
       lang
     };
   }

@@ -5,4 +5,5 @@ export type AnnotationLayer = {
     userSpans: NerSpan[];
     apiSpans: NerSpan[];
     segmentTranslations?: Record<string, string>;
+    editedSegmentTranslations?: Record<string, boolean>;
 };

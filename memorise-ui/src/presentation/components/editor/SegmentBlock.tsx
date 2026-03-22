@@ -14,6 +14,7 @@ import CallMergeIcon from "@mui/icons-material/CallMerge";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 
 import { CodeMirrorWrapper } from "./codemirror/CodeMirrorWrapper";
 import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic";
@@ -21,7 +22,7 @@ import type { NerSpan } from "../../../types/NotationEditor";
 import { COLORS, getSpanId } from "./utils/editorUtils";
 import { useSegmentDrag } from "./context/SegmentDragContext";
 
-// ─── Prop groups ─────────────────────────────────────────────────────────────
+// Prop groups
 
 export interface SegmentDisplayProps {
   isActive: boolean;
@@ -52,7 +53,7 @@ export interface SegmentDragHandlers {
   prevSegmentId?: string;
 }
 
-// ─── Component props ──────────────────────────────────────────────────────────
+// Component props
 
 export interface SegmentBlockProps {
   segment: any;
@@ -64,7 +65,7 @@ export interface SegmentBlockProps {
   dragHandlers: SegmentDragHandlers;
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// Component
 
 export const SegmentBlock: React.FC<SegmentBlockProps> = ({
   segment, index, session,
@@ -89,6 +90,12 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
   }, [index, registerNode]);
 
   const availableLangs = useMemo(() => (session?.translations || []).filter((t: any) => t.segmentTranslations?.[segment.id] !== undefined).map((t: any) => t.language), [session?.translations, segment.id]);
+
+  const isSegmentEdited = useMemo(() => {
+    if (localLang === "original") return !!segment.isEdited;
+    const tLayer = session?.translations?.find((t: any) => t.language === localLang);
+    return !!tLayer?.editedSegmentTranslations?.[segment.id];
+  }, [localLang, segment.isEdited, segment.id, session?.translations]);
 
   useEffect(() => { if (localLang !== "original" && !availableLangs.includes(localLang)) setLocalLang("original"); }, [localLang, availableLangs]);
 
@@ -269,7 +276,20 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
         borderBottom: isHeaderOpen ? "1px solid #e2e8f0" : "none",
         transition: "background-color 0.2s ease"
       }}>
-        <Box sx={{ position: "absolute", top: isHeaderOpen ? "8px" : "4px", right: "8px", zIndex: 10 }}>
+        <Box sx={{ position: "absolute", top: isHeaderOpen ? "8px" : "4px", right: "8px", zIndex: 10, display: "flex", alignItems: "center", gap: 0.5 }}>
+          {isSegmentEdited && !isHeaderOpen && (
+            <Tooltip title="Segment manually edited">
+              <Box sx={{
+                display: "flex", alignItems: "center", gap: 0.5,
+                bgcolor: alpha("#f59e0b", 0.12), color: "#b45309",
+                borderRadius: "12px", px: 1, py: 0.25,
+                fontSize: "11px", fontWeight: 600, lineHeight: 1,
+              }}>
+                <EditOutlinedIcon sx={{ fontSize: "13px" }} />
+                Edited
+              </Box>
+            </Tooltip>
+          )}
           <IconButton size="small" onClick={(e) => { e.stopPropagation(); setIsHeaderOpen(!isHeaderOpen); }} sx={{ color: "#94a3b8", width: 28, height: 28 }}>
             {isHeaderOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
@@ -291,6 +311,21 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
               {localLang !== "original" && <Tooltip title="Clear Translation"><IconButton size="small" onClick={(e) => { e.stopPropagation(); setDeleteDialogOpen(true); }} sx={{ bgcolor: alpha("#d32f2f", 0.1), color: "#d32f2f", width: "28px", height: "28px", borderRadius: "6px" }}><DeleteOutlineIcon fontSize="small" /></IconButton></Tooltip>}
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              {isSegmentEdited && (
+                <Tooltip title="Segment manually edited">
+                  <Box sx={{
+                    display: "flex", alignItems: "center", gap: 0.5,
+                    bgcolor: alpha("#f59e0b", 0.12), color: "#b45309",
+                    border: `1px solid ${alpha("#f59e0b", 0.3)}`,
+                    borderRadius: "12px", px: 1, py: 0.25,
+                    fontSize: "11px", fontWeight: 600, lineHeight: 1,
+                    mr: 0.5,
+                  }}>
+                    <EditOutlinedIcon sx={{ fontSize: "13px" }} />
+                    Edited
+                  </Box>
+                </Tooltip>
+              )}
               <Tooltip title="Run NER on segment"><IconButton size="small" onClick={(e) => { e.stopPropagation(); onRunNer(segment.id, localLang); }} sx={{ bgcolor: alpha(COLORS.magenta, 0.1), color: COLORS.magenta, borderRadius: "6px", width: "28px", height: "28px" }}><ManageSearchIcon fontSize="small" /></IconButton></Tooltip>
               <Tooltip title="Run Sem-Tag on segment"><IconButton size="small" onClick={(e) => { e.stopPropagation(); onRunSemTag(segment.id, localLang); }} sx={{ bgcolor: alpha(COLORS.magenta, 0.1), color: COLORS.magenta, borderRadius: "6px", width: "28px", height: "28px" }}><LabelOutlinedIcon fontSize="small" /></IconButton></Tooltip>
             </Box>

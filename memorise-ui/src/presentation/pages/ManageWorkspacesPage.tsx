@@ -80,9 +80,16 @@ const ManageWorkspacesPage: React.FC = () => {
     setConfirmOpen(false);
     setToDelete(null);
   };
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!toDelete) return;
-    void useWorkspaceStore.getState().deleteWorkspace(toDelete.id);
+    const { id } = toDelete;
+    try {
+      const service = getWorkspaceApplicationService();
+      await service.deleteWorkspace(id);
+      useWorkspaceStore.getState().removeWorkspaceMetadata(id);
+    } catch (error) {
+      console.error('Failed to delete workspace:', error);
+    }
     closeDeleteDialog();
   };
 
@@ -94,11 +101,21 @@ const ManageWorkspacesPage: React.FC = () => {
     setEditingId(null);
     setDraftName("");
   };
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId) return;
     const name = draftName.trim();
     if (!name) return;
-    void useWorkspaceStore.getState().updateWorkspace(editingId, { name });
+    const id = editingId;
+    try {
+      const service = getWorkspaceApplicationService();
+      await service.updateWorkspace({
+        workspaceId: id,
+        patch: { name },
+      });
+      useWorkspaceStore.getState().updateWorkspaceMetadata(id, { name });
+    } catch (error) {
+      console.error('Failed to update workspace:', error);
+    }
     setEditingId(null);
     setDraftName("");
   };
