@@ -4,6 +4,13 @@ import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig({
   base: "/NPRG045/",
+  resolve: {
+    alias: {
+      // hoist-non-react-statics bundles react-is@16 inline, which crashes on React 19.
+      // Replace with a no-op shim — the hoisting it does is non-essential.
+      "hoist-non-react-statics": "/src/shims/hoist-non-react-statics.ts",
+    },
+  },
   plugins: [
     react(),
     visualizer({
