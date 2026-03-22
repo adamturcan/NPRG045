@@ -5,11 +5,13 @@ import { alpha } from "@mui/material/styles";
 
 const COLORS = { magenta: "#C2185B", dateBlue: "#1976D2" };
 
-export type TagRow = { 
-  name: string; 
+export type TagRow = {
+  name: string;
   source: "api" | "user";
   keywordId?: number;
   parentId?: number;
+  hierarchicalPath?: string[];
+  isCategory?: boolean;
 };
 
 interface TagItemProps {

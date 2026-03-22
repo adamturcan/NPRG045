@@ -59,7 +59,7 @@ const TagThesaurusInput: React.FC<Props> = ({
   const [options, setOptions] = useState<ThesaurusItem[]>([]);
   const [loading, setLoading] = useState(false);
   const effectiveRestrict = restrictToThesaurus ?? defaultRestrictToThesaurus;
-  const timerRef = useRef<number>();
+  const timerRef = useRef<number>(undefined!);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
 

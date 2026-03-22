@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Box, Menu, MenuItem, Typography } from "@mui/material";
 
 import CallSplitIcon from "@mui/icons-material/CallSplit";
@@ -10,7 +10,10 @@ import { presentError } from "../../../application/errors/errorPresenter";
 import { errorHandlingService } from "../../../infrastructure/services/ErrorHandlingService";
 import { useLanguageOptions } from "../../hooks/useLanguageOptions";
 import { useConflictResolution } from "../../hooks/useConflictResolution";
+import { useActionGuard } from "../../hooks/useActionGuard";
+import type { ActionGuardActions } from "../../hooks/useActionGuard";
 import ConflictResolutionDialog from "../editor/dialogs/ConflictResolutionDialog";
+import ActionGuardDialog from "../editor/dialogs/ActionGuardDialog";
 
 import { annotationWorkflowService, type AnnotationResult } from "../../../application/services/AnnotationWorkflowService";
 import { segmentWorkflowService } from "../../../application/services/SegmentWorkflowService";
@@ -51,6 +54,34 @@ const EditorContainer: React.FC = () => {
 
   const { conflictPrompt, requestConflictResolution, resolveConflictPrompt } = useConflictResolution();
   const { languageOptions, isLanguageListLoading } = useLanguageOptions();
+
+  const guardActions: ActionGuardActions = useMemo(() => ({
+    translateSegment: async (segmentId: string, lang: string) => {
+      const fresh = useSessionStore.getState().session;
+      const result = await translationWorkflowService.addSegmentTranslation(lang, segmentId, {
+        segments: fresh?.segments || [],
+        translations: fresh?.translations || [],
+      });
+      if (result.ok && result.translationsPatch) {
+        useSessionStore.getState().updateTranslations(result.translationsPatch);
+      }
+      if (!result.ok) throw new Error(result.notice.message);
+    },
+    deleteSegmentTranslation: (lang: string, segmentId: string) => {
+      const fresh = useSessionStore.getState().session;
+      const currentLayer = fresh?.translations?.find(t => t.language === lang);
+      if (currentLayer) {
+        const newSegs = { ...currentLayer.segmentTranslations };
+        delete newSegs[segmentId];
+        const translations = (fresh?.translations || []).map(t =>
+          t.language === lang ? { ...t, segmentTranslations: newSegs } : t
+        );
+        useSessionStore.getState().updateSession({ translations });
+      }
+    },
+  }), []);
+
+  const { guardJoin, guardSplit, guardShift, dialogProps: guardDialogProps, closeDialog: closeGuardDialog } = useActionGuard(guardActions);
 
   const resolveLayer = (lang: string): AnnotationLayer | null => {
     if (!session) return null;
@@ -168,19 +199,48 @@ const EditorContainer: React.FC = () => {
     }
   }, [session, sessionStore]);
 
+  const handleUpdateSegmentTranslation = useCallback(async (segmentId: string, lang: string) => {
+    if (!session) return;
+    setIsProcessing(true);
+    notify({ message: `Updating translation (${lang})...`, tone: "info" });
+    try {
+      const result = await translationWorkflowService.updateSegmentTranslation(lang, segmentId, {
+        segments: session.segments || [],
+        translations: session.translations || [],
+      });
+      if (result.ok && result.translationsPatch) {
+        updateTranslations(result.translationsPatch);
+      }
+      notify(result.notice);
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [session, updateTranslations, notify, handleError]);
+
   // Segment operations
 
   const handleJoinUp = useCallback((segmentId: string) => {
     const idx = session?.segments?.findIndex(s => s.id === segmentId) ?? -1;
+    if (idx <= 0 || !session?.segments) return;
 
-    if (idx > 0 && session?.segments) {
-      const result = segmentWorkflowService.joinSegments(session.segments[idx - 1].id, segmentId, { translations: session.translations || [], segments: session.segments || [] }, activeTab);
+    const seg1Id = session.segments[idx - 1].id;
+    const segments = session.segments;
+    const translations = session.translations || [];
+
+    guardJoin(seg1Id, segmentId, segments, translations, () => {
+      const fresh = useSessionStore.getState().session;
+      const result = segmentWorkflowService.joinSegments(seg1Id, segmentId, {
+        translations: fresh?.translations || [],
+        segments: fresh?.segments || [],
+      });
       if (result.ok && result.patch) {
-        sessionStore.updateSession(result.patch);
+        useSessionStore.getState().updateSession(result.patch);
       }
-      notify(result.notice)
-    }
-  }, [session?.segments, notify, draftText, activeTab]);
+      notify(result.notice);
+    });
+  }, [session?.segments, session?.translations, notify, guardJoin]);
 
   const handleRunSegmentNer = useCallback(async (segmentId: string, lang: string) => {
     notify({ message: `Running NER on segment (${lang})...`, tone: "info" });
@@ -263,13 +323,26 @@ const EditorContainer: React.FC = () => {
 
   const handleConfirmSplit = useCallback(() => {
     if (!splitAnchor) return;
-    const result = segmentWorkflowService.splitSegment(splitAnchor.pos, { text: draftText, translations: session?.translations || [], segments: session?.segments || [] }, activeTab, splitAnchor.segmentId);
-    if (result.ok && result.patch) {
-      sessionStore.updateSession(result.patch);
-    }
-    notify(result.notice)
+    const { pos, segmentId } = splitAnchor;
+    const segments = session?.segments || [];
+    const translations = session?.translations || [];
+
     setSplitAnchor(null);
-  }, [splitAnchor, draftText, session?.translations, session?.segments, activeTab, notify]);
+
+    guardSplit(segmentId, segments, translations, () => {
+      const fresh = useSessionStore.getState().session;
+      const freshDraft = useSessionStore.getState().draftText;
+      const result = segmentWorkflowService.splitSegment(pos, {
+        text: freshDraft,
+        translations: fresh?.translations || [],
+        segments: fresh?.segments || [],
+      }, segmentId);
+      if (result.ok && result.patch) {
+        useSessionStore.getState().updateSession(result.patch);
+      }
+      notify(result.notice);
+    });
+  }, [splitAnchor, session?.translations, session?.segments, notify, guardSplit]);
 
   const handleTextChange = useCallback((segmentId: string, text: string, liveCoords: any, deadIds?: string[], localLang?: string) => {
     const lang = localLang || "original";
@@ -287,31 +360,72 @@ const EditorContainer: React.FC = () => {
   }, [session, draftText, setDraftText]);
 
   const handleShiftBoundary = useCallback((sourceSegmentId: string, globalTargetPos: number) => {
-    const result = segmentWorkflowService.shiftSegmentBoundary(sourceSegmentId, globalTargetPos, { text: draftText, translations: session?.translations || [], segments: session?.segments || [] }, activeTab);
-    if (result.ok && result.patch) {
-      sessionStore.updateSession(result.patch);
-      if (result.patch.text) {
-        setDraftText(result.patch.text);
-      }
-    }
-    notify(result.notice)
+    const segments = session?.segments || [];
+    const translations = session?.translations || [];
+
     setDraggingFromIndex(null);
-  }, [session?.segments, notify, draftText, activeTab, setDraftText]);
+
+    guardShift(sourceSegmentId, globalTargetPos, segments, translations, async () => {
+      const fresh = useSessionStore.getState().session;
+      const freshDraft = useSessionStore.getState().draftText;
+      const result = await segmentWorkflowService.shiftSegmentBoundary(sourceSegmentId, globalTargetPos, {
+        text: freshDraft,
+        translations: fresh?.translations || [],
+        segments: fresh?.segments || [],
+      });
+      if (result.ok && result.patch) {
+        useSessionStore.getState().updateSession(result.patch);
+        if (result.patch.text) {
+          useSessionStore.getState().setDraftText(result.patch.text);
+        }
+      }
+      notify(result.notice);
+    });
+  }, [session?.segments, session?.translations, notify, guardShift]);
 
   // Global operations
 
   const handleRunGlobalNer = useCallback(async () => {
-    setIsProcessing(true); setActiveSegmentId(undefined); try {
-      const layer = resolveLayer(activeTab);
-      if (!layer) return;
-      const result = await annotationWorkflowService.runNer({ layer, segments: session?.segments || [], deletedApiKeys: session?.deletedApiKeys ?? [] }, requestConflictResolution);
-      if (result.ok) {
-        applyLayerPatch(activeTab, result.layerPatch);
-        sessionStore.updateSession({ deletedApiKeys: result.deletedApiKeys });
+    setIsProcessing(true); setActiveSegmentId(undefined);
+    try {
+      // Run NER on the original layer first
+      const originalLayer = resolveLayer("original");
+      if (originalLayer) {
+        const result = await annotationWorkflowService.runNer({ layer: originalLayer, segments: session?.segments || [], deletedApiKeys: session?.deletedApiKeys ?? [] }, requestConflictResolution);
+        if (result.ok) {
+          applyLayerPatch("original", result.layerPatch);
+          sessionStore.updateSession({ deletedApiKeys: result.deletedApiKeys });
+        }
+        notify(result.notice);
       }
-      notify(result.notice);
+
+      //iterate over each translation layer
+      const translations = useSessionStore.getState().session?.translations || [];
+      for (const t of translations) {
+        const freshSession = useSessionStore.getState().session;
+        const tLayer = freshSession?.translations?.find(tr => tr.language === t.language);
+        if (!tLayer?.text?.trim()) continue;
+
+        const layer: AnnotationLayer = {
+          text: tLayer.text || "",
+          userSpans: tLayer.userSpans ?? [],
+          apiSpans: tLayer.apiSpans ?? [],
+          segmentTranslations: tLayer.segmentTranslations,
+          editedSegmentTranslations: tLayer.editedSegmentTranslations,
+        };
+
+        const result = await annotationWorkflowService.runNer({ layer, segments: freshSession?.segments || [], deletedApiKeys: freshSession?.deletedApiKeys ?? [] }, requestConflictResolution);
+        if (result.ok) {
+          applyLayerPatch(t.language, result.layerPatch);
+          if (result.deletedApiKeys) sessionStore.updateSession({ deletedApiKeys: result.deletedApiKeys });
+        }
+      }
+
+      if (translations.length > 0) {
+        notify({ message: `NER completed for original + ${translations.length} translation(s).`, tone: "success" });
+      }
     } finally { setIsProcessing(false); }
-  }, [session, draftText, activeTab, notify, requestConflictResolution]);
+  }, [session, draftText, notify, requestConflictResolution]);
 
   const handleRunGlobalSemTag = useCallback(async () => {
     setIsProcessing(true);
@@ -342,12 +456,9 @@ const EditorContainer: React.FC = () => {
   }, [session, draftText, notify]);
 
   const handleRunGlobalSegment = useCallback(async () => {
-    if (session?.segments && session.segments.length > 1) {
-      notify({ message: "Auto-segmentation can only be run on an unsegmented document.", tone: "warning" }); return;
-    }
     setIsProcessing(true);
     try {
-      const result = await segmentWorkflowService.runAutoSegmentation({ text: draftText, translations: session?.translations }, activeTab);
+      const result = await segmentWorkflowService.runAutoSegmentation({ text: draftText, translations: session?.translations, segments: session?.segments }, activeTab);
       if (result.ok && result.patch) {
         sessionStore.updateSession(result.patch);
       }
@@ -404,6 +515,7 @@ const EditorContainer: React.FC = () => {
           }}
           hasActiveSegment={!!activeSegmentId && activeSegmentId !== "root"}
           hasSegments={(session?.segments?.length ?? 0) > 0}
+          isAlreadySegmented={(session?.segments?.length ?? 0) > 1}
           languageOptions={languageOptions}
           isLanguageListLoading={isLanguageListLoading}
         />
@@ -431,6 +543,7 @@ const EditorContainer: React.FC = () => {
                 translationHandlers={{
                   onAddTranslation: handleTranslateSegment,
                   onDeleteTranslation: handleDeleteSegmentTranslation,
+                  onUpdateTranslation: handleUpdateSegmentTranslation,
                   languageOptions: languageOptions,
                   isLanguageListLoading: isLanguageListLoading,
                 }}
@@ -452,14 +565,13 @@ const EditorContainer: React.FC = () => {
                   onSelectionChange: handleSelectionChange,
                   onTextChange: handleTextChange,
                   onShiftBoundary: handleShiftBoundary,
-                  onInvalidDrop: dropDisabled
-                    ? () => notify({ message: "Cannot drop boundary above the source segment.", tone: "warning" })
-                    : undefined,
+                  onInvalidDrop: () => notify({ message: "Cannot drop boundary here — target is above the source or showing a translation view.", tone: "warning" }),
                 };
 
                 const translationHandlers: SegmentTranslationHandlers = {
                   onAddTranslation: handleTranslateSegment,
                   onDeleteTranslation: handleDeleteSegmentTranslation,
+                  onUpdateTranslation: handleUpdateSegmentTranslation,
                   languageOptions: languageOptions,
                   isLanguageListLoading: isLanguageListLoading,
                 };
@@ -541,6 +653,10 @@ const EditorContainer: React.FC = () => {
           onKeepExisting={() => resolveConflictPrompt("existing")}
           onKeepApi={() => resolveConflictPrompt("api")}
         />
+      )}
+
+      {guardDialogProps && (
+        <ActionGuardDialog {...guardDialogProps} onClose={closeGuardDialog} />
       )}
     </div>
   );

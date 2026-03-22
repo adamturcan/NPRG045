@@ -44,7 +44,7 @@ export class BrowserApiService implements ApiServiceContract {
   private supportedLanguagesSetCache: Set<LanguageCode> | null = null;
   private supportedLanguagesPromise: Promise<LanguageCode[]> | null = null;
 
-  // ─── Classify ───────────────────────────────────────────────────────────────
+  // Classify 
 
   async classify(text: string): Promise<{ label?: number; name?: string }[]> {
     const context = { operation: "classify text", payloadLength: text.length };
@@ -72,7 +72,7 @@ export class BrowserApiService implements ApiServiceContract {
     }
   }
 
-  // ─── NER ────────────────────────────────────────────────────────────────────
+  // NER 
 
   async ner(text: string): Promise<NerSpan[]> {
     const context = { operation: "run NER", payloadLength: text.length };
@@ -104,7 +104,7 @@ export class BrowserApiService implements ApiServiceContract {
     }
   }
 
-  // ─── Segmentation ──────────────────────────────────────────────────────────
+  // Segmentation 
 
   async segmentText(text: string): Promise<Segment[]> {
     if (!text || text.trim().length === 0) return [];
@@ -155,7 +155,7 @@ export class BrowserApiService implements ApiServiceContract {
     }
   }
 
-  // ─── Translation ────────────────────────────────────────────────────────────
+  // Translation 
 
   async translate(request: TranslationRequest): Promise<TranslationResponse> {
     if (!request.text || !request.text.trim()) {

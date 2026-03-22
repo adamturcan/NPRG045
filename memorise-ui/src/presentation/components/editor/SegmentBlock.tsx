@@ -15,6 +15,7 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import SyncIcon from '@mui/icons-material/Sync';
 
 import { CodeMirrorWrapper } from "./codemirror/CodeMirrorWrapper";
 import { SegmentLogic } from "../../../core/domain/entities/SegmentLogic";
@@ -45,6 +46,7 @@ export interface SegmentHandlers {
 export interface SegmentTranslationHandlers {
   onAddTranslation: (segmentId: string, lang: string) => void;
   onDeleteTranslation: (lang: string, segmentId: string) => void;
+  onUpdateTranslation: (segmentId: string, lang: string) => void;
   languageOptions: any[];
   isLanguageListLoading: boolean;
 }
@@ -71,7 +73,7 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
   segment, index, session,
   display: { isActive, isDragging, dropDisabled },
   handlers: { onActivate, onJoinUp, onRunNer, onRunSemTag, onSpanClick, onSelectionChange, onTextChange, onShiftBoundary, onInvalidDrop },
-  translationHandlers: { onAddTranslation, onDeleteTranslation, languageOptions, isLanguageListLoading },
+  translationHandlers: { onAddTranslation, onDeleteTranslation, onUpdateTranslation, languageOptions, isLanguageListLoading },
   dragHandlers: { prevSegmentId },
 }) => {
   const [localLang, setLocalLang] = useState("original");
@@ -155,12 +157,19 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
     onSelectionChange(sel, segment.id, localLang, virtualSegment.start);
   }, [onSelectionChange, segment.id, localLang, virtualSegment.start]);
 
+  const effectiveDropDisabled = dropDisabled || (isDragging && localLang !== "original");
+
   const handleDropTextPosition = useCallback((localOffset: number, dataTransfer: DataTransfer) => {
     const sourceSegmentId = dataTransfer.getData("application/segment-id");
-    if (sourceSegmentId && onShiftBoundary) {
+    if (!sourceSegmentId) return;
+    if (localLang !== "original") {
+      onInvalidDrop?.();
+      return;
+    }
+    if (onShiftBoundary) {
       onShiftBoundary(sourceSegmentId, virtualSegment.start + localOffset);
     }
-  }, [virtualSegment.start, onShiftBoundary]);
+  }, [virtualSegment.start, onShiftBoundary, localLang, onInvalidDrop]);
 
   return (
     <Box
@@ -170,13 +179,13 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
       onMouseEnter={() => setHoveredIdx(index)}
       onMouseLeave={() => setHoveredIdx(null)}
       onDragEnter={(e) => {
-        if (e.dataTransfer.types.includes("application/segment-id") && !isActive && !dropDisabled) {
+        if (e.dataTransfer.types.includes("application/segment-id") && !isActive && !effectiveDropDisabled) {
           onActivate();
         }
       }}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("application/segment-id")) {
-          if (dropDisabled) {
+          if (effectiveDropDisabled) {
             e.dataTransfer.dropEffect = "none";
           } else {
             e.preventDefault();
@@ -187,17 +196,17 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
         if (e.dataTransfer.types.includes("application/segment-id")) {
           e.preventDefault();
           e.stopPropagation();
-          if (dropDisabled && onInvalidDrop) {
+          if (effectiveDropDisabled && onInvalidDrop) {
             onInvalidDrop();
           }
         }
       }}
       sx={{
         position: "relative",
-        backgroundColor: dropDisabled
+        backgroundColor: effectiveDropDisabled
           ? "#fff5f5"
           : isActive ? "#ffffff" : "#f1f5f9",
-        backgroundImage: dropDisabled
+        backgroundImage: effectiveDropDisabled
           ? `repeating-linear-gradient(
               -45deg,
               transparent,
@@ -210,7 +219,7 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
         display: "flex",
         flexDirection: "column",
         transition: isDragging ? "none" : "background-color 0.2s ease",
-        cursor: isDragging && !dropDisabled ? "crosshair" : "auto",
+        cursor: isDragging && !effectiveDropDisabled ? "crosshair" : "auto",
         "& .boundary-btn-group": { opacity: 0 },
         "&[data-boundary-visible='1'] .boundary-btn-group": { opacity: 1 },
         "&[data-dragging='1'] .boundary-btn-group": { opacity: 0 },
@@ -308,6 +317,13 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
                 </Select>
               </FormControl>
               <Tooltip title="Translate segment"><IconButton size="small" onClick={(e) => { e.stopPropagation(); setAnchorEl(e.currentTarget); }} sx={{ bgcolor: COLORS.gold, color: COLORS.darkBlue, width: "28px", height: "28px", borderRadius: "6px" }}><AddIcon fontSize="small" /></IconButton></Tooltip>
+              {localLang !== "original" && (
+                <Tooltip title={isSegmentEdited ? "Cannot update: translation was manually edited" : "Re-translate this segment from API"}>
+                  <span>
+                    <IconButton size="small" disabled={isSegmentEdited} onClick={(e) => { e.stopPropagation(); onUpdateTranslation(segment.id, localLang); }} sx={{ bgcolor: isSegmentEdited ? alpha("#9e9e9e", 0.08) : alpha(COLORS.dateBlue, 0.1), color: isSegmentEdited ? "#9e9e9e" : COLORS.dateBlue, borderRadius: "6px", width: "28px", height: "28px" }}><SyncIcon fontSize="small" /></IconButton>
+                  </span>
+                </Tooltip>
+              )}
               {localLang !== "original" && <Tooltip title="Clear Translation"><IconButton size="small" onClick={(e) => { e.stopPropagation(); setDeleteDialogOpen(true); }} sx={{ bgcolor: alpha("#d32f2f", 0.1), color: "#d32f2f", width: "28px", height: "28px", borderRadius: "6px" }}><DeleteOutlineIcon fontSize="small" /></IconButton></Tooltip>}
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -340,7 +356,7 @@ export const SegmentBlock: React.FC<SegmentBlockProps> = ({
         "& .cm-activeLine": { backgroundColor: "transparent !important" },
         "& .cm-gutters": { backgroundColor: "transparent !important", border: "none" },
         "& .cm-placeholder": { color: "#94a3b8", fontStyle: "italic" },
-        ...(isDragging && !dropDisabled ? {
+        ...(isDragging && !effectiveDropDisabled ? {
           "& .cm-editor, & .cm-scroller, & .cm-content": { cursor: "crosshair !important" },
           "& .cm-dropCursor": {
             borderLeft: `3px solid ${COLORS.dateBlue} !important`,

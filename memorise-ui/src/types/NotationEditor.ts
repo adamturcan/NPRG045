@@ -1,11 +1,10 @@
 import type { Segment } from "./Segment";
 
 
-/** ---- Span type ---- */
-export type NerSpan = {  
+export type NerSpan = {
   id?: string;
   origin?: 'api' | 'user';
-  
+
   start: number;
   end: number;
   entity: string;
@@ -31,11 +30,11 @@ export type DeletionWarningBox = {
   affectedSpans: NerSpan[];
 };
 
-export type LeafInfo = { 
-  path: number[]; 
-  gStart: number; 
-  gEnd: number; 
-  len: number 
+export type LeafInfo = {
+  path: number[];
+  gStart: number;
+  gEnd: number;
+  len: number
 };
 
 export interface NotationEditorProps {
@@ -60,9 +59,10 @@ export interface NotationEditorProps {
 
 export interface CategoryMenuProps {
   anchorEl: HTMLElement | null;
+  open?: boolean;
   onClose: () => void;
   onCategorySelect: (category: string) => void;
-  onMouseDown: (event: React.MouseEvent) => void;
+  onMouseDown?: (event: React.MouseEvent) => void;
   showDelete?: boolean;
   onDelete?: () => void;
 }

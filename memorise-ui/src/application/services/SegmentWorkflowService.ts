@@ -15,8 +15,15 @@ export type SegmentationResult = {
 export class SegmentWorkflowService {
   private apiService = getApiService();
 
-  async runAutoSegmentation(session: { text?: string, translations?: Translation[] }, activeTab: string): Promise<SegmentationResult> {
-    const { text, translations } = session;
+  async runAutoSegmentation(session: { text?: string, translations?: Translation[], segments?: Segment[] }, activeTab: string): Promise<SegmentationResult> {
+    const { text, translations, segments } = session;
+
+    if ((segments?.length ?? 0) > 1) {
+      return {
+        ok: false,
+        notice: { message: "Document has already been segmented.", tone: "warning" }
+      };
+    }
 
     if (!text || !text?.trim()) {
       return {
@@ -67,21 +74,13 @@ export class SegmentWorkflowService {
 
 
 
-  joinSegments(segment1Id: string, segment2Id: string, session: { translations: Translation[], segments: Segment[] }, activeTab: string): SegmentationResult {
+  joinSegments(segment1Id: string, segment2Id: string, session: { translations: Translation[], segments: Segment[] }): SegmentationResult {
     const { segments, translations } = session;
-
 
     if (!segments) {
       return {
         ok: false,
         notice: { message: "No segments available.", tone: "error" }
-      };
-    }
-
-    if (activeTab !== "original") {
-      return {
-        ok: false,
-        notice: { message: "Segments can only be joined in the original text.", tone: "error" }
       };
     }
 
@@ -100,11 +99,19 @@ export class SegmentWorkflowService {
         segment2Id
       );
 
+      const nextEdited = { ...(translation.editedSegmentTranslations || {}) };
+      const wasEdited = nextEdited[segment1Id] || nextEdited[segment2Id];
+      if (wasEdited) {
+        nextEdited[segment1Id] = true;
+      }
+      delete nextEdited[segment2Id];
+
       const nextFullText = nextSegments.map(s => nextSegTrans[s.id] || "").join("");
 
       return {
         ...translation,
         segmentTranslations: nextSegTrans,
+        editedSegmentTranslations: nextEdited,
         text: nextFullText
       };
     });
@@ -119,20 +126,13 @@ export class SegmentWorkflowService {
     };
   }
 
-  splitSegment(position: number, session: { text: string, translations: Translation[], segments: Segment[] }, activeTab: string, activeSegmentId: string): SegmentationResult {
+  splitSegment(position: number, session: { text: string, translations: Translation[], segments: Segment[] }, activeSegmentId: string): SegmentationResult {
     const { segments, translations, text } = session;
 
     if (!segments || !activeSegmentId) {
       return {
         ok: false,
         notice: { message: "No active segment to split.", tone: "error" }
-      };
-    }
-
-    if (activeTab !== "original") {
-      return {
-        ok: false,
-        notice: { message: "Segments can only be split in the original document.", tone: "error" }
       };
     }
 
@@ -162,7 +162,7 @@ export class SegmentWorkflowService {
     };
   }
 
-  shiftSegmentBoundary(sourceSegmentId: string, globalTargetPosition: number, session: { text: string, translations: Translation[], segments: Segment[] }, activeTab: string): SegmentationResult {
+  async shiftSegmentBoundary(sourceSegmentId: string, globalTargetPosition: number, session: { text: string, translations: Translation[], segments: Segment[] }): Promise<SegmentationResult> {
     const { segments, translations, text } = session;
 
     if (!segments) {
@@ -171,14 +171,6 @@ export class SegmentWorkflowService {
         notice: { message: "No segments available.", tone: "error" }
       };
     }
-
-    if (activeTab !== "original") {
-      return {
-        ok: false,
-        notice: { message: "Boundaries can only be shifted in the original document.", tone: "error" }
-      };
-    }
-
 
     let fullText = text || "";
     const lastSeg = segments[segments.length - 1];
@@ -192,6 +184,8 @@ export class SegmentWorkflowService {
     }
 
     const originalSegments = segments;
+    const source = segments.find(s => s.id === sourceSegmentId);
+    const isForwardShift = source && globalTargetPosition > source.end;
 
     const updatedSegments = SegmentLogic.shiftSegmentBoundary(
       segments,
@@ -212,25 +206,85 @@ export class SegmentWorkflowService {
       .filter(s => !newSegmentIds.has(s.id) && s.id !== sourceSegmentId)
       .map(s => s.id);
 
-    const updatedTranslations = (translations || []).map(translation => {
-      const nextDict = { ...(translation.segmentTranslations || {}) };
+    const updatedSource = updatedSegments.find(s => s.id === sourceSegmentId);
 
-      let combinedTranslation = nextDict[sourceSegmentId] || "";
+    const splitRemainderIds = updatedSegments
+      .filter(s => {
+        const orig = originalSegments.find(o => o.id === s.id);
+        return orig && orig.text !== s.text && s.id !== sourceSegmentId;
+      })
+      .map(s => s.id);
 
-      for (const mergedId of mergedIds) {
-        const mergedText = nextDict[mergedId] || "";
-        if (mergedText) {
-          combinedTranslation += (combinedTranslation ? " " : "") + mergedText;
+    let updatedTranslations: Translation[];
+
+    if (isForwardShift && translations.length > 0 && updatedSource) {
+      updatedTranslations = await Promise.all(
+        (translations || []).map(async (translation) => {
+          const nextDict = { ...(translation.segmentTranslations || {}) };
+          const nextEdited = { ...(translation.editedSegmentTranslations || {}) };
+
+          const affectedIds = [sourceSegmentId, ...mergedIds];
+          const anyEdited = affectedIds.some(id => nextEdited[id]);
+
+          for (const mergedId of mergedIds) {
+            delete nextDict[mergedId];
+            delete nextEdited[mergedId];
+          }
+          for (const remainderId of splitRemainderIds) {
+            delete nextDict[remainderId];
+            delete nextEdited[remainderId];
+          }
+
+          const hadTranslation = affectedIds.some(id =>
+            translation.segmentTranslations?.[id]?.trim()
+          );
+
+          if (hadTranslation) {
+            try {
+              const res = await this.apiService.translate({
+                text: updatedSource.text,
+                targetLang: translation.language,
+              });
+              nextDict[sourceSegmentId] = res.translatedText;
+              nextEdited[sourceSegmentId] = anyEdited;
+            } catch {
+              delete nextDict[sourceSegmentId];
+              delete nextEdited[sourceSegmentId];
+            }
+          } else {
+            delete nextDict[sourceSegmentId];
+            delete nextEdited[sourceSegmentId];
+          }
+
+          const nextFullText = updatedSegments.map(s => nextDict[s.id] || "").join("");
+          return { ...translation, segmentTranslations: nextDict, editedSegmentTranslations: nextEdited, text: nextFullText };
+        })
+      );
+    } else {
+      updatedTranslations = (translations || []).map(translation => {
+        const nextDict = { ...(translation.segmentTranslations || {}) };
+        const nextEdited = { ...(translation.editedSegmentTranslations || {}) };
+
+        let combinedTranslation = nextDict[sourceSegmentId] || "";
+
+        for (const mergedId of mergedIds) {
+          const mergedText = nextDict[mergedId] || "";
+          if (mergedText) {
+            combinedTranslation += (combinedTranslation ? " " : "") + mergedText;
+          }
+          delete nextDict[mergedId];
+          if (nextEdited[mergedId]) {
+            nextEdited[sourceSegmentId] = true;
+          }
+          delete nextEdited[mergedId];
         }
-        delete nextDict[mergedId];
-      }
 
-      nextDict[sourceSegmentId] = combinedTranslation;
+        nextDict[sourceSegmentId] = combinedTranslation;
 
-      const nextFullText = updatedSegments.map(s => nextDict[s.id] || "").join("");
-
-      return { ...translation, segmentTranslations: nextDict, text: nextFullText };
-    });
+        const nextFullText = updatedSegments.map(s => nextDict[s.id] || "").join("");
+        return { ...translation, segmentTranslations: nextDict, editedSegmentTranslations: nextEdited, text: nextFullText };
+      });
+    }
 
     let newFullText = "";
     for (const seg of updatedSegments) {
@@ -247,7 +301,6 @@ export class SegmentWorkflowService {
       },
       notice: { message: "Segment boundary shifted.", tone: "success" }
     };
-
   }
 }
 

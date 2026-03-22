@@ -21,6 +21,7 @@ interface EditorGlobalMenuProps {
   onToggleTagPanel: (isOpen: boolean) => void;
   isProcessing: boolean;
   hasSegments?: boolean;
+  isAlreadySegmented?: boolean;
   hasActiveSegment?: boolean;
   languageOptions: any[];
   isLanguageListLoading: boolean;
@@ -60,7 +61,8 @@ const EditorGlobalMenu: React.FC<EditorGlobalMenuProps> = ({
   isTagPanelOpen,
   onToggleTagPanel,
   isProcessing,
-  hasSegments = false,
+  hasSegments: _hasSegments = false,
+  isAlreadySegmented = false,
   hasActiveSegment = false,
   languageOptions,
   isLanguageListLoading
@@ -82,7 +84,7 @@ const EditorGlobalMenu: React.FC<EditorGlobalMenuProps> = ({
 
   const actions = [
     { key: "save", icon: <SaveOutlinedIcon fontSize="small" />, name: "Save Workspace", onClick: () => onSave(), accent: COLORS.green },
-    { key: "segment", icon: <CallSplitIcon fontSize="small" />, name: hasSegments ? "Re-segment" : "Auto-Segment", onClick: () => onSegment(), accent: COLORS.dateBlue },
+    { key: "segment", icon: <CallSplitIcon fontSize="small" />, name: isAlreadySegmented ? "Document already segmented" : "Auto-Segment", onClick: () => onSegment(), accent: COLORS.dateBlue, disabled: isAlreadySegmented },
     { key: "ner", icon: <ManageSearchIcon fontSize="small" />, name: "Run NER", onClick: () => onNer(), accent: COLORS.magenta },
     { key: "translate", icon: <TranslateIcon fontSize="small" />, name: "Translate Document", onClick: () => { setShowTranslate(!showTranslate); onToggleTagPanel(false); }, accent: COLORS.orange },
     {
@@ -121,7 +123,7 @@ const EditorGlobalMenu: React.FC<EditorGlobalMenuProps> = ({
               <Tooltip title={action.name} placement="bottom" componentsProps={tooltipProps}>
                 <span>
                   <IconButton
-                    disabled={isProcessing}
+                    disabled={isProcessing || !!action.disabled}
                     onClick={action.onClick}
                     sx={{
                       width: 42,
@@ -152,7 +154,7 @@ const EditorGlobalMenu: React.FC<EditorGlobalMenuProps> = ({
                         options={languageOptions || []}
                         getOptionLabel={(option: any) => option.label}
                         loading={isLanguageListLoading}
-                        onChange={(event, newValue: any) => {
+                        onChange={(_event, newValue: any) => {
                           if (newValue) { onTranslateAll(newValue.code); setShowTranslate(false); }
                         }}
                         slotProps={{ paper: { sx: { mt: 1, borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid #e2e8f0" } } }}

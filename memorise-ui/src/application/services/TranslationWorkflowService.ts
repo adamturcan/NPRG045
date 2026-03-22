@@ -24,11 +24,16 @@ export class TranslationWorkflowService {
       return { ok: false, notice: { message: "Document must be segmented before translating.", tone: "error" } };
     }
     try {
-      const segmentTranslations: Record<string, string> = {};
+      const existing = session.translations?.find(t => t.language === targetLang);
+      const editedFlags = existing?.editedSegmentTranslations || {};
+
+      const segmentsToTranslate = session.segments.filter(seg => !editedFlags[seg.id]);
+      const skippedCount = session.segments.length - segmentsToTranslate.length;
+
       let sourceLang = "auto";
 
       const results = await Promise.all(
-        session.segments.map(async (seg) => {
+        segmentsToTranslate.map(async (seg) => {
           if (!seg.text?.trim()) return { id: seg.id, text: "" };
           const res = await this.apiService.translate({ text: seg.text, targetLang });
           if (res.sourceLang) sourceLang = res.sourceLang;
@@ -36,6 +41,7 @@ export class TranslationWorkflowService {
         })
       );
 
+      const segmentTranslations: Record<string, string> = { ...(existing?.segmentTranslations || {}) };
       results.forEach(r => { segmentTranslations[r.id] = r.text; });
 
       const translatedFullText = session.segments.map(s => segmentTranslations[s.id] || "").join("");
@@ -44,19 +50,28 @@ export class TranslationWorkflowService {
       const newTranslation: Translation = {
         language: targetLang,
         text: translatedFullText,
-        sourceLang,
-        createdAt: now,
+        sourceLang: sourceLang !== "auto" ? sourceLang : (existing?.sourceLang ?? "auto"),
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         segmentTranslations,
-        userSpans: [],
-        apiSpans: [],
-        deletedApiKeys: [],
+        editedSegmentTranslations: existing?.editedSegmentTranslations,
+        userSpans: existing?.userSpans ?? [],
+        apiSpans: existing?.apiSpans ?? [],
+        deletedApiKeys: existing?.deletedApiKeys ?? [],
       };
+
+      const translationsPatch = existing
+        ? (session.translations || []).map(t => t.language === targetLang ? newTranslation : t)
+        : [...(session.translations || []), newTranslation];
+
+      const message = skippedCount > 0
+        ? `Translated ${segmentsToTranslate.length} segment(s) to ${targetLang} (${skippedCount} edited skipped).`
+        : `Translated document to ${targetLang}.`;
 
       return {
         ok: true,
-        notice: { message: `Translated document to ${targetLang}.`, tone: "success" },
-        translationsPatch: [...(session.translations || []), newTranslation],
+        notice: { message, tone: "success" },
+        translationsPatch,
         newActiveTab: targetLang,
         editorKey: `${targetLang}:${now}`,
       };
@@ -160,6 +175,56 @@ export class TranslationWorkflowService {
       const appError = this.errorService.handleApiError(error, { operation: "add segment translation" });
       this.errorService.logError(appError);
       return { ok: false, notice: { message: "Failed to translate segment.", tone: "error" } };
+    }
+  }
+
+  async updateSegmentTranslation(
+    targetLang: string,
+    segmentId: string,
+    session: { segments: Segment[]; translations: Translation[] }
+  ): Promise<TranslationResult> {
+    const translation = session.translations?.find(t => t.language === targetLang);
+    if (!translation) {
+      return { ok: false, notice: { message: "Translation layer not found.", tone: "error" } };
+    }
+
+    if (translation.editedSegmentTranslations?.[segmentId]) {
+      return { ok: false, notice: { message: "Cannot update a manually edited translation.", tone: "warning" } };
+    }
+
+    const seg = session.segments?.find(s => s.id === segmentId);
+    if (!seg?.text?.trim()) {
+      return { ok: false, notice: { message: "Segment is empty.", tone: "error" } };
+    }
+
+    try {
+      const res = await this.apiService.translate({ text: seg.text, targetLang });
+      const updatedSegmentTranslations = { ...(translation.segmentTranslations || {}), [segmentId]: res.translatedText };
+      const updatedFullText = (session.segments || []).map(s => updatedSegmentTranslations[s.id] || "").join("");
+      const now = Date.now();
+
+      const translationsPatch = (session.translations || []).map(t =>
+        t.language === targetLang
+          ? {
+            ...t,
+            segmentTranslations: updatedSegmentTranslations,
+            editedSegmentTranslations: { ...(t.editedSegmentTranslations || {}), [segmentId]: false },
+            text: updatedFullText,
+            sourceLang: res.sourceLang ?? t.sourceLang,
+            updatedAt: now,
+          }
+          : t
+      );
+
+      return {
+        ok: true,
+        notice: { message: `Updated segment translation (${targetLang}).`, tone: "success" },
+        translationsPatch,
+      };
+    } catch (error) {
+      const appError = this.errorService.handleApiError(error, { operation: "update segment translation" });
+      this.errorService.logError(appError);
+      return { ok: false, notice: { message: "Failed to update segment translation.", tone: "error" } };
     }
   }
 
