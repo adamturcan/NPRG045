@@ -431,11 +431,44 @@ const EditorContainer: React.FC = () => {
     setIsProcessing(true);
     setActiveSegmentId(undefined);
     try {
-      const result = await taggingWorkflowService.runClassify(true, { activeSegmentId: undefined, segments: session?.segments || [], draftText, translations: session?.translations || [], text: session?.text || "", activeTab, tags: session?.tags || [] });
-      if (result.success && result.tags) {
-        sessionStore.updateSession({ tags: result.tags });
+      const segments = session?.segments || [];
+
+      if (segments.length === 0) {
+        // No segments — classify the whole document as a single block
+        const result = await taggingWorkflowService.runClassify(true, { activeSegmentId: undefined, segments: [], draftText, translations: session?.translations || [], text: session?.text || "", activeTab, tags: session?.tags || [] });
+        if (result.success && result.tags) {
+          sessionStore.updateSession({ tags: result.tags });
+        }
+        notify(result.notice);
+      } else {
+        // Classify each segment one by one
+        let currentTags = session?.tags || [];
+        let successCount = 0;
+
+        for (const seg of segments) {
+          const result = await taggingWorkflowService.runClassify(false, {
+            activeSegmentId: seg.id,
+            segments,
+            draftText,
+            translations: session?.translations || [],
+            text: session?.text || "",
+            activeTab,
+            tags: currentTags,
+          });
+          if (result.success && result.tags) {
+            currentTags = result.tags;
+            successCount++;
+          }
+        }
+
+        sessionStore.updateSession({ tags: currentTags });
+        notify({
+          message: successCount > 0
+            ? `Tagged ${successCount} of ${segments.length} segment(s).`
+            : "No segments could be classified.",
+          tone: successCount > 0 ? "success" : "error",
+        });
       }
-      notify(result.notice);
     } finally {
       setIsProcessing(false);
     }
