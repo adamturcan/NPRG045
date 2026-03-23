@@ -1,5 +1,5 @@
 // React hooks and components for state management, routing, and lazy loading
-import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 // Material-UI components for theming and layout
 import {
   CssBaseline,
@@ -124,10 +124,11 @@ const App: React.FC = () => {
   };
 
   // Create a new workspace draft, persist it, and update UI metadata
-  const handleAddWorkspace = async (): Promise<Workspace | null> => {
+  const handleAddWorkspace = useCallback(async (): Promise<Workspace | null> => {
     if (!username) return null;
-    
-    const newCount = workspaces.filter((w) =>
+
+    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
+    const newCount = currentWorkspaces.filter((w) =>
       w.name.startsWith("New Workspace")
     ).length;
     
@@ -160,7 +161,7 @@ const App: React.FC = () => {
       notify({ message: "Failed to create new workspace", tone: "error" });
       return null;
     }
-  };
+  }, [username, workspaceApplicationService, addWorkspaceMetadata, notify]);
 
   // Move the opened workspace to the front of the list to maintain recent workspaces order
   const bumpWorkspaceToFront = (id: string) => {
@@ -235,7 +236,6 @@ const App: React.FC = () => {
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           workspaces={workspaces}
-          onAddWorkspace={() => { void handleAddWorkspace() }} // Handle async strictly
         />
         {/* Render the main content area */}
         <Box
