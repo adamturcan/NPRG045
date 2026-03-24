@@ -24,7 +24,14 @@ const PanelContainer: React.FC = () => {
     if (activeSegmentId && activeSegmentId !== "root") {
       return tags.filter(t => t.segmentId === activeSegmentId);
     }
-    return tags.filter(t => !t.segmentId);
+    // Document level: show all tags deduplicated across segments
+    const seen = new Set<string>();
+    return tags.filter(t => {
+      const key = `${t.name.toLowerCase()}|${t.label ?? ""}|${t.parentId ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [tags, activeSegmentId]);
 
   const isTagPanelOpen = useSessionStore((state) => state.isTagPanelOpen);
