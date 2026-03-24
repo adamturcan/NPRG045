@@ -22,14 +22,12 @@ interface Props {
   onToggle: () => void;
   onLogout: () => void;
   workspaces: WorkspaceMetadata[];
-  onAddWorkspace: () => void;
 }
 
 const BubbleSidebar: React.FC<Props> = ({
   workspaces,
   open,
   onToggle,
-  onAddWorkspace,
   onLogout,
 }) => {
   const navigate = useNavigate();
@@ -192,7 +190,6 @@ const BubbleSidebar: React.FC<Props> = ({
               label="New Workspace"
               icon={<AddIcon />}
               onClick={() => {
-                onAddWorkspace();
                 navigate(`/workspace/new`);
               }}
               selected={isSelected("/workspace/new")}
